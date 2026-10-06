@@ -132,16 +132,21 @@ DB 是**交互中枢**：用户/设备经 DB 进入生态，DB 编排"感知→�
 | v2.7 管理面 | 0% | 已裁沿用现有栈（实测 Vue 运行时 0） |
 | v2.8 主动服务治理 | 代码 100% | 已生效 |
 
-**联动计划**（2026-10-06 实测）：
-- 第 0 步 homesdk 0.3.1：**wheel 已 vendor + Dockerfile 已改**，待合并窗重建镜像生效（当前容器仍 0.1.1）
-- 第 1 步 公共收件箱：**已落码+已生效**（`bus/inbox.py` 存在，restart 后运行）
-- 第 2 步 presence 发布：**已落码+已生效**
-- 第 3 步 token 收敛：待 MA service_token 侧就绪
-- 第 4 步 MCP 业务查询：待 MA MCP 服务就绪
-- 第 5 步 AF MCP 建自动化：**已落码+已生效**（`b48bfaf` tv_notify 活井 + AF channel_error 告警）
-- 第 6 步 契约测试：已交付，待确认进 gates.sh
-- 6 个孤儿文件：**全部已删除**（2026-10-06，含 engine.py/schema.py/deskpilot.py/doubao.py/defaults.py/core/agent_routes.py）
-- 审计报告 40 份：**全部核实+归档**（2026-10-06，7 P0 全部已修复或通过删孤儿解决）
+**联动计划**（2026-10-06 实测 · 镜像已重建）：
+- 第 0 步 homesdk 0.3.1：**✅ 已完成**（wheel vendor + Dockerfile 改 + 镜像重建 + 容器验证 `import homesdk; __version__=="0.3.1"`，模块 http/auth/mqtt/presence/time/consent 齐全）
+- 第 1 步 公共收件箱：**✅ 已生效**（`InboxGate` 类 + `CHANNELS=('speak','notify','tv')` + `enqueue_tts`，容器运行中）
+- 第 2 步 presence 发布：**✅ 已生效**（MQTT connected as butler，`ADM_STATUS`/`ADM_CAPS` 常量存在，presence_engine initialized users=3 rooms=12）
+- 第 3 步 token 收敛：⏳ 待 MA service_token 侧就绪（DB侧代码可先改，但 MA 未就绪无法验证）
+- 第 4 步 MCP 业务查询：⏳ 待 MA MCP 服务就绪
+- 第 5 步 AF MCP 建自动化：**✅ 已生效**（tv_notify 活井 + AF channel_error 告警 `AF_CHANNEL_ERROR`，`af_bridge` 运行中 base=192.168.2.200:8787）
+- 第 5 步① 端到端 dry_run：⏳ 待 AF 侧 MCP 工具面就绪后做
+- 第 6 步 契约测试：✅ 本地 43 个测试文件，371 passed（65 failed 均为 docker 环境依赖，非代码问题）；gates.sh + .gates.toml 已配置
+- 6 个孤儿文件：**✅ 全部已删除**
+- 审计报告 40 份：**✅ 全部核实+归档**
+
+**已知问题（不阻塞联动）**：
+- MA presence signal 间歇性丢失（61s/69s），自动降级到 HA-only 模式后恢复
+- `adm/memory-agent/status` payload 是纯文本 "online" 而非 JSON，DB 侧 JSON 解析失败后丢弃（MA 侧需改 payload 格式）
 
 ### 7.2 第一优先：合并停机窗（这是你唯一的硬阻塞）
 
