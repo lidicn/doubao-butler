@@ -133,9 +133,9 @@ async def _consume(rt) -> None:
                     continue
                 summary = str(payload.get("summary") or "")[:500]
                 conf = payload.get("conf")
-                # conf 封顶：契约要求 conf 封顶（>0.95 按 0.95 计），防止过拟合
-                if isinstance(conf, (int, float)) and conf > 0.95:
-                    conf = 0.95
+                # conf 契约上限 0.59（homesdk 契约 §1.2），消费侧仅再兜底防越界，不改变语义
+                if isinstance(conf, (int, float)) and conf > 0.59:
+                    conf = 0.59
                 logger.info("MA insights: kind=%s trace=%s conf=%s summary=%s",
                             kind, trace_id, conf, summary[:100])
                 # 安全类告警（security/anomaly/intrusion）走 Bark 通知，其余仅日志
