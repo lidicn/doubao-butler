@@ -100,11 +100,17 @@ class MQTTClient:
             text = raw.decode("utf-8", "replace")  # 行为不变：仍然尽力解，只是从此有声
         if "\ufffd" in text:
             self._note_bad_payload(msg.topic, raw, "含替换符U+FFFD")
-        try:
-            payload = json.loads(text)
-        except Exception:
-            self._note_bad_payload(msg.topic, raw, "JSON解析失败")
-            return
+        # ADM 生态链约定：adm/<成员>/status 载荷是字面量 online/offline（非 JSON）。
+        # 契约表 §1.1 + homesdk.presence.is_online 同式——这里必须跳过 JSON 解析，
+        # 否则字面量在 json.loads 阶段就被丢弃，adm_peers 永远空（MA联动收尾附带发现）。
+        if msg.topic.startswith("adm/") and msg.topic.endswith("/status"):
+            payload = text.strip()
+        else:
+            try:
+                payload = json.loads(text)
+            except Exception:
+                self._note_bad_payload(msg.topic, raw, "JSON解析失败")
+                return
         try:
             if msg.topic == SUB_TV_RESULT and self.on_result is not None:
                 try:
