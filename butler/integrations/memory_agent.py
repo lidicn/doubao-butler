@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 import httpx
 
+from homesdk.http import ma_url, join_url
 from butler.config import Settings
 from butler.logging_setup import get_logger
 
@@ -250,7 +251,7 @@ class MemoryAgentClient:
         走 MA 的 POST /api/vision/analyze（Basic 认证，与 MCP 隔离）。
         返回 {ok, scene, persons:[{name,...}], action, ...}；失败 {ok: False, error}。
         """
-        url = f"{self.s.memory_agent_url.rstrip('/')}/api/vision/analyze"
+        url = join_url(ma_url(), "/api/vision/analyze")
         try:
             auth = self.basic_auth()
         except CredentialMissing as e:
@@ -334,7 +335,7 @@ class MemoryAgentClient:
 
     async def _butler_fetch(self, path: str, params: dict | None = None, timeout: float = 10.0) -> dict:
         # O-3 单点请求：{ok, data, error}。缺凭据/非 2xx/解析失败都带 error。
-        url = f"{self.s.memory_agent_url.rstrip('/')}{path}"
+        url = join_url(ma_url(), path)
         clean = {k: v for k, v in (params or {}).items() if v is not None}
         try:
             headers = self._butler_headers()
@@ -411,7 +412,7 @@ class MemoryAgentClient:
         return inner if isinstance(inner, dict) else {}
 
     async def _butler_patch(self, path: str, body: dict) -> Any:
-        url = f"{self.s.memory_agent_url.rstrip('/')}{path}"
+        url = join_url(ma_url(), path)
         try:
             async with httpx.AsyncClient(timeout=10) as c:
                 r = await c.patch(url, headers=self._butler_headers(), json=body)
@@ -474,7 +475,7 @@ class MemoryAgentClient:
         if not self.s.memory_agent_app_token:
             return {"ok": False, "raw": "", "error": "MEMORY_AGENT_APP_TOKEN 未配置"}
 
-        url = f"{self.s.memory_agent_url.rstrip('/')}/api/agent/memories"
+        url = join_url(ma_url(), "/api/agent/memories")
         body: dict[str, Any] = {"text": text, "dry_run": dry_run}
         if source_refs:
             body["source_refs"] = source_refs
@@ -496,7 +497,7 @@ class MemoryAgentClient:
         """通过 app_token 列出记忆（可按 source 过滤）。"""
         if not self.s.memory_agent_app_token:
             return []
-        url = f"{self.s.memory_agent_url.rstrip('/')}/api/agent/memories"
+        url = join_url(ma_url(), "/api/agent/memories")
         params: dict[str, Any] = {"limit": limit}
         if source:
             params["source"] = source

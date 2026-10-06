@@ -22,7 +22,14 @@ def _scheduler_up(rt) -> bool:
 
 
 def _core_components(rt) -> dict:
-    return {"mqtt": _mqtt_connected(rt), "scheduler": _scheduler_up(rt)}
+    comps = {"mqtt": _mqtt_connected(rt), "scheduler": _scheduler_up(rt)}
+    # 契约 v2.0 §A/B：adm 对端离线 → degraded + ADM_ERR_PEER_OFFLINE
+    peers = getattr(rt, "adm_peers", None)
+    if isinstance(peers, dict):
+        for peer_topic, online in peers.items():
+            peer_name = peer_topic.split("/")[-2] if "/" in peer_topic else peer_topic
+            comps[f"adm_{peer_name}"] = bool(online)
+    return comps
 
 
 async def health(request):

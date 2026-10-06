@@ -17,6 +17,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from homesdk.time import house_now
+
 import httpx
 
 from butler.logging_setup import get_logger, warn_throttled
@@ -504,9 +506,8 @@ class CronTaskExecutor:
             threshold = condition.get("threshold", 50)
             any_mode = condition.get("any", True)
 
-            # 深圳 UTC+8
-            tz_offset = dt.timedelta(hours=8)
-            now_local = dt.datetime.now() + tz_offset  # 粗略：API 返回的时间戳转本地
+            # 家庭时区（homesdk.time 单点声明，容器可能 UTC）
+            now_local = house_now()
 
             results = []
             for target_h in target_hours:

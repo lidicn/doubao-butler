@@ -18,6 +18,7 @@ import re
 import time
 from datetime import datetime
 
+from homesdk.time import house_now
 from butler.logging_setup import get_logger
 from butler.decision.action_router import ALLOWED_ACTIONS
 
@@ -110,13 +111,9 @@ class DecisionEngine:
                       reason=str(action_json.get("reason", "")), confidence=confidence)
             return {"ok": False, "action": "filtered", "reason": filter_reason}
 
-        # 4. 夜间规则：23:00-07:00 只允许 notify（用北京时间，容器可能跑在 UTC）
-        # （now_hour 仅供测试/调试注入，生产走当前北京时间）
-        try:
-            from zoneinfo import ZoneInfo
-            beijing_hour = datetime.now(ZoneInfo("Asia/Shanghai")).hour
-        except Exception:
-            beijing_hour = datetime.now().hour
+        # 4. 夜间规则：23:00-07:00 只允许 notify（用家庭时区，容器可能跑在 UTC）
+        # （now_hour 仅供测试/调试注入，生产走当前家庭时间）
+        beijing_hour = house_now().hour
         try:
             hour = int(payload.get("now_hour")) if payload.get("now_hour") is not None else beijing_hour
         except (ValueError, TypeError):

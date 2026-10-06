@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
+from homesdk.time import house_now
 from butler.core.tools import TOOL_SCHEMAS, dispatch_tool
 from butler.logging_setup import get_logger
 from butler.skills.engines.llm_decide.ask import pending_ask_manager
@@ -82,7 +82,7 @@ class LLMDecideEngine:
 
         # ── 上下文模板渲染 ──
         payload = ctx.payload or {}
-        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        now = house_now()
         weekday_cn = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][now.weekday()]
         fmt = {
             "member": str(payload.get("member") or payload.get("_trigger_member") or "家人"),

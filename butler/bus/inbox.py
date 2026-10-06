@@ -1,10 +1,16 @@
 """§13.4 ADM 公共收件箱：butler/inbox/{speak,notify,tv}——任何仓投递事件，DB 异步过闸后播出/分发。
 
 闸（fail-closed）：
-  1. 载荷 schema 校验：text/source/trace_id 必填、长度受限，违规丢弃 + 审计日志；
+  1. 载荷 schema 校验（按通道读字段，对齐契约 v2.0 §E）：trace_id 必填、长度受限，违规丢弃 + 审计；
   2. 每来源限流（滑动窗口，默认 10 条/分钟）；
   3. 每来源×通道冷却（同文本 60s 内不重复）；
   4. 每来源 speak 每日预算（决策 11 口径，默认 3 次/日）。
+
+契约 v2.0 §E（唯一真源，码迁就契约）：
+  - speak: {trace_id, ts, text, role?, priority?, expires_at?}  text≤500
+  - notify: {trace_id, ts, title, body, channel?, priority?}     title≤80 body≤500
+  - tv:     {trace_id, ts, content, duration_s?}                   content≤500
+  - 无 source 字段；按通道读 text/title+body/content。
 
 格12（H2 2026-09-30）：一次投件恰好落一行 `inbox_events`（通道/来源/trace/原文/结果/
 原因）。此前"是哪句话"只存在于 docker logs，而日志窗只有 30 分钟 ⇒ 事后不可查。
@@ -33,8 +39,13 @@ from butler.tts.helper import enqueue_tts
 logger = get_logger("butler.bus.inbox")
 
 CHANNELS = ("speak", "notify", "tv")
-MAX_TEXT_LEN = 1000
+# 契约 v2.0 §E 长度约束
+MAX_TEXT_LEN = 500       # speak.text / notify.body / tv.content
+MAX_TITLE_LEN = 80       # notify.title
 MAX_FIELD_LEN = 64
+# source 不再是契约字段，但限流/预算仍需一个维度——用 trace_id 前缀的投递方标识
+# 兼容旧投递方可能仍带 source 字段；无 source 时用 "unknown"
+DEFAULT_SOURCE = "unknown"
 
 # 格12：投件事件台账的取值域与留存口径
 OUTCOME_ACCEPTED = "accepted"
@@ -145,12 +156,16 @@ class InboxGate:
     # ── 格12：投件事件台账（一次投件恰好一行，含被拒的） ──
     @staticmethod
     def _peek(payload) -> tuple[str, str, str]:
-        """尽量从原始载荷里抠出 source/trace/text——被 validate 拒掉的投件最需要留原文。"""
+        """尽量从原始载荷里抠出 source/trace/text——被 validate 拒掉的投件最需要留原文。
+        契约 v2.0 无 source 字段，兼容旧投递方可能仍带 source；无则用 DEFAULT_SOURCE。
+        文本按通道取：speak→text, notify→body, tv→content。"""
         if not isinstance(payload, dict):
-            return "", "", str(payload)
-        source = str(payload.get("source", ""))[:MAX_FIELD_LEN]
+            return DEFAULT_SOURCE, "", str(payload)
+        source = str(payload.get("source", "") or DEFAULT_SOURCE)[:MAX_FIELD_LEN]
         trace = str(payload.get("trace_id", ""))[:MAX_FIELD_LEN]
-        text = str(payload.get("text", ""))
+        # 按通道优先级取文本（台账只需要一个可读的原文摘要）
+        text = (str(payload.get("text", "")) or str(payload.get("body", ""))
+                or str(payload.get("content", "")))
         return source, trace, text
 
     def _record(self, topic: str, payload, outcome: str, reason: str) -> None:
@@ -189,31 +204,64 @@ class InboxGate:
         c.commit()
 
     # ── 闸 ──
-    def validate(self, payload) -> tuple[bool, str, dict]:
+    def validate(self, payload, channel: str = "speak") -> tuple[bool, str, dict]:
+        """契约 v2.0 §E：按通道读字段。
+        speak:  {trace_id, ts, text, role?, priority?, expires_at?}  text≤500
+        notify: {trace_id, ts, title, body, channel?, priority?}     title≤80 body≤500
+        tv:     {trace_id, ts, content, duration_s?}                   content≤500
+        trace_id 必填；无 source 字段（兼容旧投递方仍带 source，用于限流/预算维度）。"""
         if not isinstance(payload, dict):
             return False, "payload 非对象", {}
-        text = str(payload.get("text", "")).strip()
-        if not text:
-            return False, "text 缺失", {}
-        if len(text) > MAX_TEXT_LEN:
-            return False, f"text 超长({len(text)}>{MAX_TEXT_LEN})", {}
-        source = str(payload.get("source", "")).strip()
-        if not source or len(source) > MAX_FIELD_LEN:
-            return False, "source 缺失或超长", {}
         trace = str(payload.get("trace_id", "")).strip()
         if not trace or len(trace) > MAX_FIELD_LEN:
             return False, "trace_id 缺失或超长", {}
-        title = str(payload.get("title", "")).strip()[:MAX_FIELD_LEN]
+        # source 非契约字段，但限流/预算需要维度——兼容旧投递方，无则 DEFAULT_SOURCE
+        source = str(payload.get("source", "") or DEFAULT_SOURCE).strip()[:MAX_FIELD_LEN]
         try:
             priority = min(5, max(1, int(payload.get("priority", 3))))
         except (TypeError, ValueError):
             priority = 3
         room = str(payload.get("room", "")).strip()[:32]
-        return True, "", {
-            "text": text, "source": source, "trace_id": trace,
-            "title": title, "priority": priority, "room": room,
-            "override_quiet": bool(payload.get("override_quiet", False)),
-        }
+
+        if channel == "speak":
+            text = str(payload.get("text", "")).strip()
+            if not text:
+                return False, "speak.text 缺失", {}
+            if len(text) > MAX_TEXT_LEN:
+                return False, f"speak.text 超长({len(text)}>{MAX_TEXT_LEN})", {}
+            return True, "", {
+                "text": text, "source": source, "trace_id": trace,
+                "title": "", "priority": priority, "room": room,
+                "override_quiet": bool(payload.get("override_quiet", False)),
+            }
+        if channel == "notify":
+            title = str(payload.get("title", "")).strip()
+            body = str(payload.get("body", "")).strip()
+            if not title and not body:
+                return False, "notify.title 和 body 均缺失", {}
+            if len(title) > MAX_TITLE_LEN:
+                return False, f"notify.title 超长({len(title)}>{MAX_TITLE_LEN})", {}
+            if len(body) > MAX_TEXT_LEN:
+                return False, f"notify.body 超长({len(body)}>{MAX_TEXT_LEN})", {}
+            return True, "", {
+                "text": body or title, "source": source, "trace_id": trace,
+                "title": title, "priority": priority, "room": room,
+                "override_quiet": bool(payload.get("override_quiet", False)),
+            }
+        if channel == "tv":
+            content = str(payload.get("content", "")).strip()
+            if not content:
+                return False, "tv.content 缺失", {}
+            if len(content) > MAX_TEXT_LEN:
+                return False, f"tv.content 超长({len(content)}>{MAX_TEXT_LEN})", {}
+            duration_s = payload.get("duration_s")
+            return True, "", {
+                "text": content, "source": source, "trace_id": trace,
+                "title": "", "priority": priority, "room": room,
+                "override_quiet": bool(payload.get("override_quiet", False)),
+                "duration_s": duration_s,
+            }
+        return False, f"未知通道 {channel}", {}
 
     def rate_ok(self, source: str) -> bool:
         now = time.time()
@@ -251,7 +299,7 @@ class InboxGate:
         if not self.enabled:
             logger.info("INBOX_DROP channel=%s reason=inbox_disabled", channel)
             return OUTCOME_DROPPED, "收件箱已关闭"
-        ok, why, note = self.validate(payload)
+        ok, why, note = self.validate(payload, channel)
         if not ok:
             logger.warning("INBOX_DROP channel=%s reason=%s topic=%s", channel, why, topic)
             return OUTCOME_DROPPED, why

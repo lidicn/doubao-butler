@@ -120,12 +120,25 @@ async def _consume(rt) -> None:
                 # v1.6 P2-2：MA 设备健康变化（预留，当前仅日志）
                 logger.info("MA device-health: %s", payload)
             elif topic == SUB_MA_INSIGHTS:
-                # MA联动收尾 3.4.3：MA 视觉异常/安全告警统一推送 ma/insights（不 retained）
-                # 载荷 {kind, summary, evidence[], persons[], source, ts}
-                kind = str(payload.get("kind") or "unknown")
-                summary = str(payload.get("summary") or "")[:200]
-                logger.info("MA insights: kind=%s summary=%s", kind, summary)
-                # 安全类告警（security/anomaly）走 Bark 通知，其余仅日志
+                # 契约 v2.0 §D：ma/insights {trace_id, ts, insight_id, kind, persons[],
+                # room?, summary, evidence[], snapshot_url?, conf?, intent?}
+                # fail-closed：schema 缺 trace_id/kind → 丢弃 + ADM_ERR_PAYLOAD_INVALID + 审计
+                if not isinstance(payload, dict):
+                    logger.error("ADM_ERR_PAYLOAD_INVALID ma/insights payload 非对象")
+                    continue
+                trace_id = str(payload.get("trace_id", "")).strip()
+                kind = str(payload.get("kind") or "unknown").strip()
+                if not trace_id:
+                    logger.error("ADM_ERR_PAYLOAD_INVALID ma/insights trace_id 缺失 kind=%s", kind)
+                    continue
+                summary = str(payload.get("summary") or "")[:500]
+                conf = payload.get("conf")
+                # conf 封顶：契约要求 conf 封顶（>0.95 按 0.95 计），防止过拟合
+                if isinstance(conf, (int, float)) and conf > 0.95:
+                    conf = 0.95
+                logger.info("MA insights: kind=%s trace=%s conf=%s summary=%s",
+                            kind, trace_id, conf, summary[:100])
+                # 安全类告警（security/anomaly/intrusion）走 Bark 通知，其余仅日志
                 if kind in ("security", "anomaly", "intrusion"):
                     try:
                         from butler.notifier.router import get_router as get_notify_router
@@ -143,7 +156,11 @@ async def _consume(rt) -> None:
                 online = adm_status_is_online(payload)
                 peers = getattr(rt, "adm_peers", None)
                 if isinstance(peers, dict):
+                    prev = peers.get(topic)
                     peers[topic] = online
+                    # 离线边沿（online→offline）记录 ADM_ERR_PEER_OFFLINE，禁止静默降级
+                    if prev is True and online is False:
+                        logger.error("ADM_ERR_PEER_OFFLINE peer=%s (LWT/心跳超时)", topic)
                 logger.info("ADM peer status %s online=%s", topic, online)
             elif topic.startswith("butler/trigger/"):
                 # 技能 MQTT 触发入口（兼容通道）：butler/trigger/{skill_id}

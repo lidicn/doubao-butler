@@ -174,7 +174,7 @@ class MQTTClient:
             "service": "doubao-butler",
             "mcp": True,
             "tools": mcp_tool_names(),
-            "version": __version__,
+            "version": "2.7",  # 契约 v2.0 §A：version=计划号（非包 __version__=1.0.0）
             "ts": detail["ts"],
             "hb_interval_sec": detail["hb_interval_sec"],
             "stale_after_sec": detail["stale_after_sec"],

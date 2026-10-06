@@ -12,8 +12,7 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime, timezone, timedelta
-_CST = timezone(timedelta(hours=8))  # Asia/Shanghai, matches APScheduler
+from datetime import datetime
 
 from butler.logging_setup import get_logger
 from butler.store import repo, write_failures

@@ -188,4 +188,140 @@ DB 是**交互中枢**：用户/设备经 DB 进入生态，DB 编排"感知→�
 
 ---
 
+## 八、下一阶段：更紧密联动（DCD 2026-10-06）
+
+> 依据：`关键决策部/decisions/20261006-ADM下一阶段联动路线图-裁定.md`；契约 v2.0 见 `homesdk/doc/ADM联动主题注册表与消息契约.md` §七。
+> 核心：三组联动端到端跑通 + 失败统一降级/错误码（`ADM_ERR_*`）。
+
+> ⚠️ **核实补遗（DCD 2026-10-06 DB 子代理代码级核实）——首改项，比下表任何一条都靠前**：
+> 1. **收件箱 schema 与契约 §1.3 不符（会真丢件）**：代码 `text≤1000`/`title≤64`/统一必填 `text`+`source`，契约是 `speak={text}`/`notify={title,body}`/`tv={content}`、`≤500`/`≤80`、无 `source`。⇒ **MA/AF 按契约投 notify/tv 会因缺 `text` 被丢弃，`body`/`content` 从未被读取**。**裁定：码迁就契约**（契约是唯一真源，MA/AF 已按契约实现）——`inbox.py` 按通道读 `text`/`title+body`/`content`，长度对齐 ≤500/≤80，去掉 `source` 必填。
+> 2. **caps.version 报 `1.0.0`（`__version__`）非计划号 `2.6`**：`mqtt_client.py:177` 改报计划号。
+> 3. **`adm_peers` 写了不读**：对端离线对 DB 行为零影响——补消费者（离线 → 降级 + `ADM_ERR_PEER_OFFLINE`）。
+> 4. **`af/automation/fired|failed` 未订阅**：DB 现走 HTTP 轮询 `/api/asks/pending`，不经 MQTT fired/failed——若要"更紧密"，补订阅（否则在契约里显式登记"DB↔AF 事件腿走 HTTP、不走 MQTT fired"）。
+
+| # | 任务 | 验收 | 前置 |
+|---|------|------|------|
+| 0 | **收件箱 schema 对齐契约 §1.3**（见上⚠️1，码迁就契约） | MA/AF 按契约投 notify/tv 不再被丢弃；`body`/`content` 被读；长度/字段与契约逐字一致 | 无（第一优先） |
+| 1 | service_token 切换（已签发，见 `回执_MA联动收尾_DB侧三项待办_20261006.md` §五） | `.env` 两键换 svc_ 令牌、`GET /api/members` 200、7 天旧令牌零使用 | MA 已签发 |
+| 2 | `_on_message` 对 `adm/*/status` 兼容解析（契约 v2.0 §7.1）——**修已登记 bug**（现 JSON 解析丢弃字面量 `online`） | 收到 JSON 与字面量 `online/offline` 都正确更新 `adm_peers` | 无 |
+| 3 | 收件箱 / `ma/insights` 消费带 `ADM_ERR_*` + 审计（§7.2） | 校验失败 → fail-closed + 码 + `inbox_events` 审计 | 无 |
+| 4 | 调 MA/AF 失败统一码 + `channel_error`（§7.3） | MA/AF 不可达 → `ADM_ERR_UPSTREAM_TIMEOUT`/`ADM_ERR_AUTH_REQUIRED` + 告警，**不假绿** | 无 |
+| 5 | presence 丢失 → 降级 HA-only 且 health 报 `degraded` + `ADM_ERR_PEER_OFFLINE` | 断 MA → 60s 内降级 + `/api/health` degraded:true + 码 | 无 |
+| 6 | 跑 `verify_adm_linkage`（homesdk `scripts/`）三组全绿 | 探针 rc=0（缺一组即红） | 1-5 |
+
+**本仓失败语义**：收件箱校验失败 fail-closed + 码；presence/洞察失败 degrade-flag + 码；非关键提示 fail-open。**禁止"静默降级"（本仓多轮审计点名的系统性病灶）。**
+
+### 契约对齐规范 v2.0（逐字版 · DCD 20261006）
+
+> 唯一真源 = `E:\NAS\homesdk\doc\ADM联动主题注册表与消息契约.md`。本节是其**逐字快照**，供本仓执行，不再回查其它仓；两者冲突以契约表为准并提 DCD 复议。
+
+**A. `adm/*/status` 统一 JSON**（取代字面量 `online`/`offline`）：
+
+```json
+{"state":"online|offline|degraded","ts":1760000000,"degraded":false,"reasons":[],"version":"<计划号>"}
+```
+
+- `reasons` 非空 ⇒ `degraded=true`，元素 = `ADM_ERR_*`；`version` = 计划号（AF 2.6 / MA 1.4 / DB **2.7**——**本仓现报 `1.0.0`，须改**）；
+- 消费端**兼容旧字面量**：非 JSON 的 `online`/`offline` → 按 `{"state":"online|offline"}` 解析，**不得丢弃**（本仓 `_on_message` 现 JSON 解析丢弃字面量，须改）。
+
+**B. 统一错误码**：
+
+| 码 | 含义 |
+|---|---|
+| `ADM_ERR_BROKER_UNREACHABLE` | MQTT broker 连不上 |
+| `ADM_ERR_PEER_OFFLINE` | 对端 presence 不在线 |
+| `ADM_ERR_PAYLOAD_INVALID` | 载荷 schema/校验失败 |
+| `ADM_ERR_AUTH_REQUIRED` | 缺令牌 / 过期 / 越权 |
+| `ADM_ERR_UPSTREAM_TIMEOUT` | 调对端超时 |
+| `ADM_ERR_INTERNAL` | 未分类兜底 |
+
+落点：status `reasons[]` ／ MCP·HTTP 响应 `{ok:false, code, message}` ／ `inbox_events` 审计。**联动失败必须带码，禁止静默丢弃（替代本仓现多套 ad-hoc 前缀 INBOX_DROP/INBOX_FAIL/AF_CHANNEL_ERROR 等）。**
+
+**C. 降级三档**：fail-closed（写面/不可逆：拒+码+审计）｜degrade-flag（读面/可重试：继续+`degraded`+码）｜fail-open（纯提示：放行+日志）。
+
+**D. 事件载荷（逐字）**：
+- `ma/insights` `{trace_id, ts, insight_id, kind, persons[], room?, summary, evidence[], snapshot_url?, conf?, intent?}`（**本仓现未过 Sentinel、无 `insight_id` 去重、无 `conf` 封顶——须补**）
+- `ma/presence` `{trace_id, ts, members:[{name, member_id, room, via, confidence, last_seen, trigger}], total}`（retained；**本仓现坏载荷静默 return 0/continue——须改 fail-closed + 码**）
+- `ma/device-health` `{trace_id, ts, device_id, status, entity_id, from, to, stable_id}`（**`stable_id` 必须非空**；本仓现仅日志，须补消费）
+- `af/automation/fired` `{trace_id, ts, automation_id, ref}`（**本仓现未订阅——若要更紧密，补订阅；否则登记"DB↔AF 事件腿走 HTTP"**）
+- `af/automation/failed` `{trace_id, ts, automation_id, ref, error}`（同上）
+
+**E. 收件箱 schema（对齐后权威版，本仓码必须按此改）**：
+- `butler/inbox/speak` `{trace_id, ts, text, role?, priority?, expires_at?}`，text ≤500，trace_id 必填
+- `butler/inbox/notify` `{trace_id, ts, title, body, channel?, priority?}`，title ≤80 / body ≤500，trace_id 必填
+- `butler/inbox/tv` `{trace_id, ts, content, duration_s?}`，content ≤500，trace_id 必填
+- **无 `source` 字段**；按通道读 `text`/`title+body`/`content`。**本仓 `inbox.py` 现统一要求 `text`（≤1000）+`source`、`title`≤64——与契约不符，MA/AF 按契约投 notify/tv 会被缺 `text` 丢弃，须按上表改。**
+
+**F. MCP 面实名**：AF = `af_draft` + `af_apply(stage∈check|simulate|dry_run|save)`（**无 `verify`/`deploy` 别名**）；ask `GET /api/asks/pending`（read 令牌）+ `POST /api/asks/answer`（write 令牌 + INBOX_KEY，回报 `channel_error`）。
+
+**G. 端到端探针**：`verify_adm_linkage`（homesdk `scripts/`），三组各一条硬读数，缺一 `rc=1`。
+
+### homesdk 落地细案（逐模块 · DCD 20261006 · 确保"装了就要用"）
+
+> **现状一句话**：DB 在 **7 处注释里引 homesdk**（"`homesdk.presence.is_online` 同式"等），但代码里**手写了一份等价物**——这就是"光装 homesdk 没实质应用"。本细案逐模块指定落地 file:line 与验收，**禁止再手写等价物**（对应判例"同名两套"）。
+
+| # | homesdk 模块 | DB 现状（手写等价物，file:line） | 落地目标 | 验收（grep 归零/单点） |
+|---|---|---|---|---|
+| 1 | `consent` | ✅ 已落地：`core/dialog.py:23`、`skills/engines/llm_decide/ask.py:23` | 保持 | — |
+| 2 | `auth` | 4-face token 手塞 header：`integrations/memory_agent.py:22-67`（mcp/butler/app/basic 四令牌） | mcp/butler/app 三面改用**单一 `svc_` 令牌**（已签发，见 `回执_MA联动收尾...` §五）+ `homesdk.auth.require_auth_headers(peer)` | `memory_agent_token`/`butler_token`/`app_token` 三键归零（只剩 config 层读一处 svc_）；裸 header 拼装归零 |
+| 3 | `http.peer_url` | URL 硬编码：`memory_agent.py:253/337/414/477/499` `f"{...}/api/..."` | `homesdk.http.peer_url("memory-agent")` 统一寻址 | grep `http://192.168.2.200:8086` 归零 |
+| 4 | `mqtt` | 自读 broker 配置（`bus/mqtt_client.py`） | `homesdk.mqtt.broker_settings()` + `resolve_credentials()`（缺凭据 **fail-closed**） | 凭据来源 = homesdk.mqtt，不再自读 |
+| 5 | `presence` | 手写 status/caps retained+LWT（`mqtt_client.py:198-220`）+ 手写 `adm_status_is_online`（`topics.py:42`、`mqtt_client.py:104` 注释"同式"） | `homesdk.presence.advertise`（发布）+ `homesdk.presence.is_online`（判读） | 手写 `will_set(ADM_STATUS` / `adm_status_is_online` 归零 |
+| 6 | `time` | 硬编码 +8：`decision/engine.py:117-119`、`decision/aggregator.py:43-45`、`core/agent.py:86`、`llm_decide/engine.py:85` 的 `ZoneInfo("Asia/Shanghai")`；`triggers/engine.py:16` `_CST=timedelta(hours=8)`；`cron_task.py:509` `now+tz_offset` | `homesdk.time.house_now()`/`to_house_iso()`，时区由 `HOMESDK_TZ` 单点声明 | grep `ZoneInfo("Asia/Shanghai")` + `timedelta(hours=8)` 归零（或显式登记"纯展示、非时间轴"） |
+| 7 | `adm`（0.3.2） | 无 | `ADM_ERR_*` 常量 + status JSON encode/decode + `verify_adm_linkage` 底座 | ad-hoc 前缀（INBOX_DROP / INBOX_FAIL / AF_CHANNEL_ERROR）→ 全部替换为 `ADM_ERR_*` |
+
+**执行顺序与依赖**：
+
+1. **模块 2/3/6（auth/http/time）先做**——它们是"第 3 步 token 收敛"的实体，**不依赖 broker/镜像**，纯代码；
+2. **模块 4/5（mqtt/presence）随收件箱 schema 对齐（#0）同批**——都动 `mqtt_client.py` 同一个文件，分开改会互相踩；
+3. **模块 7（adm）等 homesdk 0.3.2 发布**，三仓同批 import（规格见 `homesdk/doc/homesdk-0.3.2-规格.md`）。
+
+**红线**：凡 homesdk 已提供的能力，**必须 import 库，禁止手写第二份**。验收的"grep 归零"是硬线，不是建议——这是"装了就实质用"的可判定义。
+
+### PR 级任务卡（homesdk 落地 · 模块 2/3/6 · DCD 20261006）
+
+> 每卡 = 一个可独立合入的 PR，含"改哪个文件、删哪几行、加哪几行、验收命令"。顺序 A → B → C1 → C2，**各自独立可并行**。
+
+#### PR-A：URL 寻址收敛到 `homesdk.http`（模块 3）
+
+- **文件**：`butler/integrations/memory_agent.py`
+- **加 import**（文件头）：`from homesdk.http import ma_url, join_url`
+- **删 5 处** `url = f"{self.s.memory_agent_url.rstrip('/')}{path}"`（现 :253、:337、:414、:477、:499）
+- **改成**：`url = join_url(ma_url(), path)`
+  - `ma_url()` = `peer_url("memory-agent")`，解析顺序 `HOMESDK_PEER_MEMORY_AGENT_URL` → `MEMORY_AGENT_URL` → `MEMORY_AGENT_BASE_URL`。DB 现有 `MEMORY_AGENT_URL`（config.py:134）已是 legacy 兼容键，**compose/.env 不用动**。
+- **验收命令**：`grep -rn "http://192.168.2.200:8086" butler/` → **0**；`grep -rn "memory_agent_url.rstrip" butler/` → **0**
+
+#### PR-B：时区收敛到 `homesdk.time`（模块 6）
+
+- **6 处硬编码 +8 → house_now()/house_tz()**：
+  1. `decision/engine.py:117-119` `datetime.now(ZoneInfo("Asia/Shanghai"))` → `house_now()`
+  2. `decision/aggregator.py:43-45` 同上
+  3. `core/agent.py:86` 同上
+  4. `skills/engines/llm_decide/engine.py:85` 同上
+  5. `triggers/engine.py:16` `_CST = timezone(timedelta(hours=8))` → 删，改用 `house_tz()`
+  6. `cron_task.py:509` `now_local = dt.datetime.now() + tz_offset` → `house_now()`
+- **加 import**：`from homesdk.time import house_now, house_tz`（各文件头）；删只为这一处存在的 `from zoneinfo import ZoneInfo` / `timedelta`
+- **验收命令**：`grep -rn "ZoneInfo(\"Asia/Shanghai\")" butler/` → **0**；`grep -rn "timedelta(hours=8)" butler/` → **0**；`grep -rn "house_now" butler/` → ≥6
+- 若某处 `now` 是"纯展示、不进任何跨仓/时间轴判定"且想留本地时间，须在注释**显式登记理由**（禁止静默留硬编码）。
+
+#### PR-C1：token 收敛（butler+app → 单一 svc_ 令牌）——纯 DB 配置，无 homesdk
+
+- **文件**：`butler/config.py` + `.env`
+- **删**：`memory_agent_butler_token`、`memory_agent_app_token` 字段 + env 读取（:141、:143、:255、:256）
+- **加**：`memory_agent_svc_token` 字段 + `_env("MEMORY_AGENT_SVC_TOKEN")`
+- **改**：`butler/integrations/memory_agent.py:53-56` `_token_for`：butler/app 两面都返回 `self.s.memory_agent_svc_token`
+- **值**：svc_ 令牌 = MA 已签发（`回执_MA联动收尾_DB侧三项待办_20261006.md` §五）
+- **验收**：`grep -rn "memory_agent_butler_token\|memory_agent_app_token" butler/` → **0**；`GET /api/members` 用 svc_ 令牌 → 200
+
+#### PR-C2：鉴权头收编 `homesdk.auth`（模块 2）
+
+- **文件**：`butler/integrations/memory_agent.py`
+- **加 import**：`from homesdk.auth import require_auth_headers, require_basic_headers`
+- **basic 面**（`basic_auth()` :66-70）→ 删，改 `require_basic_headers("memory-agent")`（homesdk 读 `USER_MEMORY_AGENT`/`PASSWORD_MEMORY_AGENT`，legacy `MEMORY_AGENT_USER`/`MEMORY_AGENT_PASS` 已在表内，**compose 不用动**）
+- **mcp bearer 面**（`bearer_headers("mcp")`）→ 删，改 `require_auth_headers("memory-agent")`（读 `TOKEN_MEMORY_AGENT` → legacy `MEMORY_AGENT_TOKEN`，**不用动**）
+- **butler/app svc bearer 面** → ⚠️ **依赖 homesdk 0.3.2 给 `auth.require_auth_headers` 加 `token_key=` 覆盖参数**（规格已同步 `homesdk/doc/homesdk-0.3.2-规格.md`），落地后 `require_auth_headers("memory-agent", token_key="TOKEN_MEMORY_AGENT_SVC")`。**0.3.2 未发前此面先保留 DB 自己的 `bearer_headers`（token 源改读 C1 的 `memory_agent_svc_token`），不阻塞本 PR 其余部分。**
+- **验收**：`grep -rn "Authorization.*Bearer" butler/integrations/memory_agent.py` → 只剩 homesdk 调用（裸 header 拼装归零）；`grep -rn "basic_auth\|bearer_headers" butler/integrations/memory_agent.py` → 归零（或仅 C2 暂留 svc 面）
+
+---
+
 —— 关键决策部 · DCD

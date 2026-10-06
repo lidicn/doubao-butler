@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from zoneinfo import ZoneInfo
+
+from homesdk.time import house_now
 
 from butler.agent_trace import AgentTracer
 from butler.agent_skill import match_dialog_skill, extract_params_from_text
@@ -83,7 +84,7 @@ class Agent:
         _current_user_text.set(text)
         system = system_override or self.s.persona.system
         # 注入当前时间（Asia/Shanghai），避免模型胡编时间
-        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        now = house_now()
         weekday_cn = ["周一","周二","周三","周四","周五","周六","周日"][now.weekday()]
         system += f"\n\n【当前时间】{now.strftime('%Y年%m月%d日')} {weekday_cn} {now.strftime('%H:%M')}（Asia/Shanghai）。回答中涉及时间请以此为准，不确定时说不知道，不要编造。"
         if member:

@@ -14,6 +14,8 @@ import asyncio
 import time
 from datetime import datetime
 
+from homesdk.time import house_now, house_tz
+
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.decision.aggregator")
@@ -34,15 +36,11 @@ class DecisionAggregator:
         """返回一段多行中文状态摘要。mock 注入（测试用）覆盖真实数据。"""
         parts: list[str] = []
 
-        # 1. 时间（容器时区可能是 UTC，显式用北京时间；mock.now 可注入）
-        try:
-            from zoneinfo import ZoneInfo
-            if mock and mock.get("now"):
-                now = datetime.strptime(str(mock["now"]), "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("Asia/Shanghai"))
-            else:
-                now = datetime.now(ZoneInfo("Asia/Shanghai"))
-        except Exception:
-            now = datetime.now()
+        # 1. 时间（容器时区可能是 UTC，显式用家庭时区；mock.now 可注入）
+        if mock and mock.get("now"):
+            now = datetime.strptime(str(mock["now"]), "%Y-%m-%d %H:%M").replace(tzinfo=house_tz())
+        else:
+            now = house_now()
         wd = "一二三四五六日"[now.weekday()]
         tod = self._time_of_day(now.hour)
         parts.append(f"时间：{now.strftime('%Y-%m-%d %H:%M')}（周{wd}，{tod}）")

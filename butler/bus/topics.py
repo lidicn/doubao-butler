@@ -53,6 +53,11 @@ def adm_status_is_online(payload: Any) -> bool:
         return bool(payload.get("online"))
     return False
 
+# AF 自动化事件（契约 v2.0 §D）：DB↔AF 事件腿走 HTTP 轮询 /api/asks/pending，
+# 不订阅 af/automation/fired|failed（避免与 HTTP 轮询重复消费）。登记于此供后续切换。
+# SUB_AF_AUTOMATION_FIRED = "af/automation/fired"
+# SUB_AF_AUTOMATION_FAILED = "af/automation/failed"
+
 SUB_TOPICS = (
     SUB_TV_STATUS,
     SUB_TV_FACE,
