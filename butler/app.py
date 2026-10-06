@@ -62,7 +62,7 @@ from butler.integrations.ilink import api as ilink_routes
 from butler.api.deps import err, is_login_locked, login, ok
 from butler.bus.mqtt_client import MQTTClient
 from butler.bus.topics import (PUB_DIALOG, SUB_MA_PRESENCE, SUB_MA_DEVICE_HEALTH,
-                        adm_status_is_online)
+                        SUB_MA_INSIGHTS, adm_status_is_online)
 from butler.config import get_settings, set_settings
 from butler.core.dedup import DedupChecker
 from butler.core.dialog import DialogManager
@@ -119,6 +119,21 @@ async def _consume(rt) -> None:
             elif topic == SUB_MA_DEVICE_HEALTH:
                 # v1.6 P2-2：MA 设备健康变化（预留，当前仅日志）
                 logger.info("MA device-health: %s", payload)
+            elif topic == SUB_MA_INSIGHTS:
+                # MA联动收尾 3.4.3：MA 视觉异常/安全告警统一推送 ma/insights（不 retained）
+                # 载荷 {kind, summary, evidence[], persons[], source, ts}
+                kind = str(payload.get("kind") or "unknown")
+                summary = str(payload.get("summary") or "")[:200]
+                logger.info("MA insights: kind=%s summary=%s", kind, summary)
+                # 安全类告警（security/anomaly）走 Bark 通知，其余仅日志
+                if kind in ("security", "anomaly", "intrusion"):
+                    try:
+                        from butler.notifier.router import get_router as get_notify_router
+                        nr = get_notify_router()
+                        if nr and nr.bark:
+                            nr.bark.send(f"安全告警[{kind}]", summary)
+                    except Exception as e:
+                        logger.warning("MA insights bark notify failed: %s", e)
             elif topic.startswith("butler/inbox/"):
                 # §13.4 公共收件箱：任何仓投递 → DB 过闸（schema/限流/冷却/预算）后播出/分发
                 if getattr(rt, "inbox", None) is not None:

@@ -26,6 +26,7 @@ SUB_EVENT = f"{BUTLER_ROOT}/event/+"
 SUB_TRIGGER = f"{BUTLER_ROOT}/trigger/+"        # 技能 MQTT 触发入口（兼容通道）
 SUB_MA_PRESENCE = f"{MA_PREFIX}/presence"       # memory-agent 成员在场快照（ArcFace 视觉识别，retain）
 SUB_MA_DEVICE_HEALTH = f"{MA_PREFIX}/device-health"  # memory-agent 设备健康变化
+SUB_MA_INSIGHTS = f"{MA_PREFIX}/insights"         # memory-agent 视觉异常/安全告警（不 retained，载荷 {kind,summary,evidence[],persons[],source,ts}）
 
 # §13.4 ADM 公共收件箱（任何仓投递、DB 过闸分发）+ 生态在线探测
 SUB_INBOX_SPEAK = f"{BUTLER_ROOT}/inbox/speak"
@@ -63,6 +64,7 @@ SUB_TOPICS = (
     SUB_TRIGGER,
     SUB_MA_PRESENCE,
     SUB_MA_DEVICE_HEALTH,
+    SUB_MA_INSIGHTS,
     SUB_INBOX_SPEAK,
     SUB_INBOX_NOTIFY,
     SUB_INBOX_TV,
