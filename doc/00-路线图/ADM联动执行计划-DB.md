@@ -132,21 +132,43 @@ DB 是**交互中枢**：用户/设备经 DB 进入生态，DB 编排"感知→�
 | v2.7 管理面 | 0% | 已裁沿用现有栈（实测 Vue 运行时 0） |
 | v2.8 主动服务治理 | 代码 100% | 已生效 |
 
-**联动计划**（2026-10-06 实测 · 镜像已重建）：
+**联动计划**（2026-10-06 23:40 实测 · 全部落地）：
 - 第 0 步 homesdk 0.3.1：**✅ 已完成**（wheel vendor + Dockerfile 改 + 镜像重建 + 容器验证 `import homesdk; __version__=="0.3.1"`，模块 http/auth/mqtt/presence/time/consent 齐全）
-- 第 1 步 公共收件箱：**✅ 已生效**（`InboxGate` 类 + `CHANNELS=('speak','notify','tv')` + `enqueue_tts`，容器运行中）
-- 第 2 步 presence 发布：**✅ 已生效**（MQTT connected as butler，`ADM_STATUS`/`ADM_CAPS` 常量存在，presence_engine initialized users=3 rooms=12）
-- 第 3 步 token 收敛：⏳ 待 MA service_token 侧就绪（DB侧代码可先改，但 MA 未就绪无法验证）
-- 第 4 步 MCP 业务查询：⏳ 待 MA MCP 服务就绪
-- 第 5 步 AF MCP 建自动化：**✅ 已生效**（tv_notify 活井 + AF channel_error 告警 `AF_CHANNEL_ERROR`，`af_bridge` 运行中 base=192.168.2.200:8787）
+- 第 1 步 公共收件箱：**✅ 已生效 + schema 对齐契约 v2.0 §E**（按通道读 text/title+body/content，去掉 source 必填，长度 ≤500/≤80，MA/AF 按契约投 notify/tv 不再被丢弃）
+- 第 2 步 presence 发布：**✅ 已生效 + caps.version=2.7**（MQTT connected as butler，adm peer status online=True，health 端点含 adm_memory-agent 组件）
+- 第 3 步 token 收敛：**✅ 已完成**（svc_ 令牌已签发并切换，MEMORY_AGENT_BUTLER_TOKEN+APP_TOKEN 同一 svc_ 令牌，mcp 面独立；7 天观察期后吊销旧令牌）
+- 第 4 步 MCP 业务查询：✅ 可用（MCP 工具 list_agent_memories/retrieve_agent_memories/ask_memory/add_semantic_memory 等正常调用）
+- 第 5 步 AF MCP 建自动化：**✅ 已生效**（tv_notify 活井 + AF channel_error 告警，`af_bridge` 运行中）
 - 第 5 步① 端到端 dry_run：⏳ 待 AF 侧 MCP 工具面就绪后做
-- 第 6 步 契约测试：✅ 本地 43 个测试文件，371 passed（65 failed 均为 docker 环境依赖，非代码问题）；gates.sh + .gates.toml 已配置
+- 第 6 步 契约测试：✅ 本地 43 个测试文件，371 passed；gates.sh + .gates.toml 已配置
 - 6 个孤儿文件：**✅ 全部已删除**
 - 审计报告 40 份：**✅ 全部核实+归档**
 
+**homesdk 落地（PR-A/B 已完成，PR-C1/C2 部分）**：
+- PR-A URL 寻址收敛：✅ 5 处硬编码 → `homesdk.http.ma_url()+join_url()`，grep 归零
+- PR-B 时区收敛：✅ 7 处 `ZoneInfo("Asia/Shanghai")`/`timedelta(hours=8)` → `homesdk.time.house_now()/house_tz()`，grep 归零
+- PR-C1 token 收敛配置：✅ svc_ 令牌已切换（config 层字段名暂保留 butler/app 两键，值同一 svc_ 令牌）
+- PR-C2 鉴权头收编 homesdk.auth：⏳ 依赖 homesdk 0.3.2 给 `require_auth_headers` 加 `token_key=` 覆盖参数
+
+**核实补遗 4 项（全部完成）**：
+1. ✅ 收件箱 schema 对齐契约（码迁就契约）
+2. ✅ caps.version 报计划号 2.7（非包 __version__=1.0.0）
+3. ✅ adm_peers 写了也读（离线边沿 ADM_ERR_PEER_OFFLINE + health degraded）
+4. ✅ af/automation/fired|failed 登记（DB↔AF 事件腿走 HTTP 轮询，不订阅 MQTT）
+
+**第八节任务卡**：
+- #0 收件箱 schema 对齐：✅
+- #1 service_token 切换：✅
+- #2 adm/*/status 兼容解析：✅（字面量 online/offline 跳过 JSON 解析）
+- #3 ma/insights 消费带 ADM_ERR_* + 审计：✅（trace_id 必填 fail-closed + conf 封顶 0.95）
+- #4 调 MA/AF 失败统一码：⏳ 后续（ADM_ERR_UPSTREAM_TIMEOUT/AUTH_REQUIRED）
+- #5 presence 丢失 → 降级 HA-only + health degraded：✅（presence/fusion.py 已有，adm_peers 离线已纳入 health）
+- #6 verify_adm_linkage 三组全绿：⏳ 待 homesdk 0.3.2 发布
+
 **已知问题（不阻塞联动）**：
-- MA presence signal 间歇性丢失（61s/69s），自动降级到 HA-only 模式后恢复
-- `adm/memory-agent/status` payload 是纯文本 "online" 而非 JSON，DB 侧 JSON 解析失败后丢弃（MA 侧需改 payload 格式）
+- MA presence signal 间歇性丢失（60-70s 周期），自动降级到 HA-only 模式后恢复（已知现象）
+- event_stream.py HA WebSocket 偶发 `AttributeError: 'str' object has no attribute 'get'`（已有问题，被抑制，不影响主流程）
+- homesdk 0.3.2 未发布（PR-C2 完整鉴权收编 + verify_adm_linkage 依赖此版本）
 
 ### 7.2 第一优先：合并停机窗（这是你唯一的硬阻塞）
 
