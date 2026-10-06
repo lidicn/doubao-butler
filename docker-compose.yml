@@ -1,0 +1,78 @@
+services:
+  doubao-butler:
+    build: .
+    container_name: doubao-butler
+    restart: unless-stopped
+    ports:
+      - "8095:8095"
+    env_file:
+      - .env  # 敏感信息（密码/Token/密钥），不入库
+    environment:
+      # 基础配置（非敏感）
+      - BUTLER_HOST=0.0.0.0
+      - BUTLER_PORT=8095
+      - BUTLER_BASE_URL=http://192.168.2.200:8095
+      # TV 端（非敏感）
+      - TV_HTTP_URL=http://192.168.2.238:8080
+      - TV_MQTT_PREFIX=tv/livingroom
+      - TVPILOT_HTTP_URL=http://192.168.2.200:8090
+      # LLM 配置（非敏感，密钥在 .env）
+      - LLM_TIMEOUT=15
+      - WAKE_PHRASE=豆包管家
+      # TTS（非敏感）
+      - TTS_PRIMARY=edge-tts
+      - TTS_EDGE_VOICE=zh-CN-XiaoxiaoNeural
+      - TTS_KOKORO_URL=http://doubao-butler-kokoro:8880/v1/audio/speech
+      - TTS_KOKORO_VOICE=zm_Yunzhe
+      - TTS_SPEED=1.0
+      - TTS_VOLUME=80
+      - TTS_CACHE_ENABLED=true
+      # 对话/唤醒（非敏感）
+      - COOLDOWN_SECONDS=600
+      - ACTIVE_DIALOG_TIMEOUT=10
+      - WAITING_SECONDS=5
+      - BUTLER_SPEAK_TARGET=mqtt
+      - DEDUP_WINDOW_DAYS=7
+      - DEDUP_JACCARD_THRESHOLD=0.6
+      - DND_WINDOWS=
+      # 以下敏感配置已移至 .env（通过 env_file 加载）：
+      # BUTLER_WEB_USER / BUTLER_WEB_PASSWORD
+      # MQTT_HOST / MQTT_PORT / MQTT_USER / MQTT_PASSWORD / MQTT_CLIENT_ID
+      # GO2RTC_BASE_URL / GO2RTC_USER / GO2RTC_PASS
+      # NEW_API_URL / NEW_API_KEY / NEW_API_MODEL
+      # DOUBAO_API_URL / DOUBAO_API_KEY / DOUBAO_MODEL / DOUBAO_BASE_URL
+      # MEMORY_AGENT_URL / MEMORY_AGENT_MCP_URL / MEMORY_AGENT_TOKEN / MEMORY_AGENT_BUTLER_TOKEN
+      # HA_URL / HA_TOKEN
+      # XIAOMI_SERVICE_TOKEN / XIAOMI_USER_ID / XIAOMI_SSECURITY
+      # BARK_URL / BARK_KEY
+    volumes:
+      - ./butler:/app/butler
+      - /vol1/1000/docker/doubao-butler/data:/app/data
+      - /vol1/1000/docker/doubao-butler/tts:/app/tts
+      - /vol1/1000/books:/nas/books
+      # NAS 运维：new-api 数据库直连（三表同步）
+      - /vol1/1000/docker/new-api/data/one-api.db:/app/data/new-api.db
+      # NAS 运维：docker.sock（容器管理/重启/compose）
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 挂载宿主机 docker CLI（容器内不安装 docker 包）
+      - /usr/bin/docker:/usr/bin/docker:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 可选本地 TTS 备引擎（默认不启动，需显式 --profile kokoro）
+  # 镜像未经验证，请按需替换；启用：docker compose --profile kokoro up -d
+  kokoro:
+    profiles: ["kokoro"]
+    image: ghcr.io/remsky/kokoro-fastapi:latest
+    container_name: doubao-butler-kokoro
+    restart: unless-stopped
+    ports:
+      - "8880:8880"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

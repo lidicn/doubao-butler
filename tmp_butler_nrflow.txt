@@ -1,0 +1,117 @@
+{
+  "ok": true,
+  "source": "nr_list_flows",
+  "subflows": [
+    {
+      "id": "ed26c7cf80e9429a",
+      "name": "微信子流程",
+      "internal_node_count": 2,
+      "empty_shell": false,
+      "has_mustache_entity": false,
+      "internal_types": [
+        "api-call-service",
+        "function"
+      ]
+    },
+    {
+      "id": "c72b487538045e98",
+      "name": "小爱主动询问",
+      "internal_node_count": 7,
+      "empty_shell": false,
+      "has_mustache_entity": false,
+      "internal_types": [
+        "api-call-service",
+        "api-current-state",
+        "delay",
+        "function"
+      ]
+    },
+    {
+      "id": "b0bbc86abb2172a5",
+      "name": "Bark",
+      "internal_node_count": 6,
+      "empty_shell": false,
+      "has_mustache_entity": false,
+      "internal_types": [
+        "change",
+        "debug",
+        "function",
+        "http request"
+      ]
+    },
+    {
+      "id": "af_hist_aggregate",
+      "name": "历史·聚合统计",
+      "internal_node_count": 8,
+      "empty_shell": false,
+      "has_mustache_entity": false,
+      "internal_types": [
+        "api-get-history",
+        "catch",
+        "debug",
+        "function"
+      ]
+    },
+    {
+      "id": "af_hist_duration",
+      "name": "历史·处于某态时长",
+      "internal_node_count": 8,
+      "empty_shell": false,
+      "has_mustache_entity": false,
+      "internal_types": [
+        "api-get-history",
+        "catch",
+        "debug",
+        "function"
+      ]
+    },
+    {
+      "id": "af_hist_occurred",
+      "name": "历史·是否发生",
+      "internal_node_count": 8,
+      "empty_shell": false,
+      "has_mustache_entity": false,
+      "internal_types": [
+        "api-get-history",
+        "catch",
+        "debug",
+        "function"
+      ]
+    },
+    {
+      "id": "af_hist_state_at",
+      "name": "历史·某时刻状态",
+      "internal_node_count": 8,
+      "empty_shell": false,
+      "has_mustache_entity": false,
+      "internal_types": [
+        "api-get-history",
+        "catch",
+        "debug",
+        "function"
+      ]
+    },
+    {
+      "id": "sf_test_payload_append",
+      "name": "测试子流程-Payload追加",
+      "internal_node_count": 1,
+      "empty_shell": false,
+      "has_mustache_entity": false,
+      "internal_types": [
+        "change"
+      ]
+    },
+    {
+      "id": "sf_test_append_v2",
+      "name": "测试子流程V2-带坐标",
+      "internal_node_count": 1,
+      "empty_shell": false,
+      "has_mustache_entity": false,
+      "internal_types": [
+        "change"
+      ]
+    }
+  ],
+  "empty_shells": [],
+  "any_empty_shell": false
+}

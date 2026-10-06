@@ -1,0 +1,9 @@
+{
+  "id": "reminder_find",
+  "name": "提醒找人引擎",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "ReminderFindEngine",
+  "description": "到点提醒：全屋摄像头找目标成员 → 在所在房间小爱播报；找不到则 Bark 兜底。payload 需含 member/text。",
+  "modes": ["find"]
+}

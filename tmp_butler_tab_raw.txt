@@ -1,0 +1,593 @@
+{
+  "ok": true,
+  "flow_id": "d5a38c4777f84f35",
+  "flow_json": {
+    "nodes": [
+      {
+        "id": "0c918c7fd1527612",
+        "type": "inject",
+        "z": "d5a38c4777f84f35",
+        "name": "触发聊天",
+        "props": [
+          {
+            "p": "payload"
+          },
+          {
+            "p": "topic",
+            "vt": "str"
+          }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "你好，豆包！",
+        "payloadType": "str",
+        "x": 360,
+        "y": 220,
+        "wires": [
+          [
+            "f9ae795f7d87f853"
+          ]
+        ]
+      },
+      {
+        "id": "f9ae795f7d87f853",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "构建 Chat 请求",
+        "func": "msg.payload = {\n    \"model\": \"doubao\",\n    \"messages\": [\n        {\"role\": \"user\", \"content\": msg.payload}\n    ]\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 570,
+        "y": 220,
+        "wires": [
+          [
+            "d68099f7f42078ce"
+          ]
+        ]
+      },
+      {
+        "id": "d68099f7f42078ce",
+        "type": "http request",
+        "z": "d5a38c4777f84f35",
+        "name": "POST Chat API",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "http://192.168.2.200:9090/v1/chat/completions",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 790,
+        "y": 220,
+        "wires": [
+          [
+            "4424c1fa9e31dd1a",
+            "fca50105bb2cafe4"
+          ]
+        ]
+      },
+      {
+        "id": "4424c1fa9e31dd1a",
+        "type": "debug",
+        "z": "d5a38c4777f84f35",
+        "name": "原始响应",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1000,
+        "y": 220,
+        "wires": []
+      },
+      {
+        "id": "fca50105bb2cafe4",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "提取回复",
+        "func": "const choices = msg.payload?.choices;\nif (choices && choices.length > 0) {\n    msg.payload = choices[0].message.content;\n} else if (msg.payload?.error) {\n    msg.payload = \"API 错误：\" + msg.payload.error.message;\n} else {\n    msg.payload = \"响应异常：\" + JSON.stringify(msg.payload);\n}\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1000,
+        "y": 280,
+        "wires": [
+          [
+            "99f817834eee6976",
+            "hub_chat_resp"
+          ]
+        ]
+      },
+      {
+        "id": "99f817834eee6976",
+        "type": "debug",
+        "z": "d5a38c4777f84f35",
+        "name": "提取的回复",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1220,
+        "y": 280,
+        "wires": []
+      },
+      {
+        "id": "d362ad652576126e",
+        "type": "comment",
+        "z": "d5a38c4777f84f35",
+        "name": "聊天补全 (Chat Completions)",
+        "info": "doubao2api 本地代理，兼容 OpenAI API。\n无需 API Key，模型名用 \"doubao\"。\n\n端点：http://192.168.2.200:9090/v1/chat/completions\n模型：doubao / doubao-quick",
+        "x": 360,
+        "y": 160,
+        "wires": []
+      },
+      {
+        "id": "6556bd25cea14618",
+        "type": "comment",
+        "z": "d5a38c4777f84f35",
+        "name": "文生图 (Image Generations)",
+        "info": "doubao2api 文生图，无需 API Key。\n\n端点：http://192.168.2.200:9090/v1/images/generations\n模型：doubao-seedream-3-0-250715\n\n返回的 URL 可直接在浏览器打开。",
+        "x": 360,
+        "y": 360,
+        "wires": []
+      },
+      {
+        "id": "image-inject",
+        "type": "inject",
+        "z": "d5a38c4777f84f35",
+        "name": "触发生图",
+        "props": [
+          {
+            "p": "payload"
+          },
+          {
+            "p": "topic",
+            "vt": "str"
+          }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "一只可爱的布偶猫在草地上打滚",
+        "payloadType": "str",
+        "x": 470,
+        "y": 840,
+        "wires": [
+          [
+            "image-prepare"
+          ]
+        ]
+      },
+      {
+        "id": "image-prepare",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "构建生图请求",
+        "func": "msg.payload = {\n    \"model\": \"doubao-seedream-3-0-250715\",\n    \"prompt\": msg.payload,\n    \"n\": 1,\n    \"size\": \"1024x1024\"\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 680,
+        "y": 840,
+        "wires": [
+          [
+            "image-request"
+          ]
+        ]
+      },
+      {
+        "id": "image-request",
+        "type": "http request",
+        "z": "d5a38c4777f84f35",
+        "name": "POST 生图 API",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "http://192.168.2.200:9090/v1/images/generations",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 900,
+        "y": 840,
+        "wires": [
+          [
+            "image-debug",
+            "image-extract"
+          ]
+        ]
+      },
+      {
+        "id": "image-debug",
+        "type": "debug",
+        "z": "d5a38c4777f84f35",
+        "name": "原始响应",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1110,
+        "y": 840,
+        "wires": []
+      },
+      {
+        "id": "image-extract",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "提取图片URL",
+        "func": "const data = msg.payload?.data;\nif (data && data.length > 0) {\n    msg.url = data[0].url;\n    msg.payload = data[0].url;\n} else if (msg.payload?.error) {\n    msg.payload = \"生图失败：\" + msg.payload.error.message;\n} else {\n    msg.payload = \"响应异常：\" + JSON.stringify(msg.payload);\n}\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1110,
+        "y": 900,
+        "wires": [
+          [
+            "image-download",
+            "hub_img_resp"
+          ]
+        ]
+      },
+      {
+        "id": "image-download",
+        "type": "http request",
+        "z": "d5a38c4777f84f35",
+        "name": "下载图片",
+        "method": "GET",
+        "ret": "bin",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 1330,
+        "y": 940,
+        "wires": [
+          [
+            "image-viewer"
+          ]
+        ]
+      },
+      {
+        "id": "image-viewer",
+        "type": "image viewer",
+        "z": "d5a38c4777f84f35",
+        "name": "",
+        "width": 320,
+        "data": "payload",
+        "dataType": "msg",
+        "active": true,
+        "x": 1520,
+        "y": 940,
+        "wires": [
+          []
+        ]
+      },
+      {
+        "id": "image-url",
+        "type": "debug",
+        "z": "d5a38c4777f84f35",
+        "name": "图片URL",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1330,
+        "y": 880,
+        "wires": []
+      },
+      {
+        "id": "hub_chat_in",
+        "type": "http in",
+        "z": "d5a38c4777f84f35",
+        "name": "LLM /llm/chat",
+        "url": "/llm/chat",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 330,
+        "y": 620,
+        "wires": [
+          [
+            "hub_chat_orch"
+          ]
+        ]
+      },
+      {
+        "id": "hub_chat_orch",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "中枢编排 chat",
+        "func": "// 中枢 /llm/chat 编排：集中人设 + 记忆\nconst body = (typeof msg.payload === \"object\" && msg.payload) ? msg.payload : {};\nconst user = body.user || msg.user || \"朋友\";\nconst scenario = body.scenario || \"default\";\nconst userMsg = body.user_msg || body.message || \"（打招呼）\";\nconst model = body.model || \"doubao\";\nconst sysOverride = body.system || null;\n\nconst PERSONAS = {\n  \"大佬\": \"40岁，喜欢用飞牛TV看电视剧和电影，偶尔玩Xbox。用轻松自然的语气，1-2句话打招呼，可顺口问要不要继续看剧。\",\n  \"凯文\": \"12岁男孩，喜欢玩Xbox游戏。用热情、孩子气的口语打招呼，1-2句，可以问要不要玩会儿游戏。\",\n  \"爱美丽\": \"10岁女孩，喜欢听歌。用温柔可爱的语气，1-2句，可以问想听什么歌。\",\n};\nconst persona = PERSONAS[user] || \"家里的成员。用亲切自然的口语打招呼，1-2句话，像家人闲聊。\";\n\nconst now = new Date(); const h = now.getHours();\nconst tod = h<6?\"凌晨\":h<11?\"早上\":h<14?\"中午\":h<18?\"下午\":\"晚上\";\nconst timeHint = \"当前是\" + tod + \"，可以结合时间自然带一句。\";\nconst system = sysOverride || (\"你是家里AI助手，正在和\" + user + \"聊天。\" + persona + \"不要自我介绍，直接说话。\" + timeHint);\n\nconst key = \"llm_\" + scenario + \"_\" + user;\nlet history = (flow.get(key) || []).slice(-6);\n\nmsg.scenario = scenario; msg.user = user; msg.user_msg = userMsg;\nmsg.payload = {\n  model: model,\n  messages: [\n    {role:\"system\", content: system},\n    ...history,\n    {role:\"user\", content: userMsg}\n  ]\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 620,
+        "wires": [
+          [
+            "d68099f7f42078ce"
+          ]
+        ]
+      },
+      {
+        "id": "hub_chat_err",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "chat 错误",
+        "func": "msg.errorReply = true;\nmsg.payload = \"模型服务暂时不可用，请稍后再试\";\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 730,
+        "y": 700,
+        "wires": [
+          [
+            "hub_chat_resp"
+          ]
+        ]
+      },
+      {
+        "id": "hub_chat_resp",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "chat 响应",
+        "func": "// 仅处理 HTTP 请求；手动测试(msg.res 无)直接丢弃\nif (!msg.res) return null;\nlet reply;\nif (msg.errorReply) {\n  reply = (typeof msg.payload === \"string\") ? msg.payload : \"模型服务暂时不可用\";\n} else {\n  reply = (typeof msg.payload === \"string\") ? msg.payload : \"响应异常\";\n}\nif (!msg.errorReply && msg.user) {\n  const key = \"llm_\" + (msg.scenario||\"default\") + \"_\" + msg.user;\n  let hist = (flow.get(key) || []).slice();\n  if (msg.user_msg) hist.push({role:\"user\", content: msg.user_msg});\n  hist.push({role:\"assistant\", content: reply});\n  if (hist.length > 16) hist = hist.slice(hist.length - 16);\n  flow.set(key, hist);\n}\nmsg.payload = {reply: reply};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 950,
+        "y": 620,
+        "wires": [
+          [
+            "hub_chat_httpresp"
+          ]
+        ]
+      },
+      {
+        "id": "hub_chat_httpresp",
+        "type": "http response",
+        "z": "d5a38c4777f84f35",
+        "name": "返回 chat",
+        "statusCode": "",
+        "headers": {},
+        "x": 1150,
+        "y": 620,
+        "wires": []
+      },
+      {
+        "id": "hub_img_in",
+        "type": "http in",
+        "z": "d5a38c4777f84f35",
+        "name": "LLM /llm/image",
+        "url": "/llm/image",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 330,
+        "y": 860,
+        "wires": [
+          [
+            "hub_img_orch"
+          ]
+        ]
+      },
+      {
+        "id": "hub_img_orch",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "图生图编排",
+        "func": "const body = (typeof msg.payload===\"object\"&&msg.payload)?msg.payload:{};\nmsg.payload = body.prompt || \"一只可爱的猫\";\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 860,
+        "wires": [
+          [
+            "image-request"
+          ]
+        ]
+      },
+      {
+        "id": "hub_img_resp",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "image 响应",
+        "func": "if (!msg.res) return null;\nmsg.payload = {image_url: (typeof msg.payload === \"string\") ? msg.payload : \"\"};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 950,
+        "y": 860,
+        "wires": [
+          [
+            "hub_img_httpresp"
+          ]
+        ]
+      },
+      {
+        "id": "hub_img_httpresp",
+        "type": "http response",
+        "z": "d5a38c4777f84f35",
+        "name": "返回 image",
+        "statusCode": "",
+        "headers": {},
+        "x": 1150,
+        "y": 860,
+        "wires": []
+      },
+      {
+        "id": "hub_vis_in",
+        "type": "http in",
+        "z": "d5a38c4777f84f35",
+        "name": "LLM /llm/vision",
+        "url": "/llm/vision",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 330,
+        "y": 1080,
+        "wires": [
+          [
+            "hub_vis_orch"
+          ]
+        ]
+      },
+      {
+        "id": "hub_vis_orch",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "图生文编排",
+        "func": "const body = (typeof msg.payload===\"object\"&&msg.payload)?msg.payload:{};\nconst prompt = body.prompt || \"描述这张图片\";\nconst img = body.image || \"\";\nlet imgContent;\nif (/^https?:\\/\\//.test(img)) imgContent = {type:\"image_url\", image_url:{url: img}};\nelse imgContent = {type:\"image_url\", image_url:{url: \"data:image/jpeg;base64,\" + img}};\nmsg.payload = {\n  model: body.model || \"doubao\",\n  messages: [ {role:\"user\", content: [ {type:\"text\", text: prompt}, imgContent ]} ]\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 1080,
+        "wires": [
+          [
+            "hub_vis_http"
+          ]
+        ]
+      },
+      {
+        "id": "hub_vis_http",
+        "type": "http request",
+        "z": "d5a38c4777f84f35",
+        "name": "POST 视觉",
+        "method": "POST",
+        "ret": "obj",
+        "url": "http://192.168.2.200:9090/v1/chat/completions",
+        "tls": "",
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "x": 730,
+        "y": 1080,
+        "wires": [
+          [
+            "hub_vis_ext"
+          ]
+        ]
+      },
+      {
+        "id": "hub_vis_ext",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "视觉提取",
+        "func": "const c = msg.payload && msg.payload.choices;\nif (c && c[0] && c[0].message && c[0].message.content) msg.payload = c[0].message.content;\nelse if (msg.payload && msg.payload.error) msg.payload = \"图像理解失败\";\nelse msg.payload = \"响应异常\";\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 930,
+        "y": 1080,
+        "wires": [
+          [
+            "hub_vis_resp"
+          ]
+        ]
+      },
+      {
+        "id": "hub_vis_resp",
+        "type": "function",
+        "z": "d5a38c4777f84f35",
+        "name": "vision 响应",
+        "func": "if (!msg.res) return null;\nmsg.payload = {reply: (typeof msg.payload === \"string\") ? msg.payload : \"图像理解失败\"};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1130,
+        "y": 1080,
+        "wires": [
+          [
+            "hub_vis_httpresp"
+          ]
+        ]
+      },
+      {
+        "id": "hub_vis_httpresp",
+        "type": "http response",
+        "z": "d5a38c4777f84f35",
+        "name": "返回 vision",
+        "statusCode": "",
+        "headers": {},
+        "x": 1330,
+        "y": 1080,
+        "wires": []
+      }
+    ]
+  },
+  "node_count": 31,
+  "source": null,
+  "label": "豆包管家",
+  "disabled": false
+}

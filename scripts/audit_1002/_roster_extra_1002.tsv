@@ -1,0 +1,17 @@
+num	ids	severity	file	line_loc	mechanism	source_report	report_file_line
+201	T-1 (D3)	P0	butler/core/dialog.py	butler/core/dialog.py:661-730（第 672 行提前 return）	`dialog.speak` 提前 return → 防重复/落库/SSE 全丢	doubao-butler-第三轮审计-动态实验与链路追踪.md	266
+202	T-2 (D3)	P1	butler/triggers/engine.py	butler/triggers/engine.py:81、72-73	trigger 冷却非原子写 + 静默归零 → 触发风暴	doubao-butler-第三轮审计-动态实验与链路追踪.md	271
+203	T-3 (D3)	P1	（报告未给行号）	报告未给行号（入口链 on_wakeup→speak_as_role→_emit_devices）	主对话路径绕过 TTSQueue，保护空转	doubao-butler-第三轮审计-动态实验与链路追踪.md	272
+204	T-4 (D3)	P1	dialog.py	dialog.py:670（另列 app.py:730、briefing.py:214、tts_routes.py:412）	`override_quiet=True` 使夜间静默失效	doubao-butler-第三轮审计-动态实验与链路追踪.md	273
+205	N-1 (RT2)	P1	butler/app.py	butler/app.py:242；app.py:929	`TTS_DIR` 不存在 → 导入期崩溃	doubao-butler-第二轮审计-运行时验证与测试实证.md	212
+206	N-2 (RT2)	P1	butler/integrations/deskpilot.py、butler/integrations/tvpilot.py	butler/integrations/deskpilot.py（_get/_post/health）、butler/integrations/tvpilot.py:38/43/49/55/75	DeskPilot/TVPilot 不校验 HTTP 状态码，403 误报健康	doubao-butler-第二轮审计-运行时验证与测试实证.md	213
+207	N-3 (RT2)	P1	config.py	config.py（报告未给行号）	15 个硬编码内网 URL + 门禁名单过期 8 个	doubao-butler-第二轮审计-运行时验证与测试实证.md	214
+208	N-4 (RT2)	P2	pytest.ini/pyproject.toml/setup.cfg/conftest.py	pytest.ini/pyproject.toml/setup.cfg/conftest.py（均缺失，报告未给行号）	无 pytest 配置 → 10 个 async 测试在全新 checkout 下失败	doubao-butler-第二轮审计-运行时验证与测试实证.md	215
+209	N-5 (RT2)	P2	（报告未给行号，MaskingFilter/_SENSITIVE_KEYS）	报告未给行号（MaskingFilter/_SENSITIVE_KEYS）	日志脱敏含裸 key → 过度脱敏损害排障	doubao-butler-第二轮审计-运行时验证与测试实证.md	216
+210	N-6 (RT2)	P2	test_mcp_server_contract（报告未给行号）	报告未给行号（test_mcp_server_contract）	test_mcp_server_contract 路径断言在 /data/ 下误报	doubao-butler-第二轮审计-运行时验证与测试实证.md	217
+211	N-7 (RT2)	P2	test_v25_pytest_shim（报告未给行号）	报告未给行号（test_v25_pytest_shim）	test_v25_pytest_shim 基础设施过期（2 个失败）	doubao-butler-第二轮审计-运行时验证与测试实证.md	218
+212	P0-8 (R5)	P0	butler/tts/adapter.py	butler/tts/adapter.py:16-22（另引 butler/devices.py 种子注册表）	房间→设备映射：三份真源 + 覆盖不全 + 2 个臆造键 → 4/7 房间播报 100% 失败	doubao-butler-第五轮审计报告.md	57
+213	P0-9 (R5)	P0	butler/bus/inbox.py、butler/core/dialog.py	butler/bus/inbox.py:273-283、butler/core/dialog.py:670-673	「入队成功」被当作「播出成功」→ 账实不符，故障完全静默	doubao-butler-第五轮审计报告.md	97
+214	P1-19 (R5)	P1	butler/static/app.js、butler/api/skill_routes.py	前端 butler/static/app.js:70、:82；后端 butler/api/skill_routes.py:1057	前端调用后端不存在的路由 /api/skill/runs → 技能运行日志面板永久空白	doubao-butler-第五轮审计报告.md	160
+215	P1-20 (R5)	P1	butler/notify/router.py、butler/app.py	butler/notify/router.py:171,181,280；butler/app.py:289	NotifyRouter 的 room_entities 为空，兜底 tts.doubao_tts 未在部署清单中声明	doubao-butler-第五轮审计报告.md	181
+216	P2-17 (R5)	P2	dialog.py（报告未给行号）	dialog.py speak_as_role（报告未给行号）	speak_as_role 返回值形状不一致——同一字段有时是 bool、有时是 dict	doubao-butler-第五轮审计报告.md	206

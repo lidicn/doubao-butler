@@ -1,0 +1,9 @@
+{
+  "id": "ha_action",
+  "name": "HA 动作执行引擎",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "HAActionEngine",
+  "description": "执行 Home Assistant 服务调用（开电视/切台/开关设备等动作类技能）。brain 配置 domain/service/entity/data 模板，支持 {{member}}/{{room}}/{{channel}} 占位符从 payload 渲染。执行成功返回空文本（静默，不发声）。",
+  "modes": ["service"]
+}

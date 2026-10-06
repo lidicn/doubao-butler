@@ -1,0 +1,185 @@
+num	bucket	ids	sev	file_loc	mechanism	sources	id_hits	file_hits
+1	B	P0-1,T-01	P0 / P0 / S1	butler/core/dialog.py:232-291 (R1) / 261-291 (RS) / 276,280,287,289 (RB)	技能草稿确认分支在 `role` 赋值前引用 `role`，确认/取消 100% 抛 NameError/UnboundLocalError	R1, RS, RB		dialog.py
+2	B	P0-2	P0	butler/app.py:546-750	任一作业注册失败 → `sched` 未绑定 → `sched.start()` NameError → 整个定时系统静默全灭	R1		app.py
+3	B	M-21,P0-2,P0-3,T-10	P0 / P0 / S3	butler/store/db.py（get_conn/_conn/_lock；db.py:18-33,230-232）	SQLite 全局单连接跨线程共享：双检竞态、半初始化连接可见、execute/commit 无锁	R1, RS, RB		db.py
+4	A	P0-4	P0	butler/tts/nowvoice_tts.py:71-75	最坏 5×(30+2)=160s 同步下载阻塞单消费者播报队列	R1	P0-4	nowvoice_tts.py
+5	B	P0-1	P0	butler/tts/nowvoice_client.py 缺失（nowvoice_tts.py:13；app.py:85→manager.py:18）	模块文件不存在 → import 期 ModuleNotFoundError → 服务 crash-loop	RO		app.py,manager.py,nowvoice_client.py,nowvoice_tts.py
+6	C	P0-2	P0	butler/config.py:31-37(:36)	`_env_bool` 三元两分支均 False → 布尔配置永不为 True	RO		
+7	A	P1-1,T-02	P1 / P1 / S2	butler/core/dialog.py:328-359 (R1) / 358-377 (RS) / 323,353,367 (RB)	pending 技能描述过期分支无 return → 普通对话被误当技能描述喂生成器	R1, RS, RB	P1-1	dialog.py
+8	A	P1-3	P1	dialog.py L229/342/354/376/391/411/449/505、api/decision_routes.py、cron_task.py、quarantine.py、ask.py、health_api.py、singleton.py（16 处）	`asyncio.create_task` 返回值被丢弃 → Task 可能被 GC，播报/任务静默丢失	R1 (R2 验证)	P1-3	cron_task.py,dialog.py,health_api.py,quarantine.py,singleton.py
+9	B	P1-4	P1	butler/app.py L550/554/559…、TriggerRegistry.wrap_scheduler_job、butler/scheduler/*	`run_coroutine_threadsafe` 的 Future 从不取回 → 16 个定时任务异常全静默	R1, RS		app.py
+10	B	B-22,P1-19,S-18	P1 / S3	triggers/registry.py:230-241 + app.py:518-560	`mark_success` 包的是派发而非执行 → `/api/triggers/health` 假绿	RO, RB		app.py,registry.py
+11	A	D-13,P1-17,P1-18,P1-5,P2-4	P1	app.py:471、finally L780-794 (R1) / :747-763 (RO) / app.py:780-794 (R4)	关停不收尾：presence 轮询不取消、consumer.cancel 未 await、af_bridge/event_stream/playback_queue/iLink/token 刷新/媒体停止任务残留	R1, RS, R4, RO, RB	P1-17,P1-18,P1-5	app.py
+12	A	P1-6	P1	butler/tts/queue.py（_clear_breaker 仅 enqueue 侧）	播放 P1 不清熔断冷却 → 冷却结束立刻再熔断、反复横跳	R1	P1-6	queue.py
+13	A	P1-2	P1	butler/tts/queue.py（_note_trigger("playback")）	熔断对成功出队计数 → 正常 7 条对话即静默 25 秒	RS	P1-2	queue.py
+14	B	P1-7	P1	butler/tts/manager.py（_cache_hit key）	TTS 缓存 key 不含 speed → 语速设置静默失效	R1		manager.py
+15	A	P1-8	P1	butler/tts/nowvoice_tts.py（synthesize）	speed 参数被丢弃 + is_available 恒真 → 健康检查/UI 误报引擎可用	R1	P1-8	nowvoice_tts.py
+16	A	P1-12,P1-3,P1-9	P1	butler/bus/mqtt_client.py（_on_message，:87-89）；RO 另指 app.py:94-123 单消费者队头阻塞	`except asyncio.QueueFull` 是死代码（异常发生在 loop 线程）→ 消息静默丢弃无计数	R1, RS, RO	P1-3	app.py
+17	A	P0-4,P1-10	P1 / P0	butler/tts/queue.py（enqueue_item 过载分支；overload_threshold）	过载清空队列时把触发过载的当前消息也丢弃；RS 另称无差别清 P1 告警+静默 600s	R1, RS	P0-4,P1-10	queue.py
+18	A	P1-11	P1	butler/tts/playback_queue.py（_ensure_worker）	worker 异常退出后不重建 → 该设备永久哑火	R1	P1-11	playback_queue.py
+19	A	P1-6	P1	butler/tts/queue.py vs playback_queue.py；旁路：proactive/engine、timeseries/anomaly、af_bridge、morning/routine、notifier/router(via="direct")	两套 TTS 队列并存，5 条旁路绕过静默期/去重/优先级/过载/熔断保护	RS	P1-6	playback_queue.py,queue.py
+20	A	P1-8	P1	butler/tts/queue.py vs butler/core/dialog.py:_est_speak_secs	播报时长两处估算不一致 → 长句尾部被 media_stop 截断	RS	P1-8	dialog.py,queue.py
+21	B	P1-9	P1	butler/api/*（_login）、butler/app.py（SSE 广播）	登录无速率限制（可爆破）；SSE 订阅者队列满静默丢事件	RS		app.py
+22	A	P1-10	P1	butler/bus/mqtt_client.py（wait_connected(15)）	MQTT 连接等待超时后照常启动 → 启动期事件全丢、无降级标志	RS	P1-10	
+23	A	M-15,P1-14,P1-2,P1-7,T-09	P1	store/db.py 全局；repo.py 93 处调用点仅 1 处包裹；memory_routes.py:433；skills/runner.py:180；memory/feeder.py:86-155 等 9 处；decision/engine.py:138；event_stream.py:194,240-249；config_routes.py:19,28；doubao_webhook.py:748-767；audiobook_routes；core/tools.py:1131-1796；aggregator	async 上下文内同步 SQLite/文件 IO（busy_timeout=5000）阻塞事件循环	R1, RS, R3, RO, RB	P1-14,P1-2	config_routes.py,db.py,doubao_webhook.py,engine.py,event_stream.py,memory_routes.py,repo.py,runner.py,tools.py
+24	B	M-11,P1-7	P1	9 处：store/db.py:29-31、decision_store.py:28-30、notification_store、pwa_chat_store、user_location、ha_tools/whitelist、timeseries/store、proactive/engine:52-53、task_store:36-37；repo.py:27-33、extractor.py:317-327	`_conn` 先缓存后 `_init`（坏连接永久缓存）+ 全树 0 处 rollback → 事务悬挂带写锁	RO, RB		db.py,decision_store.py,extractor.py,repo.py
+25	A	P2-1	P2	tts/queue.py（pause(duration_s=None)）	duration 缺省 → float("inf") → 调用方漏传参数即永久静音	R1	P2-1	queue.py
+26	B	P2-2	P2	tts/queue.py（run()）	无消息时每 50ms 唤醒 busy-loop 空转	R1		queue.py
+27	B	P2-3	P2	core/dialog.py（suppress_echo）	回声抑制在合成前按 len*0.4+6 估算，合成慢时抑制提前结束 → 自问自答死循环	R1		dialog.py
+28	B	P2-5	P2	app.py:264	async lifespan 内 subprocess.run(timeout=10) 最多阻塞事件循环 10 秒	R1		app.py
+29	B	P2-19,P2-6	P2	app.py:932-965（RO: app.py:901-934）	自进化 daemon 线程 `while True`+time.sleep、只 except Exception → 静默死亡后任务永久消失	R1, RO		app.py
+30	A	P2-8	P2	app.py:935-965 + scheduler self_evolve_daily(03:45)	自进化分析被 daemon 线程与 APScheduler 各调度一次，重复跑两遍	RS	P2-8	app.py
+31	B	P1-15,P2-7	P2 / P1	app.py:348/745 (R1)；app.py:332 vs :712 (RO)	CronTaskExecutor 构造时 `scheduler=None`（赋值在其后），补救逻辑抛异常则 cron 全不加载	R1, RO		app.py
+32	A	P2-8	P2	roles/store.py:1、tts/edge_tts.py:1	文件首字节 U+FEFF BOM，动态 exec/部分 lint 链路会炸	R1	P2-8	edge_tts.py,store.py
+33	B	P2-9	P2	全仓 30+ 处 except-pass（ha.py:619 等、doubao_webhook.py:422 等）；599 处盲捕 Exception；fake-ok-const 8 处（含 dialog.py 3 处）	异常吞没面过大，把 NameError 级硬 bug 伪装成「不回应」	R1, RS (R2 验证)		dialog.py,doubao_webhook.py,ha.py
+34	B	P2-10	P2	core/dialog.py:311	presence_rooms 越界只 log 不拒绝，语义矛盾	R1		dialog.py
+35	A	NEW-1,P0-3	🔴 / P0	butler/api/config_routes.py:18-30(:23)	模块未定义 logger → config.json 损坏时 except 内 NameError，配置接口 500 且无法自愈	R2, RS	NEW-1	config_routes.py
+36	A	NEW-2,P2-1,P2-5	🟠 / P2	butler/integrations/ha.py:311-331 (R2) / :308-331 (RS)；RS P2-5: ha.py:337-349	`def` 行丢失，HA notify 兜底方法成为 return 后死代码（message 未定义）→ 小爱播报无降级链	R2, RS	P2-1	ha.py
+37	C	NEW-3,P2-2	🟠 / P2	butler/integrations/docker_tools.py:100-115(:108)	`time.sleep(2) if False else None` 恒假死代码且 time 未导入 → restart() 不等待，读到过渡态误判	R2, RS		
+38	B	NEW-4,P2-7	🟠 / P2	store/repo.py:265,272,363,554、command_store.py:229、task_store.py:155、tools/schedule.py:199、triggers/audit.py:136,168 (R2)；另 db.py:490 (RS)	SQL f-string 拼接（B608×9）→ 特殊字符即 OperationalError，注入面未逐条确认	R2, RS		db.py,repo.py,schedule.py,task_store.py
+39	B	NEW-5,P2-3,P2-33	🟡 / P2	butler/store/repo.py:145（RO 记 :155）	注解引用未导入的 sqlite3（靠 `from __future__ import annotations` 侥幸不炸）→ 类型检查/get_type_hints 即崩	R2, RS, RO		repo.py
+40	A	NEW-6,P2-22	🟡 / P2	api/skill_routes.py:979（RO: 953 vs 979）	`skill_mock_test` 重复定义，后者静默覆盖前者	R2, RO	NEW-6	skill_routes.py
+41	A	NEW-6,P2-34	🟡 / P2	app.py:19+51（RO: 20/51 + 36/44；:204 与 :215 两次 decision_routes.routes()）	audiobook/decision routes 重复 import，同一批 Route 重复注册	R2, RO	NEW-6,P2-34	app.py
+42	A	NEW-6	🟡	core/scene_infer.py:65	循环变量 `re` 遮蔽顶层 `import re` → 函数内后续 `re.xxx` 全 AttributeError	R2	NEW-6	
+43	B	P0-5,P2-13	P0	butler/core/aliases.py:66-75 + tools/registry.py:1048-1059	设备别名学习「只写不读」：match() 全仓零调用，别名库永不生效；match() 遍历时还不持锁	R3		registry.py
+44	B	P1-12	P1	butler/skills/store.py:146-165、butler/triggers/store.py:75-92	落盘在锁外 + tmp 固定名 → 并发保存写坏 JSON，重启后技能/触发器静默消失	R3		store.py
+45	A	P1-13	P1	butler/roles/store.py:175-180、butler/devices.py:171-178	无锁 + 裸 write_text 非原子 → 崩溃留截断 JSON，用户角色/设备配置静默重置为出厂	R3	P1-13	store.py
+46	C	P1-15	P1	butler/core/aliases.py:31-33	_save 非原子全量覆盖，损坏即别名归零、无备份无告警	R3		
+47	C	B-19,P2-11,P2-35	P2	24 个文件硬编码 /app/data（aliases.py:13、deps.py:34、skills/versions.py、triggers/audit.py、newapi.py；self_evolve.py:31-37；ilink/bridge.py:42）	路径与 Settings.data_dir 脱钩 → 改 DATA_DIR 即数据分裂；self_evolve 另缺 try/finally	R3, RO, RB		
+48	A	P2-12	P2	aliases.py:59-62	关键词一次冲突即永久带 conflicts、永久不可匹配，列表无上限增长	R3	P2-12	
+49	A	P0-6,P1-17,T-03	P0 / S2 / P1	llm.py:71-106,163-172 + agent.py:194-208(204) + dialog.py:434(412)	LLM 重试链最坏 ≈270s，time_budget 只在循环头检查、外层重试翻倍、调用点无 wait_for → 预算形同虚设	R4, RB, RO	P1-17	dialog.py
+50	A	P1-17	P1	tts/edge_tts.py:42-47；skills/runner.py:271-280	`proc.communicate()` 与 `_out_lock` acquire 均无超时 → CLI 僵死/锁持有者卡住则永久挂起	RO	P1-17	edge_tts.py,runner.py
+51	B	P1-16	P1	af_bridge.py:216、briefing.py:97,114、tts_baidu.py:32,57、xiaomi_ear.py:70、autoflow_propose/engine.py:204,268	8 处 aiohttp.ClientSession 未设 timeout（默认 300s）→ 简报延迟/播报雪崩	R4		af_bridge.py,engine.py,xiaomi_ear.py
+52	A	P1-18	P1	butler/api/stream_routes.py:18-36（+ app.py:105-109、runtime.py:52）	SSE 队列注册在生成器外、注销在内 → 客户端早断即永久泄漏僵尸订阅者	R4	P1-18	app.py
+53	B	P2-14	P2	core/xiaomi_ear.py:104-105,130	`_echo_cooldown`/`_role_mode` 定义在类体 → 实例共享；cooldown 只写不清理	R4		xiaomi_ear.py
+54	A	P1-13,P2-15	P2 / P1	xiaomi_ear.py:75-79、event_stream.py:127-132	WS 握手后 `receive_json()` 无超时 → HA 不回帧即永久挂起、永不重试	R4, RO	P1-13,P2-15	event_stream.py,xiaomi_ear.py
+55	A	P1-13	P1	event_stream.py:108-116,124-149,191-192；xiaomi_ear.py:41-49,62-65,85-101	对端干净关闭时零退避紧密重连；except Exception: continue 连日志都不写	RO	P1-13	event_stream.py,xiaomi_ear.py
+56	A	MA-04,P1-1	P1 / S1	dialog.py:389-396（RB 连带 simple_rules.py:50-75；RB 注：另一份第一轮 P0-3 已报未修）	`self.rt` 从未赋值 → 非小爱来源设备控制必 AttributeError 被吞，永不执行；simple_rules 的 action 还缺 entity_id/data	RO, RB	P1-1	dialog.py
+57	A	B-06,P1-2	P1 / S1	guard/push_guard.py:242-344（RO: :325-331,tts_pop :334）+ api/tts_routes.py:263-289	`tts_pop()` 全仓 0 调用 → TTS 队列只进不出，满 10 条后过载闩锁每次自续 300s → 播报周期性静默	RO, RB	P1-2	push_guard.py,tts_routes.py
+58	A	P1-3	P1	core/cron_task.py:670-689	`sync_job` 在线程池里 `asyncio.get_event_loop()` 必然 RuntimeError → 用户 cron 任务 100% 不执行	RO	P1-3	cron_task.py
+59	B	B-01,P1-4	P1 / S1	app.py:559-568 (RO) / 562-568 (RB)；RB 注与「第二轮 V-3」重复	决策心跳以 `next_run_time=None`（=暂停态）注册且无 resume → DecisionEngine.tick() 永不执行，且产生修不好的假告警	RO, RB		app.py
+60	A	P1-5	P1	presence/__init__.py:139 只有 snapshot()；调用点 modes/auto_switch.py:139、morning/routine.py:93、proactive/engine.py:391,407、timeseries/anomaly.py:154,282	`get_snapshot()` 不存在 → 6 处定位条件恒 False 且被 logger.debug 吞，自动功能永不生效	RO	P1-5	anomaly.py,engine.py,routine.py
+61	A	P1-6	P1	app.py:660-661	每日 03:45 任务 import 不存在的 `analyze_candidates` → ImportError 被吞，自进化分析从未跑过	RO	P1-6	app.py
+62	A	P1-8,S-09	P1 / S2	triggers/engine.py:128,313,384（RO 另 :318）	冷却时间戳用 time.time() 而 status() 用 time.monotonic() 跨时基相减 → 冷却显示恒 0s；退避公式与注释矛盾	RO, RB	P1-8	engine.py
+63	B	M-03,P1-9	P1 / S2	decision/engine.py:158-167（RB: 157-164）+ action_router.py:28-49	router.execute 把失败吞成字符串，engine 仍记 `status="ok"` → decision_runs 污染、调用方误判成功	RO, RB		action_router.py,engine.py
+64	A	B-07,B-08,P1-10	P1 / S2	doubao_webhook.py:425、quarantine.py:176（RB 注：即另一轮 R2-32）	async 上下文 `bark.push(...)` 未 await（quarantine 还在同步函数调且位置参数不符）→ 告警永远发不出去	RO, RB	B-07,B-08,P1-10	doubao_webhook.py,quarantine.py
+65	A	P1-11	P1	skills/engines/llm_decide/ask.py:86,105-106,116-122	`from butler.ha import ha_api` 模块不存在（ImportError 被吞）+ `_tv_ask_stop` 未定义 → 主动问询从未执行、电视聆听模式永不关闭	RO	P1-11	
+66	B	P1-16	P1	core/decision_store.py:57-64	`except sqlite3.OperationalError: pass` 把 locked/malformed 也当"列已存在" → 缺列后决策记录功能从此失效	RO		decision_store.py
+67	B	B-21,P1-20	P1 / S3	mcp/server.py:375,389-400 + skills/runner.py:42-44	MCP 在新线程新事件循环跑全局 SkillRunner 单例 → Semaphore/Lock 跨 loop RuntimeError，技能批量报错被隔离；RB 另指每次调用新建线程池+新 loop	RO, RB		runner.py,server.py
+68	C	M-08,P1-21	P1 / S2	integrations/memory_agent.py:53-66,42-51,111-125（RB: 251-255,111-125）	无 raise_for_status → 401/500 错误体被当成功解析，熔断失效、故障伪装成「没查到」	RO, RB		
+69	A	M-04,M-05,P1-22	P1 / S2	Dockerfile/compose/.env 无 TZ；decision/engine.py:117、agent.py:84、app.py:517、cron_task.py:480,492；aggregator.py:241,261,274；extractor.py:167	容器 UTC + 显式 Asia/Shanghai + 朴素 now() + 硬编码 +8 三套时间并存 → 时间窗口整体偏移 8 小时	RO, RB	M-04,M-05,P1-22	app.py,cron_task.py,engine.py,extractor.py
+70	B	P1-23,T-08	P1 / S3	dialog.py:684-686（RB: 681,684,231,422）	`_return_idle` 裸 create_task 无代际校验 → 旧计时器把新会话强制打回 IDLE；引用丢失可致永久卡 WAITING	RO, RB		dialog.py
+71	B	P1-24	P1	dialog.py（on_wakeup 函数级；:411-415 仅单点保护）	on_wakeup 无 try/finally → 中途抛异常状态永久停在 THINKING/SPEAKING	RO		dialog.py
+72	B	MA-01	S1	app.py:700-706(:704) vs integrations/bark.py:52,141,194	`bark.send` 方法不存在 → 安防告警每 15 分钟静默失败一次，永不推手机端	RB		app.py
+73	A	MA-02	S1	memory/extractor.py:101-113(:106-113)	`ORDER BY ts ASC LIMIT` → 只消化最旧对话，近期对话被挤出提取窗口	RB	MA-02	extractor.py
+74	A	MA-03,S-05	S1	triggers/defaults.py:24,43,61-65,125 vs skills/defaults.py	默认触发规则引用 6 个不存在的技能 → 旗舰默认触发链全空转，只有一行 error 日志	RB	S-05	defaults.py
+75	A	MA-05	S1	core/tools.py:1428-1450(:1435,1442)	`agent.devices` 全仓无赋值 → play_music 永远落到硬编码默认音箱，话术还谎报房间	RB	MA-05	tools.py
+76	A	MA-07	S1	timeseries/anomaly.py:371	`speak(priority="critical")` 参数不存在 → TypeError 被吞，critical 级异常永不语音播报	RB	MA-07	anomaly.py
+77	A	MA-08	S1	presence/fusion.py:64-78,114-141 + data/presence_config.json	正常模式纯 HA 信号最高 0.5 < 阈值 0.6，`router_device_online` 权重无任何消费者 → 无外部信号时永远判不出房间	RB	MA-08	
+78	B	B-03,MA-09	S1	morning/routine.py:72-104(:78-87)	晨起播报硬性要求 4 小时内 sleep exit 记录，否则 return False → 简报时有时无	RB		routine.py
+79	A	S-01	S1	skills/schema.py:91-105；消费方 engines/ha_action/engine.py:27-30、creator.py:55	brain 白名单剥掉 `domain/service/entity/data` → ha_action 引擎 100% 报 `brain.domain/service required`，连败 3 次自动隔离	RB	S-01	creator.py,engine.py,schema.py
+80	A	S-02	S1	skills/schema.py:30,138-151；runner.py:306-316 等	output 白名单只认 3 种 → `ha_service`/`tv_tts` 被静默删除，设备控制类输出永不执行、冲突/沙箱检测恒空	RB	S-02	runner.py,schema.py
+81	B	S-03	S1	skills/templates.py:141,166,283-310 + store.py:146-166,55-58	create_from_template 绕过校验写入非法 trigger.entry（voice_wake/button_pressed）→ 重启后 validate 失败 continue，技能静默消失	RB		store.py,templates.py
+82	B	S-04	S1	triggers/schema.py:117-134 + engine.py:147-159；实例 data/triggers/morning_lidicn_v2.json	trigger schema 丢弃 `cooldown_type` → 「每日仅一次」退化为 300 秒，早报每小时重复触发	RB		engine.py,schema.py
+83	A	S-05	S1	skills/store.py:42-49,98-127	`SkillStore.load` 只扫 3 个子目录，`migrate_flat_to_subdirs()` 零调用 → 根目录 7 个技能永不加载	RB	S-05	store.py
+84	A	M-01	S1	store/repo.py:257-261 + decision/engine.py:146-155	冷却查询不看 status 且「冷却拒绝」自身也落同 action 库 → 冷却窗口每次拒绝都续期，同类行动永久静默	RB	M-01	engine.py,repo.py
+85	B	D-01	S1	integrations/ha.py:95-111；discovery.py:194-202、ha_action/engine.py:55-67	call_service 把 HTTP 错误/异常吞成字符串，两条控制链 except 是死代码 → 设备控制失败一律 ok=True	RB		discovery.py,engine.py,ha.py
+86	A	D-02	S1	af_bridge.py:129-145 vs devices.py:181-199	调用不存在的 `by_room()`，被 `hasattr` 兜成空列表 → AF ask 追问整段静默，追问闭环不可用	RB	D-02	af_bridge.py
+87	A	D-03	S1	presence/__init__.py:23-45 + config.py:183,262 + docker-compose.yml:49-50	在场配置实际在 butler/data/ 而运行时读 /app/data/ → 空配置启动，在场融合/房间 TTS 路由/晨起等整块失效（标注：推断待验证）	RB	D-03	
+88	B	D-04	S1	dialog.py:89-93,155-159,190,594-600 + devices.py:196 + data/roles/butler.json:4	NR 语音链路 room 恒空 → resolve() 不过滤，butler 角色 9 台设备全屋同播互相打断	RB		dialog.py
+89	A	B-02	S1	af_bridge.py:141 vs tts/manager.py:112-117	`tts.speak(prompt, device=dev)` 关键字错误（应为 device_id）→ TypeError 逐设备被吞，AF ask 播报 100% 失败	RB	B-02	af_bridge.py,manager.py
+90	C	B-03	S1	modes/auto_switch.py:76,89,102,117	无 sleep/movie 自动退出规则 → 模式卡死，连锁禁用当日晨起简报与整层主动问询	RB		
+91	A	B-04	S1	modes/engine.py:243-275	`can_tts/can_bark/can_run_skill/is_care_skill_disabled` 全仓零调用 → 夜间/观影/睡眠静默策略从未生效	RB	B-04	engine.py
+92	B	B-05	S1	proactive/engine.py:203-224 + data/proactive_scenes.json:24-27	`answer()` 只写库，无任何代码消费场景 `actions` → 用户答「打开空调」只被记录，空调不会开	RB		engine.py
+93	A	MA-06	S2	core/tools.py:1054-1058,1075	`call_service_strict` 失败时仍拼「已执行 …：执行失败…」双段矛盾话术 → LLM 无法判断真实结果	RB	MA-06	tools.py
+94	C	T-04	S2	core/fast_routes.py:30,34,36	fast_routes.json 解析失败回退空列表且不回填内置规则 → 快速路由永久静默失效	RB		
+95	C	T-05	S2	core/fast_routes.py:21,41；core/agent.py:41	路径硬编码 /app/data 且构造期 mkdir/open 无保护 → 非默认环境 Agent 构造即崩	RB		
+96	B	S-06	S2	triggers/schema.py:120	trigger schema 丢 `_output_lock` → engine GATE3 设备锁永不生效（死代码）	RB		schema.py
+97	B	S-07	S2	skills/quarantine.py:41	安全检测用裸子串匹配 → 含 `format`/`DELETE FROM` 的合法技能每次运行即被隔离	RB		quarantine.py
+98	B	S-08	S2	store/repo.py:224	`count_skill_runs_today` 的 ok_only 实为「排除 5 种状态」→ error/timeout 等失败也计入每日配额	RB		repo.py
+99	A	S-10	S2	triggers/health_api.py:58,84（RB 注：即另一轮 R2-30 重复）	模块内 `logger` 从未定义 → pause/resume 异常路径 NameError 500	RB	S-10	health_api.py
+100	B	S-11	S2	skills/creator.py:185,190	confirm 先 `pop(draft_id)` 再拿它拼路径 → 草稿文件永不删除、list_drafts 持续列出已确认技能	RB		creator.py
+101	B	S-12	S2	skills/quarantine.py:59,160	隔离「24h 自动恢复」既无调度、时间戳只存内存 → 重启后永不自动恢复	RB		quarantine.py
+102	A	S-13	S2	skills/schema.py:103；engines/llm_decide/ask.py:178	schema 剥离 `brain.ask_yes_action` → 用户同意后的第二轮工具调用退化成纯文本	RB	S-13	schema.py
+103	A	S-14	S2	core/cron_task.py:723	init_from_store 只认 `brain.type=="cron_task"` → `http_condition` 型定时任务从不被调度	RB	S-14	cron_task.py
+104	B	S-15	S2	core/cron_task.py:408	cron 任务动作全部失败仍记 `status=success` → 失效永不告警	RB		cron_task.py
+105	B	S-16	S2	skills/runner.py:227	只有「成功且 text 非空」才清零失败计数 → 静默型技能跨成功累积 3 次被自动隔离	RB		runner.py
+106	B	M-02	S2	memory/extractor.py:311-315	提取丢弃 `confidence<0.6`，与 docstring 及单元测试矛盾，丢弃还计入 dup-skipped	RB		extractor.py
+107	B	M-06	S2	core/dedup.py:37-49；skills/runner.py:286-293	技能侧去重永不命中：member 键口径不一致 + 技能输出从不写指纹	RB		runner.py
+108	B	M-07	S2	core/dialog.py:646-662；core/dedup.py:46-49	播报结果未知/失败也无条件写指纹 → 失败播报 7 天内被当重复跳过；record 未包 try 可卡死状态机	RB		dialog.py
+109	C	M-09	S2	memory/feeder.py:43-54	role_state.json 非原子覆写 + 只捕 FileNotFoundError → 写坏后投喂接口全线 500 且不自愈	RB		
+110	C	M-10	S2	memory/feeder.py:100-105,113-125	投喂丢弃 `new_cid`，成败只看 reply 前缀 → 会话轮换后仍被标 fed	RB		
+111	B	M-12	S2	decision/config.py:44-51,69-74 + app.py:514-719	DecisionConfig 不校验类型 → 坏值中断整段调度注册；`"enabled":"false"` 被 bool() 判真关不掉	RB		app.py
+112	B	D-05	S2	presence/__init__.py:71-75、data/presence_config.json:6-9、devices.json、tts_routes.py:74-302	presence 房间规范名与设备房间名两套口径 → 主卧/儿童房/主卫的房间级 TTS 路由永远匹配不到，静默回退电视	RB		tts_routes.py
+113	C	D-06	S2	presence/sources.py:180-206；fusion.py:86-104	成员 ID 两套大小写、精确匹配且丢弃无日志 → Kevin/Emily 的 ArcFace 信号被静默吞掉	RB		
+114	B	D-07	S2	fusion.py:73-78 vs app.py:968-974、inference.py:49、tts_routes.py:62	降级阈值 0.45 与下游三处 0.6 二次门控不一致 → 0.45~0.6 区间判定被丢弃，位置停在旧值	RB		app.py,tts_routes.py
+115	B	D-08	S2	ha_tools/discovery.py:57,69-73,120-124	区域维度读 `/api/states` 根本不返回的 area_name/area_id → 区域索引恒空、按区域发现恒为空	RB		discovery.py
+116	B	D-09	S2	ha.py:442-505 vs :171-198；dialog.py:511-514	schedule_media_stop 60 秒硬上限且循环后无兜底停止 → 长播报可能小爱固件级单曲循环无人终止	RB		dialog.py,ha.py
+117	B	D-10	S2	skills/runner.py:336-345；dialog.py:601-605；tts_routes.py:241-302	「房间无可用设备」三条链兜底各不相同（回退全屋/Bark/静默播电视），都静默改投别的房间	RB		dialog.py,runner.py,tts_routes.py
+118	B	B-09	S2	mcp/server.py:416-437	MCP send_bark 把 bool 当 dict 判断 → 风控丢弃/合并/网络失败一律误报「已发送」	RB		server.py
+119	C	B-10	S2	integrations/bark.py:174,191	加密模式 flush_merged 打到缺 `/推送加密` 的错误 URL，且无论成败无条件清空合并缓存 → 消息丢失	RB		
+120	B	B-11	S2	timeseries/anomaly.py:183-188	家电超时检测先按 `state != "on"` 过滤 → climate/vacuum/water_heater 全部漏检	RB		anomaly.py
+121	B	B-12	S2	proactive/engine.py:334-356	未知条件默认通过 → 冰箱门场景每小时误报，duration_minutes/ac_off 条件被忽略	RB		engine.py
+122	B	B-13	S2	proactive/engine.py:330-331	`type:"event"` 场景无任何外部事件分发方 → 2 个场景死配置	RB		engine.py
+123	B	B-14	S2	app.py:517,556,612,707	全部定时任务未设 `misfire_grace_time`（默认 1 秒）→ 事件循环一阻塞当天任务整天跳过	RB		app.py
+124	B	B-15	S2	morning/routine.py:108-116	晨起简报先置当天去重标记，随后构建/播报抛异常当天即不再重试	RB		routine.py
+125	B	B-16	S2	audiobook/manager.py:316-320,343	有声书「暂停」被当成「播完」→ 当前段被跳过	RB		manager.py
+126	B	B-17	S2	proactive/engine.py:414-420	`_gen_id` 是内存计数器 → 同日重启后主键冲突，当日问询创建失败	RB		engine.py
+127	C	T-06	S3	core/fast_routes.py:118,127；core/agent.py:53	快速路由每次命中都在 async 热路径同步截断写整个规则文件	RB		
+128	B	T-07	S3	core/tools.py:1087；integrations/tv.py:54	push_to_tv 无条件返回「已推送到电视」，MQTT 未就绪时静默失效	RB		tools.py,tv.py
+129	A	T-11	S3	core/tools.py:1517	`_create_skill` 回复串用 `\\n` 双反斜杠 → 字面 \n 被播报	RB	T-11	tools.py
+130	A	T-12	S3	core/tools.py:1578-1652	DeskPilot 截图缩放比例存函数属性且无锁 → 并发会话坐标互相污染	RB	T-12	tools.py
+131	A	T-13	S3	core/agent.py:53,129；fast_routes.py:122	快速路由命中后失败直接当最终回复还记 ok；`record_fallback` 全仓零调用 → 无误命中反馈回路	RB	T-13	
+132	A	T-14	S3	core/tools.py:945,1001,1178	get_weather 的 type 不在枚举时 fall-through → 返回「未知工具: get_weather」	RB	T-14	tools.py
+133	B	S-17	S3	skills/runner.py:63,70	熔断指数退避被「每次放行清零」抵消 → 2^n 恒 2^0，冷却恒 300s	RB		runner.py
+134	B	S-19	S3	skills/creator.py:176	`_preview` 返回字面 `\n`（双反斜杠）→ 预览文本不换行	RB		creator.py
+135	B	S-20	S3	skills/conflict.py:145,227	时间窗重叠不处理跨午夜（引擎层已实现、此处漏改）；ha_service 冲突检测因 S-02 恒命中不到	RB		conflict.py
+136	A	S-21	S3	skills/schema.py:103；engines/ha_inspection/engine.py:53	schema 剥离 ha_inspection 的 checks/threshold/ignore_* → 巡检技能静默退回默认行为	RB	S-21	engine.py,schema.py
+137	B	S-22	S3	skills/templates.py:296；engines/static_text/engine.py:35	模板可选参数缺省时字面 `{{confirm_text}}`/`{{subject}}` 被原样播报	RB		engine.py,templates.py
+138	B	M-13	S3	decision/engine.py:103	confidence 的 `float()` 无类型兜底 → 单次决策 tick 抛异常中断	RB		engine.py
+139	B	M-14	S3	decision/engine.py:90-93,214-223	decision_runs 每心跳落库（含 2000 字摘要）且无保留期清理 → 无限增长	RB		engine.py
+140	B	M-16	S3	memory/extractor.py:284-287	已 rejected 的记忆在 7 天窗口内每天重新变回 pending	RB		extractor.py
+141	B	M-17	S3	memory/extractor.py:299-325	同批候选只做精确去重 → 互相包含的两条同时入库	RB		extractor.py
+142	B	M-18	S3	memory/extractor.py:81,89-92	max_tokens=2000 截断 JSON → 整批提取丢弃，无前缀抢救	RB		extractor.py
+143	C	M-19	S3	integrations/memory_agent.py:239-249	recall 先切片 `[-limit:]` 后过滤 revoked → 取回条数不足/可能取最旧	RB		
+144	C	M-20	S3	memory/feeder.py:86-88,169-171	feed(500)/overview(1000) limit 不一致 + 先截断后过滤 → 旧事实永不投喂	RB		
+145	A	D-11,P2-20	S3 / P2	integrations/ha.py:171/442/553	schedule_media_stop 同名定义两次（前者死代码、行为从 stop 变 pause）；v2 零调用；`_media_stop_tasks` 是类变量跨实例共享	RB, RO	D-11	ha.py
+146	B	D-12	S3	devices.py:154-169,213-218；roles/store.py:124-146	种子合并让 WebUI 删除的默认设备/角色重启复活，还会把种子值覆盖回用户已改字段	RB		store.py
+147	C	D-14	S3	api/scene_routes.py:51-58	场景 morning 的 description 声称「切 CCTV1」，steps 里没有任何换台动作	RB		
+148	B	B-18	S3	audiobook/manager.py:421	每段进度保存都同步 rglob 扫描整座 NAS 书架	RB		manager.py
+149	B	B-20	S3	integrations/ilink/bridge.py:41,238；api/ilink/api.py:49	iLink `_history` 从不写入 → active_users 恒为 0	RB		api.py
+150	C	B-23	S3	core/security_monitor.py:1-7,61	文档声明 3 项检查实际只实现 2 项，「门窗」只匹配 door	RB		
+151	C	B-24	S3	api/notification_routes.py:30,46	已读路由 `{id}` 未限定整型 → 非数字路径 500	RB		
+152	A	B-25	S3	core/notification_store.py:34-50	通知中心表无任何清理/保留策略 → 无限增长	RB	B-25	notification_store.py
+153	A	P2-1	P2	api/config_routes.py:108-109,112	`int(body["cooldown_seconds"])` 未包 try → 非数字 500；dnd_windows 对 dict/int TypeError	RO	P2-1	config_routes.py
+154	B	P2-2	P2	api/doubao_webhook.py:146,641-643	`int("26℃")` ValueError 500；链式下标异常被 except 静默归零 → 四条链全丢	RO		doubao_webhook.py
+155	B	P2-3	P2	api/doubao_webhook.py:441-464	去重 hash 在处理之前落表 + 路由无 try → 抛 500 后上游重试命中 duplicate，指令永久丢失	RO		doubao_webhook.py
+156	B	P2-4	P2	api/config_routes.py 三个 POST	未做 `isinstance(body, dict)` 校验 → body 为 list/str 时 500	RO		config_routes.py
+157	B	P2-5	P2	api/doubao_webhook.py:498-538,691	`rt.doubao.chat`/`rt.notifier.push` 无 None 检查 → 未就绪时 500	RO		doubao_webhook.py
+158	B	P2-6	P2	api/cron_task_routes.py:175,184 → core/cron_task.py:171-184	async 路由里同步 `test_api()`，`future.result()` 无 timeout → 期间全服务冻结	RO		cron_task.py,cron_task_routes.py
+159	C	P2-7	P2	api/deps.py:53-76,136	会话落盘同步 I/O 在请求热路径；import 期读硬编码 /app/data/sessions.json，非容器失效	RO		
+160	A	P2-8	P2	modes/auto_switch.py:23,131（+86/99/114/128）	`_debounce` 模块级 dict，4 处 return 绕过重置 → stale 计数累积误触发切换	RO	P2-8	
+161	B	P2-9	P2	skills/runner.py:43	全局 `Semaphore(1)` 把**所有**引擎串行 → 单条慢 LLM 技能堵全部；超时连环计 3 次批量隔离技能	RO		runner.py
+162	B	P2-10	P2	skills/runner.py:179-183 + plugins.py:49	引擎 registry 未命中直接不可逆 quarantine，而插件加载失败只 warning 跳过 → 一次加载失败批量永久隔离	RO		runner.py
+163	C	P2-11	P2	skills/plugins.py:36-50	用户与内置同名引擎时 user 静默覆盖 builtin 无告警	RO		
+164	A	P2-12	P2	skills/runner.py:73-87,279-349	breaker_status/get_all_skill_stats 每次全表扫 skill_runs，无 retention	RO	P2-12	runner.py
+165	B	P2-13	P2	triggers/engine.py:100	`_event_seen` 每次 handle_event 全量重建 dict → 密集事件 O(n) CPU 热点	RO		engine.py
+166	B	P2-14	P2	guard/push_guard.py:151-180	熔断触发即清空 counts → 风控审计无法还原熔断前堆量	RO		push_guard.py
+167	A	P2-15	P2	guard/push_guard.py:34	`PRIORITY_TTL` 常量定义了但 check_bark/check_tts 全程未用（L4 TTL 未落地）	RO	P2-15	push_guard.py
+168	B	P2-16	P2	tts/manager.py:86,47-62	kokoro/nowvoice 直接 write_bytes 无原子替换 → 半截 mp3 被当缓存命中播放；并发同名写读竞态	RO		manager.py
+169	C	P2-17	P2	presence/fusion.py:48-49 + presence_config.json	user_device_map 漏配 device_tracker → 该成员恒 unknown、永久隐身	RO		
+170	B	P2-18	P2	decision/engine.py:115-124	zoneinfo 缺 tzdata 时夜间判定回落本地时区，UTC 容器下错 8 小时 → 夜间 TTS 拦截失效/误拦	RO		engine.py
+171	C	P2-21	P2	api/stream_routes.py:16-17	`guard(request)` 调用两次（重复鉴权 + 重复 sessions.json I/O）	RO		
+172	C	P2-23	P2	api/dialog_routes.py:30-38	recent/state 缺 guard；`int(limit)` 未包 try	RO		
+173	C	P2-24	P2	api/bark_routes.py:114-116	except 后以 HTTP 200 返回 `{"pushed": False}` → 只看状态码的调用方误判成功	RO		
+174	B	P2-25	P2	api/doubao_webhook.py:278-282	CSP meta 仅在小写 `<head>` 时插入 → 大写/无 head 页面无 CSP	RO		doubao_webhook.py
+175	B	P2-27	P2	api/doubao_webhook.py:211	HA 返回 `"attributes": null` 时 `attr.get` AttributeError	RO		doubao_webhook.py
+176	C	P2-28	P2	api/openai_routes.py:56-71	messages 元素假定 dict → 任一非 dict 即 500	RO		
+177	C	P2-29	P2	api/scene_routes.py:148	`all(r["ok"] …)` 依赖返回契约，某分支漏 "ok" 即 KeyError	RO		
+178	C	P2-30	P2	api/profile_routes.py:71-74	schedule 失败被 except 静默吞成 `{}`，不可观测	RO		
+179	A	P2-31	P2	api/task_routes.py:48-55	`int(limit)` ValueError 被 except Exception 吞成 500，输入错误误报服务端错误	RO	P2-31	
+180	A	P2-32	P2	core/event_stream.py:17 + requirements.txt	aiohttp 未列入 requirements（仅经 edge-tts 传递）→ 依赖脆弱，换实现即崩	RO	P2-32	event_stream.py
+181	C	P2-4	P2	bus/mqtt_client.py（adm_heartbeat、clean_session=False + 固定 client_id）	adm_heartbeat 任务无取消路径；固定 client_id 使新旧容器互相踢	R1		
+182	B	P2-4	P2	butler/bus/inbox.py:241-285	`handle()` 对 `_dispatch` 无 try → 异常时台账漏记（破坏「一次投件恰好一行」承诺）；`budget_consume` 先扣预算，消息若因静默/TTL/过载被丢则额度白扣	RS		inbox.py
+183	B	P2-6	P2	butler/core/dialog.py:300-302（+ :375）	`rt.roles.get(role_id)` 结果未判空 → 角色被删/禁用后 `role` 为 None，后续 `role.id` 抛 AttributeError	RS		dialog.py
+184	C	P2-10	P2	butler/bus/mqtt_client.py（zap-tv 回执 on_result）	回执回调在 paho 网络线程内做阻塞 IO → 阻塞 MQTT 心跳/收包，触发假掉线重连	RS		

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1a1d23">
+<title>豆包管家看板</title>
+<link rel="manifest" href="/dashboard/manifest.webmanifest">
+<link rel="stylesheet" href="/dashboard/css/app.css">
+<link rel="apple-touch-icon" href="/dashboard/icons/icon-192.png">
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <h1 id="page-title">任务看板</h1>
+    <div class="room" id="current-room">客厅</div>
+  </div>
+  <div id="js-status" style="background:#ea4335;color:#fff;padding:4px 12px;font-size:11px;display:none;"></div>
+  <script>
+    // 内联诊断：JS 开始执行就标记
+    window._jsAlive = true;
+    window.addEventListener('error', function(e) {
+      var el = document.getElementById('js-status');
+      if (el) { el.style.display = 'block'; el.textContent = 'JS错误: ' + e.message + ' @ ' + e.filename + ':' + e.lineno; }
+    });
+  </script>
+
+  <div class="content">
+    <!-- 看板页 -->
+    <div class="page active" id="page-board">
+      <div class="stats" id="stats"></div>
+      <div class="board" id="board"></div>
+    </div>
+
+    <!-- 对话页 -->
+    <div class="page" id="page-chat">
+      <div id="chat-status" style="font-size:11px;color:var(--text3);padding:4px 12px;min-height:18px;">就绪</div>
+      <div class="chat-container" id="chat-container"></div>
+      <div class="chat-input">
+        <input type="text" id="chat-text" placeholder="跟管家说点什么..." onkeydown="if(event.key==='Enter')sendChat()">
+        <button onclick="toggleMic()" id="mic-btn" title="语音输入">🎤</button>
+        <button onclick="sendChat()" id="chat-send-btn">发送</button>
+      </div>
+    </div>
+
+    <!-- 路线图页 -->
+    <div class="page" id="page-roadmap">
+      <div id="roadmap-container"></div>
+    </div>
+
+    <!-- 通知页 -->
+    <div class="page" id="page-notification">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-size:14px;color:var(--text2);" id="notif-unread-text"></span>
+        <button class="room-btn" style="padding:6px 14px;font-size:12px;" onclick="readAllNotif()">全部已读</button>
+      </div>
+      <div id="notification-list"></div>
+    </div>
+
+    <!-- 决策页 -->
+    <div class="page" id="page-decision">
+      <div id="decision-list"></div>
+    </div>
+
+    <!-- 设置页 -->
+    <div class="page" id="page-settings">
+      <div class="setting-group">
+        <div class="group-title">当前位置</div>
+        <div class="room-grid" id="room-grid"></div>
+      </div>
+      <div class="setting-group">
+        <div class="group-title">开发助理</div>
+        <div class="setting-item">
+          <span class="label">测试播报</span>
+          <button class="room-btn" style="padding:6px 16px;" onclick="testSpeak()">播放</button>
+        </div>
+        <div class="setting-item">
+          <span class="label">音色</span>
+          <span class="value">zh-CN-XiaoyiNeural</span>
+        </div>
+      </div>
+      <div class="setting-group">
+        <div class="group-title">关于</div>
+        <div class="setting-item"><span class="label">版本</span><span class="value" id="app-version">v0.3</span></div>
+        <div class="setting-item"><span class="label">服务</span><span class="value" id="api-status">检查中...</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabbar">
+    <div class="tab active" data-page="board" onclick="switchTab('board')">
+      <span class="icon">📋</span>看板
+    </div>
+    <div class="tab" data-page="roadmap" onclick="switchTab('roadmap')">
+      <span class="icon">🗺️</span>路线
+    </div>
+    <div class="tab" data-page="chat" onclick="switchTab('chat')">
+      <span class="icon">💬</span>对话
+    </div>
+    <div class="tab" data-page="notification" onclick="switchTab('notification')">
+      <span class="icon">🔔</span>通知<span class="badge" id="notif-badge" style="display:none;"></span>
+    </div>
+    <div class="tab" data-page="decision" onclick="switchTab('decision')">
+      <span class="icon">⚖️</span>决策<span class="badge" id="dec-badge" style="display:none;"></span>
+    </div>
+    <div class="tab" data-page="settings" onclick="switchTab('settings')">
+      <span class="icon">⚙️</span>设置
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/dashboard/js/app.js?v=3"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/dashboard/sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

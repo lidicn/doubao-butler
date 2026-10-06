@@ -1,0 +1,1 @@
+{"id":"chatcmpl-489489fe4c2b47179690d525f131ee10","object":"chat.completion","created":1788418961,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"你好呀！我是「豆包管家」，住在客厅电视里的家庭 AI 管家——记得住每个家人的喜好，管得了屋里屋外的设备，随时帮你张罗家里的大小事～"},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}

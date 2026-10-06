@@ -1,0 +1,25 @@
+UNIVERSE_KEYS=75  (源=workorders\base-5587262\butler\config.py，形态=_env*/_env_bool/_env_int/_env_float 调用点)
+DOTENV_LINES=32 DOTENV_NONEMPTY=30 ENV_SHORT_LT4=0
+三态（只看 75 把宇宙内键）: 已设=30 / 空串=2 / 缺键=43 / 校验和=75
+COMPOSE_KEYS_TOTAL=50 (两份 compose 的 - KEY= 行去重，含非宇宙键) COMPOSE_DOLLAR_INTERP=0
+下发物层：宇宙内出现在 compose 的键 = 50 / 75
+BANNED_DISTINCT=46 (cfg_default=29 env_value_added=17)
+ENV_KEYS_NONEMPTY=30 ENV_SHORT_LT4=0
+TARGET=doc\DEV日志\回执-Q-t5-DZ6清单-20260921.md BYTES=55970 LINES=443
+RED key=BUTLER_BASE_URL len=25 indep_hits=1 adj_only_hits=0 lines=[306]
+RED key=BUTLER_HOST len=7 indep_hits=1 adj_only_hits=0 lines=[306]
+PATH_FRAGMENT_ONLY key=MQTT_HOST len=13 adj_hits=1 lines=[306]
+RED key=MQTT_USER len=6 indep_hits=2 adj_only_hits=113 lines=[26, 28, 49, 55, 56, 57, 58, 70, 71, 72, 73, 74]
+分类合计：RED=3 PATH_FRAGMENT_ONLY=1 CLEAN=42 分母=46
+LONG[receipt] LONG_TOKENS_BARE=175 OF_WHICH_IN_BANNED=0 PATHISH_EXCLUDED=202
+LONG[negative_control:base_config] LONG_TOKENS_BARE=110 OF_WHICH_IN_BANNED=2 PATHISH_EXCLUDED=23
+LONG[negative_control:base_config] 命中键名（只报名，不报值）=['TTS_EDGE_VOICE']
+PAIR[NAMED] BUTLER_WEB_USER==BUTLER_WEB_PASSWORD -> True len=(5,5)
+PAIR[NAMED] DESKPILOT_API_TOKEN==TASK_REPORT_TOKEN -> True len=(0,0)
+PAIR[NAMED] XIAOMI_SSECURITY==XIAOMI_USER_ID -> False len=(24,8)
+PAIR[NAMED] BARK_KEY==BARK_ENCRYPT_KEY -> False len=(22,16)
+PAIR[NAMED] MEMORY_AGENT_USER==MEMORY_AGENT_PASS -> N/A present=(False,False)
+PAIR[NAMED] BUTLER_WEB_USER==BUTLER_WEB_PASSWORD -> True len=(5,5)
+PAIR[AUTO] MQTT_USER==MQTT_PASSWORD -> False len=(6,24)
+PAIR[AUTO] GO2RTC_USER==GO2RTC_PASS -> False len=(6,11)
+RESULT_BANNED=46 RESULT_RED=3 RESULT_PFRAG=1 RESULT_CLEAN=42

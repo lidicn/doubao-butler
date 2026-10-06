@@ -1,0 +1,7 @@
+{
+  "id": "trigger_creator",
+  "name": "自我编排引擎",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "TriggerCreatorEngine"
+}

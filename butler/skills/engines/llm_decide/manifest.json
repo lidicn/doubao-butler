@@ -1,0 +1,9 @@
+{
+  "id": "llm_decide",
+  "name": "LLM 决策引擎",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "LLMDecideEngine",
+  "description": "触发器 → LLM Agent（工具白名单）→ 自然对话。LLM 根据上下文自主决定说什么、是否调用受限工具。用于 morning_lidicn 等需要智能判断的场景。",
+  "modes": ["agent"]
+}

@@ -1,0 +1,131 @@
+:root {
+  --bg-0: #0B0F1A;
+  --bg-1: #131826;
+  --bg-2: #1B2233;
+  --amber-1: #F59E0B;
+  --amber-2: #FBBF24;
+  --amber-3: #D97706;
+  --txt-0: #F1F5F9;
+  --txt-1: #94A3B8;
+  --txt-2: #64748B;
+  --ok: #10B981;
+  --err: #EF4444;
+  --info: #0EA5E9;
+}
+
+* { box-sizing: border-box; }
+[x-cloak] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  color: var(--txt-0);
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(245,158,11,0.12), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(217,119,6,0.10), transparent 55%),
+    linear-gradient(180deg, var(--bg-0), var(--bg-1) 60%, var(--bg-2));
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+.amber-text { color: var(--amber-2); }
+.amber-gradient {
+  background: linear-gradient(135deg, var(--amber-1), var(--amber-2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+.glass {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.glass:hover { transform: translateY(-2px); border-color: rgba(245,158,11,0.35); box-shadow: 0 14px 40px rgba(0,0,0,0.45), 0 0 24px rgba(245,158,11,0.12); }
+
+.btn-amber {
+  background: linear-gradient(135deg, var(--amber-1), var(--amber-3));
+  color: #1a1206; font-weight: 600; border: none; border-radius: 12px;
+  padding: 10px 16px; cursor: pointer; transition: transform .12s ease, filter .2s ease;
+}
+.btn-amber:hover { filter: brightness(1.06); }
+.btn-amber:active { transform: scale(0.97); }
+.btn-ghost {
+  background: rgba(255,255,255,0.05); color: var(--txt-0); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px; padding: 10px 14px; cursor: pointer; transition: background .2s;
+}
+.btn-ghost:hover { background: rgba(255,255,255,0.1); }
+
+.input {
+  width: 100%; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px; color: var(--txt-0); padding: 11px 14px; outline: none;
+}
+.input:focus { border-color: var(--amber-1); box-shadow: 0 0 0 3px rgba(245,158,11,0.15); }
+textarea.input { resize: vertical; min-height: 88px; }
+
+.card-title { font-size: 13px; color: var(--txt-1); letter-spacing: .04em; }
+.metric { font-size: 26px; font-weight: 600; }
+
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot-ok { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.dot-err { background: var(--err); box-shadow: 0 0 10px var(--err); }
+.dot-off { background: var(--txt-2); }
+
+.nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--txt-2); padding: 6px 4px; border-radius: 12px; cursor: pointer; transition: color .2s, background .2s; }
+.nav-item.active { color: var(--amber-2); background: rgba(245,158,11,0.10); }
+.nav-item:hover { color: var(--txt-0); }
+
+.timeline-item { border-left: 2px solid rgba(245,158,11,0.4); padding-left: 12px; margin-left: 6px; position: relative; }
+.timeline-item::before { content: ""; position: absolute; left: -5px; top: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--amber-2); }
+
+.fade-in { animation: fadeIn .35s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.state-badge { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: rgba(245,158,11,0.15); color: var(--amber-2); border: 1px solid rgba(245,158,11,0.3); }
+
+/* 桌面侧边栏项 */
+.side-item {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 44px; padding: 0 14px; border-radius: 12px;
+  color: var(--txt-1); font-size: 14px; cursor: pointer;
+  border: 1px solid transparent; transition: background .2s, color .2s, border-color .2s;
+}
+.side-item:hover { color: var(--txt-0); background: rgba(255,255,255,0.05); }
+.side-item.active {
+  color: var(--amber-2); background: rgba(245,158,11,0.12);
+  border-color: rgba(245,158,11,0.3); font-weight: 600;
+}
+
+/* 分段按钮（通知类型等） */
+.seg-btn {
+  min-height: 38px; padding: 6px 14px; border-radius: 10px; cursor: pointer;
+  font-size: 13px; color: var(--txt-1);
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+  transition: background .2s, color .2s, border-color .2s;
+}
+.seg-btn:hover { color: var(--txt-0); }
+.seg-btn.active {
+  color: #1a1206; font-weight: 600;
+  background: linear-gradient(135deg, var(--amber-1), var(--amber-3));
+  border-color: transparent;
+}
+
+/* iOS 安全区适配 + 触摸目标 */
+.safe-bottom { padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)); }
+.nav-item { min-height: 44px; min-width: 56px; justify-content: center; }
+button, .btn-amber, .btn-ghost, .seg-btn, .side-item, select.input { min-height: 44px; }
+select.input { height: 44px; }
+
+/* 桌面端微调：主内容留出顶栏呼吸感 */
+@media (min-width: 768px) {
+  .side-item { min-height: 42px; }
+}
+
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }

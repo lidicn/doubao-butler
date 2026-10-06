@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>豆包管家・家庭状态</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        body {
+            background-color: #080b13;
+            color: #e0e8f5;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 500;
+            color: #7cd0ff;
+            margin-bottom: 20px;
+            text-shadow: 0 0 12px #2080cc66;
+        }
+        .section {
+            margin-bottom: 24px;
+        }
+        .section-title {
+            font-size: 16px;
+            color: #8899bb;
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #203454;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+        .card {
+            background: linear-gradient(145deg, #101726, #0c101a);
+            border: 1px solid #203454;
+            border-radius: 12px;
+            padding: 16px;
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            border-color: #3688d8;
+        }
+        .card.on {
+            border-left: 3px solid #7cf0a8;
+        }
+        .card.off {
+            border-left: 3px solid #445566;
+            opacity: 0.7;
+        }
+        .card-name {
+            font-size: 14px;
+            color: #8899bb;
+            margin-bottom: 6px;
+        }
+        .card-value {
+            font-size: 20px;
+            font-weight: 500;
+        }
+        .card-value.on {
+            color: #7cf0a8;
+        }
+        .card-value.off {
+            color: #66748c;
+        }
+        .room-tag {
+            display: inline-block;
+            font-size: 11px;
+            color: #66748c;
+            background: #1a2438;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 6px;
+        }
+        .footer {
+            color: #66748c;
+            font-size: 12px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .empty {
+            color: #66748c;
+            font-size: 14px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        /* 人员状态卡片 */
+        .people-card {
+            background: linear-gradient(145deg, #1a1026, #1a0c1a);
+            border: 1px solid #443054;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .people-card .card-name {
+            color: #bb88ff;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        .people-card .card-value {
+            color: #ffb888;
+            font-size: 24px;
+        }
+        .people-card .scene-tag {
+            display: inline-block;
+            font-size: 12px;
+            color: #7cf0a8;
+            background: #1a3020;
+            padding: 4px 10px;
+            border-radius: 6px;
+            margin-top: 8px;
+        }
+
+        /* 时间线 */
+        .timeline {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .timeline-item {
+            display: flex;
+            padding: 8px 0;
+            border-bottom: 1px solid #1a2438;
+            font-size: 13px;
+        }
+        .timeline-time {
+            width: 60px;
+            color: #66748c;
+            flex-shrink: 0;
+        }
+        .timeline-content {
+            flex: 1;
+            color: #8899bb;
+        }
+        .timeline-entity {
+            color: #7cd0ff;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏠 家庭状态</h1>
+
+        <!-- 人员状态 -->
+        <div class="section">
+            <div class="section-title">👤 人员状态</div>
+            <div class="grid" id="people">
+                <div class="card people-card">
+                    <div class="card-name">大佬（lidicn）</div>
+                    <div class="card-value" id="current-room">加载中...</div>
+                    <div class="scene-tag" id="current-scene">场景：未识别</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 灯光 -->
+        <div class="section">
+            <div class="section-title">💡 灯光</div>
+            <div class="grid" id="lights"></div>
+        </div>
+
+        <!-- 空调 -->
+        <div class="section">
+            <div class="section-title">🌡️ 空调</div>
+            <div class="grid" id="climates"></div>
+        </div>
+
+        <!-- 影音设备 -->
+        <div class="section">
+            <div class="section-title">📺 影音设备</div>
+            <div class="grid" id="medias"></div>
+        </div>
+
+        <!-- 门窗 -->
+        <div class="section">
+            <div class="section-title">🚪 门窗</div>
+            <div class="grid" id="doors"></div>
+        </div>
+
+        <!-- 传感器 -->
+        <div class="section">
+            <div class="section-title">📡 传感器</div>
+            <div class="grid" id="sensors"></div>
+        </div>
+
+        <!-- 活动时间线 -->
+        <div class="section">
+            <div class="section-title">⏱️ 最近事件（1小时内）</div>
+            <div class="timeline" id="timeline">
+                <div class="empty">加载中...</div>
+            </div>
+        </div>
+
+        <div class="footer" id="footer">加载中...</div>
+    </div>
+
+<script>
+const API_BASE = '/api';
+
+async function fetchAll() {
+    try {
+        // 并行获取所有数据
+        const [stateRes, eventsRes, scenesRes] = await Promise.all([
+            fetch(`${API_BASE}/state/current`, {}),
+            fetch(`${API_BASE}/events/recent?minutes=60`, {}),
+            fetch(`${API_BASE}/agent/scenes/infer`, {}),
+        ]);
+
+        if (stateRes.status === 401) {
+            document.getElementById('footer').innerText = '请先登录';
+            return;
+        }
+
+        const stateData = await stateRes.json();
+        const eventsData = await eventsRes.json();
+        const scenesData = await scenesRes.json();
+
+        renderState(stateData.data.state || {});
+        renderEvents(eventsData.data.events || []);
+        renderScenes(scenesData.data || {});
+
+        document.getElementById('footer').innerText = `最后更新：${new Date().toLocaleTimeString()}`;
+    } catch (e) {
+        document.getElementById('footer').innerText = `加载失败：${e.message}`;
+    }
+}
+
+function renderState(state) {
+    const groups = {
+        lights: [],
+        climates: [],
+        medias: [],
+        doors: [],
+        sensors: []
+    };
+
+    for (const [eid, info] of Object.entries(state)) {
+        const type = eid.split('.')[0];
+        const name = info.attributes?.friendly_name || eid;
+        const room = info.room || '';
+        const isOn = info.state === 'on';
+
+        const card = {
+            name,
+            room,
+            state: info.state,
+            isOn
+        };
+
+        if (type === 'light') groups.lights.push(card);
+        else if (type === 'climate') groups.climates.push(card);
+        else if (type === 'media_player') groups.medias.push(card);
+        else if (type === 'binary_sensor' && info.event_type === 'door') groups.doors.push(card);
+        else if (type === 'sensor') groups.sensors.push(card);
+    }
+
+    renderGroup('lights', groups.lights);
+    renderGroup('climates', groups.climates);
+    renderGroup('medias', groups.medias);
+    renderGroup('doors', groups.doors);
+    renderGroup('sensors', groups.sensors.slice(0, 12));
+}
+
+function renderGroup(containerId, items) {
+    const el = document.getElementById(containerId);
+    if (!items || items.length === 0) {
+        el.innerHTML = '<div class="empty">暂无设备</div>';
+        return;
+    }
+    el.innerHTML = items.map(item => `
+        <div class="card ${item.isOn ? 'on' : 'off'}">
+            <div class="card-name">${item.name}${item.room ? `<span class="room-tag">${item.room}</span>` : ''}</div>
+            <div class="card-value ${item.isOn ? 'on' : 'off'}">${item.state}</div>
+        </div>
+    `).join('');
+}
+
+function renderEvents(events) {
+    const el = document.getElementById('timeline');
+    if (!events || events.length === 0) {
+        el.innerHTML = '<div class="empty">最近1小时无事件</div>';
+        return;
+    }
+    el.innerHTML = events.slice(-20).reverse().map(e => {
+        const time = new Date(e.ts * 1000).toLocaleTimeString();
+        return `
+            <div class="timeline-item">
+                <div class="timeline-time">${time}</div>
+                <div class="timeline-content">
+                    <span class="timeline-entity">${e.entity_id}</span>
+                    ${e.state}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderScenes(scenes) {
+    const sceneTag = document.getElementById('current-scene');
+    if (scenes.matches && scenes.matches.length > 0) {
+        const match = scenes.matches[0];
+        sceneTag.innerText = `场景：${match.scene}（${match.infer}）`;
+    } else {
+        sceneTag.innerText = '场景：未识别';
+    }
+}
+
+// 首次加载
+fetchAll();
+// 每 10 秒刷新
+setInterval(fetchAll, 10000);
+</script>
+</body>
+</html>

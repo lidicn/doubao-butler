@@ -1,0 +1,175 @@
+{
+  "ok": false,
+  "error_count": 4,
+  "warning_count": 10,
+  "errors": [
+    {
+      "level": "error",
+      "node_id": "d68099f7f42078ce",
+      "message": "[http request] POST 但无 body/bodyType！NR 会发送 msg.payload 作为请求体（通常是日期/字符串），导致 API 422 错误。请添加 body (JSON 对象) 和 bodyType:'json'。"
+    },
+    {
+      "level": "error",
+      "node_id": "image-request",
+      "message": "[http request] POST 但无 body/bodyType！NR 会发送 msg.payload 作为请求体（通常是日期/字符串），导致 API 422 错误。请添加 body (JSON 对象) 和 bodyType:'json'。"
+    },
+    {
+      "level": "error",
+      "node_id": "image-download",
+      "message": "[http request] 缺少 url"
+    },
+    {
+      "level": "error",
+      "node_id": "hub_vis_http",
+      "message": "[http request] POST 但无 body/bodyType！NR 会发送 msg.payload 作为请求体（通常是日期/字符串），导致 API 422 错误。请添加 body (JSON 对象) 和 bodyType:'json'。"
+    }
+  ],
+  "warnings": [
+    {
+      "level": "warning",
+      "rule": "R28",
+      "node_id": "_type",
+      "node_type": "http response",
+      "message": "节点类型『http response』已在目标 NR 注册，但网关无字段级校验规则，将按原样部署；若为自定义/新装节点，请自行确认必填字段已正确填写，否则部署后静默失效。"
+    },
+    {
+      "level": "warning",
+      "rule": "R28",
+      "node_id": "_type",
+      "node_type": "image viewer",
+      "message": "节点类型『image viewer』已在目标 NR 注册，但网关无字段级校验规则，将按原样部署；若为自定义/新装节点，请自行确认必填字段已正确填写，否则部署后静默失效。"
+    },
+    {
+      "level": "warning",
+      "rule": "R40",
+      "node_id": "d68099f7f42078ce",
+      "node_type": "http request",
+      "message": "`http request` 节点的代码含**潜在危险调用**：host 命中私网/RFC1918 地址（SSRF 风险，可访问内网设备如路由器/NAS/HA）：192.168.2.200。这类节点在 NR 运行时拥有 Node.js 进程权限，可被执行系统命令/读文件/SSRF/MQTT 投毒，危害 NR 服务器安全。若这是你预期的合法自动化（如调用本地脚本），可忽略本条警告；否则请改用更安全的替代（如 api-call-service 调用 HA 服务、http request 走白名单地址）。部署前请人工复核该节点代码。"
+    },
+    {
+      "level": "warning",
+      "rule": "R40",
+      "node_id": "image-request",
+      "node_type": "http request",
+      "message": "`http request` 节点的代码含**潜在危险调用**：host 命中私网/RFC1918 地址（SSRF 风险，可访问内网设备如路由器/NAS/HA）：192.168.2.200。这类节点在 NR 运行时拥有 Node.js 进程权限，可被执行系统命令/读文件/SSRF/MQTT 投毒，危害 NR 服务器安全。若这是你预期的合法自动化（如调用本地脚本），可忽略本条警告；否则请改用更安全的替代（如 api-call-service 调用 HA 服务、http request 走白名单地址）。部署前请人工复核该节点代码。"
+    },
+    {
+      "level": "warning",
+      "rule": "R40",
+      "node_id": "hub_vis_http",
+      "node_type": "http request",
+      "message": "`http request` 节点的代码含**潜在危险调用**：host 命中私网/RFC1918 地址（SSRF 风险，可访问内网设备如路由器/NAS/HA）：192.168.2.200。这类节点在 NR 运行时拥有 Node.js 进程权限，可被执行系统命令/读文件/SSRF/MQTT 投毒，危害 NR 服务器安全。若这是你预期的合法自动化（如调用本地脚本），可忽略本条警告；否则请改用更安全的替代（如 api-call-service 调用 HA 服务、http request 走白名单地址）。部署前请人工复核该节点代码。"
+    },
+    {
+      "level": "warning",
+      "rule": "R22",
+      "node_id": "0c918c7fd1527612",
+      "node_type": "inject",
+      "message": "inject 节点未配置任何自动触发（repeat/crontab/once 均为空），仅能在编辑器里手动点击注入。若该节点意在「自动/周期触发」，请设置 interval(repeat) 或 crontab；若确为手动触发节点可忽略。"
+    },
+    {
+      "level": "warning",
+      "rule": "R22",
+      "node_id": "image-inject",
+      "node_type": "inject",
+      "message": "inject 节点未配置任何自动触发（repeat/crontab/once 均为空），仅能在编辑器里手动点击注入。若该节点意在「自动/周期触发」，请设置 interval(repeat) 或 crontab；若确为手动触发节点可忽略。"
+    },
+    {
+      "level": "warning",
+      "rule": "R22",
+      "node_id": "image-download",
+      "node_type": "http request",
+      "message": "http request 节点 `url` 为空。NR 会改从 msg.url 取地址；若上游未设置 msg.url，该请求将以空地址发出并失败。请直接填写 url，或确认上游已构造 msg.url。"
+    },
+    {
+      "level": "warning",
+      "rule": "R14",
+      "node_id": "image-url",
+      "node_type": "debug",
+      "message": "不可达节点（死代码）：类型 `debug` 的节点从任何触发源（inject/触发器/link in 等）出发都**无法被触达**，部署后该节点永远不执行。白盒 agent 手搓 flow 时常见原因是「节点写好了但忘了接入主链」（甚至可能整段子图都悬空）。请检查连线，或若该节点确为冗余请删除。"
+    },
+    {
+      "level": "warning",
+      "rule": "R14",
+      "node_id": "hub_chat_err",
+      "node_type": "function",
+      "message": "不可达节点（死代码）：类型 `function` 的节点从任何触发源（inject/触发器/link in 等）出发都**无法被触达**，部署后该节点永远不执行。白盒 agent 手搓 flow 时常见原因是「节点写好了但忘了接入主链」（甚至可能整段子图都悬空）。请检查连线，或若该节点确为冗余请删除。"
+    }
+  ],
+  "will_deploy_block": false,
+  "blocking_rules": [],
+  "schema_blocking": [],
+  "summary": "校验未通过：4 个 error、10 个 warning。请先修复 error 再部署（其中 0 个属硬伤，会被 deploy_raw 直接拦下）。",
+  "logic": {
+    "ok": true,
+    "logic_issues": [],
+    "unreachable_actions": [],
+    "action_endpoints": [
+      "d68099f7f42078ce",
+      "hub_vis_http",
+      "image-download",
+      "image-request"
+    ],
+    "reachable_actions": [
+      "d68099f7f42078ce",
+      "hub_vis_http",
+      "image-download",
+      "image-request"
+    ],
+    "scenarios": [
+      {
+        "entry_id": "0c918c7fd1527612",
+        "entry_type": "inject",
+        "fires": true,
+        "note": "inject 手动/周期触发（payload 未知）",
+        "reached_actions": [
+          "d68099f7f42078ce"
+        ],
+        "notes": []
+      },
+      {
+        "entry_id": "image-inject",
+        "entry_type": "inject",
+        "fires": true,
+        "note": "inject 手动/周期触发（payload 未知）",
+        "reached_actions": [
+          "image-download",
+          "image-request"
+        ],
+        "notes": []
+      },
+      {
+        "entry_id": "hub_chat_in",
+        "entry_type": "http in",
+        "fires": true,
+        "note": "http in 触发（payload 未知）",
+        "reached_actions": [
+          "d68099f7f42078ce"
+        ],
+        "notes": []
+      },
+      {
+        "entry_id": "hub_img_in",
+        "entry_type": "http in",
+        "fires": true,
+        "note": "http in 触发（payload 未知）",
+        "reached_actions": [
+          "image-download",
+          "image-request"
+        ],
+        "notes": []
+      },
+      {
+        "entry_id": "hub_vis_in",
+        "entry_type": "http in",
+        "fires": true,
+        "note": "http in 触发（payload 未知）",
+        "reached_actions": [
+          "hub_vis_http"
+        ],
+        "notes": []
+      }
+    ],
+    "summary": "逻辑预检：5 个触发源 / 4 个动作终点；可达 4 个、不可达 0 个；error 0 / warning 0。"
+  }
+}

@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>豆包管家・自进化</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        body {
+            background-color: #080b13;
+            color: #e0e8f5;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 500;
+            color: #7cd0ff;
+            margin-bottom: 20px;
+            text-shadow: 0 0 12px #2080cc66;
+        }
+        .section {
+            margin-bottom: 24px;
+        }
+        .section-title {
+            font-size: 16px;
+            color: #8899bb;
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #203454;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .btn {
+            background: #2080cc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .btn:hover {
+            background: #3090dc;
+        }
+        .btn-success {
+            background: #20a060;
+        }
+        .btn-success:hover {
+            background: #30b070;
+        }
+        .btn-danger {
+            background: #c04040;
+        }
+        .btn-danger:hover {
+            background: #d05050;
+        }
+        .rule-card {
+            background: linear-gradient(145deg, #101726, #0c101a);
+            border: 1px solid #203454;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .rule-name {
+            font-size: 16px;
+            font-weight: 500;
+            color: #7cd0ff;
+            margin-bottom: 8px;
+        }
+        .rule-desc {
+            color: #8899bb;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .rule-infer {
+            color: #7cf0a8;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+        .rule-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .empty {
+            color: #66748c;
+            font-size: 14px;
+            padding: 20px;
+            text-align: center;
+        }
+        .footer {
+            color: #66748c;
+            font-size: 12px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .report-card {
+            background: linear-gradient(145deg, #101726, #0c101a);
+            border: 1px solid #203454;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .report-title {
+            font-size: 14px;
+            color: #8899bb;
+            margin-bottom: 8px;
+        }
+        .report-summary {
+            color: #7cd0ff;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧬 自进化中心</h1>
+
+        <!-- 触发分析 -->
+        <div class="section">
+            <div class="section-title">
+                <span>📊 感知分析报告</span>
+                <button class="btn" onclick="runAnalysis()">运行 LLM 分析</button>
+            </div>
+            <div id="reports">
+                <div class="empty">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 候选规则 -->
+        <div class="section">
+            <div class="section-title">
+                <span>📋 候选规则（待审核）</span>
+            </div>
+            <div id="candidates">
+                <div class="empty">加载中...</div>
+            </div>
+        </div>
+
+        <div class="footer" id="footer">加载中...</div>
+    </div>
+
+<script>
+const API_BASE = '/api';
+
+async function fetchAll() {
+    try {
+        const [reportsRes, candidatesRes] = await Promise.all([
+            fetch(`${API_BASE}/perception/reports`, {}),
+            fetch(`${API_BASE}/perception/candidates?status=pending`, {}),
+        ]);
+
+        if (reportsRes.status === 401) {
+            document.getElementById('footer').innerText = '请先登录';
+            return;
+        }
+
+        const reportsData = await reportsRes.json();
+        const candidatesData = await candidatesRes.json();
+
+        renderReports(reportsData.data || []);
+        renderCandidates(candidatesData.data || []);
+
+        document.getElementById('footer').innerText = `最后更新：${new Date().toLocaleTimeString()}`;
+    } catch (e) {
+        document.getElementById('footer').innerText = `加载失败：${e.message}`;
+    }
+}
+
+function renderReports(reports) {
+    const el = document.getElementById('reports');
+    if (!reports || reports.length === 0) {
+        el.innerHTML = '<div class="empty">暂无分析报告</div>';
+        return;
+    }
+    el.innerHTML = reports.map(r => {
+        const summary = r.llm_analysis?.summary || '无 LLM 分析';
+        const candidates = r.llm_analysis?.candidates?.length || 0;
+        return `
+            <div class="report-card">
+                <div class="report-title">
+                    ${new Date(r.ts * 1000).toLocaleString()} · 分析 ${r.days} 天 · ${r.total_events} 个事件
+                </div>
+                <div class="report-summary">
+                    ${summary}（生成 ${candidates} 条候选规则）
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderCandidates(candidates) {
+    const el = document.getElementById('candidates');
+    if (!candidates || candidates.length === 0) {
+        el.innerHTML = '<div class="empty">暂无待审核的候选规则</div>';
+        return;
+    }
+    el.innerHTML = candidates.map(c => `
+        <div class="rule-card">
+            <div class="rule-name">${c.name}</div>
+            <div class="rule-desc">${c.description}</div>
+            <div class="rule-infer">推断：${c.infer}</div>
+            <div class="rule-actions">
+                <button class="btn btn-success" onclick="approveRule(${c.id})">✓ 批准</button>
+                <button class="btn btn-danger" onclick="rejectRule(${c.id})">✗ 拒绝</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function runAnalysis() {
+    try {
+        const btn = event.target;
+        btn.disabled = true;
+        btn.innerText = '分析中...';
+
+        const res = await fetch(`${API_BASE}/perception/analyze`, {
+        });
+        const data = await res.json();
+        alert(`分析完成！生成 ${data.data?.candidates?.length || 0} 条候选规则`);
+        fetchAll();
+    } catch (e) {
+        alert(`分析失败：${e.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.innerText = '运行 LLM 分析';
+    }
+}
+
+async function approveRule(ruleId) {
+    await updateRuleStatus(ruleId, 'approved');
+}
+
+async function rejectRule(ruleId) {
+    await updateRuleStatus(ruleId, 'rejected');
+}
+
+async function updateRuleStatus(ruleId, status) {
+    try {
+        await fetch(`${API_BASE}/perception/candidates/${ruleId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ status }),
+        });
+        fetchAll();
+    } catch (e) {
+        alert(`更新失败：${e.message}`);
+    }
+}
+
+// 首次加载
+fetchAll();
+</script>
+</body>
+</html>

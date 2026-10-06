@@ -1,0 +1,20 @@
+fix(audit-1002/batch17)：五处整份 JSON 就地截断写改原子替换 + 两处读侧语义（表行 45／109／94）
+
+产码
+- 新 butler/core/atomic_json.py：write_json_atomic ＝ 先序列化（失败即 raise，目标与临时文件都不碰）
+  → 写定名兄弟文件 target.name + ".tmp" → os.replace；异常路径 unlink 临时文件后重抛。定名⛔ 随机后缀（NAS 规范⛔ .bak 堆积）。
+- 五个写手换过去：butler/devices.py::save、butler/roles/store.py::_write、butler/roles/state.py::_save、
+  butler/memory/feeder.py::_write_role_state、butler/core/fast_routes.py::_save
+- 两处读侧：feeder._read_role_state 在 FileNotFoundError 之外补兜底 except（记 error、回退空 dict，治表行 109「写坏后全线 500」）；
+  fast_routes._load 补 isinstance(data, list) 验形 + 记 error 回退内置规则，且构造期⛔ 调 _save（坏文件现场保留，治表行 94「永久静默失效」）
+
+验收 tests/test_audit_1002_batch17_atomic_json_writes.py：20 腿＝13 先红（9 FAIL 旧码 + 4 ERROR helper 缺席）＋7 笼头对照；
+  落码后 Ran 20 / OK / rc=0。形状腿钉「落盘文本 == json.dumps(ensure_ascii=False, indent=2)」＋零临时残留＋glob 不吃 .json.tmp。
+闸门 scripts/audit_1002/patch_b17_atomic_json_1002.py：ALREADY_SCAN 逐文件预扫排在 BASELINE_* 之前（批16 §17-3 同坑二次），
+  标记比较走 LF 归一视图（否则整文件 CRLF 的 devices.py／roles/state.py 上恒不命中＝闸形同虚设）；
+  五枚既有 atomic 实现（aliases/config_routes/deps/triggers/store/skills/store）写前写后 md5 同号；重跑 raise ALREADY_APPLIED 列全六件。
+负控 scripts/audit_1002/mutate_b17_1002.py：CENSUS|real=9 bitten=9 controls=2 misbite=0 skipped=无 restore_bad=无（两枚等价对照存活）。
+
+全量回归 Ran 729 / FAIL 枚数 0 / ERROR 枚数 10，红名单身份 md5 9490b2e3085174ec213d6b34d0e0d01d 未变 ⇒ ⛔ 新增行为回归。
+状态＝已落码-未生效：活进程比本批每一笔都老，唯一生效路径是那一次经授权的 docker restart（⛔ up -d，会丢可写层热修）。
+台账见下一笔 docs 的 §18。

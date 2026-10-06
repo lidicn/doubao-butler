@@ -1,0 +1,35 @@
+# doubao-butler 质量门禁口径（复制到仓库根，改名 `.gates.toml`）
+# 依据 `doc/审计与横评-202609/01-审计-doubao-butler.md`（含 09-19 的 ⛔ 撤回与新增 P0-12）。
+
+source_roots = ["butler"]
+
+# 注意：本仓不是 git 仓库，且 `E:\NAS` 这份是过期副本。基线必须在 **NAS 那份**（/vol1/1000/docker/doubao-butler）上生成。
+smoke_targets = ["butler.app", "butler.core.dialog", "butler.tts.manager"]
+
+critical_globs = [
+    "butler/guard/*",                          # 推送闸门（P0-7：can_* 零调用者）
+    "butler/auth*",
+    "butler/api/*",                            # 端点鉴权与 500
+    "butler/core/dialog.py",                   # 确认/取消判定门（P0-12）
+    "butler/skills/engines/llm_decide/*",      # 交给 LLM 的那道判定门
+    "butler/tts/*",
+    "butler/morning/*",                        # 播报链（异常被咽下 = 永远不响）
+    "butler/proactive/*",
+    "butler/timeseries/*",
+    "butler/scheduler/*",
+]
+
+write_path_globs = [
+    "butler/af_bridge.py",
+    "butler/skills/*",
+    "butler/store/*",
+    "butler/api/*",
+    "butler/core/*",
+]
+
+forbid_local_consent_tables = true   # WO-BUT-001 合入后置 true
+
+extra_skip_globs = [
+    "butler/graphify-out/*",   # 生成的 AST 缓存，勿扫勿读
+    "butler/static/*",
+]

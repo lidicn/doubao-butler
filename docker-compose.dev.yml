@@ -1,0 +1,84 @@
+# 开发模式：代码热重载
+# 用法：docker compose -f docker-compose.dev.yml up
+# 与生产模式的区别：
+#   1. uvicorn --reload：检测到 butler/ 目录下 .py 文件变化自动重启
+#   2. 不使用 restart: unless-stopped（开发时崩溃了直接看日志）
+#   3. 端口不变，直接替换生产容器使用
+#
+# 注意：前端静态文件（js/css/html）不需要重启，浏览器强刷即可。
+#       只有 Python 代码改动才触发 --reload 自动重启。
+
+services:
+  doubao-butler:
+    build: .
+    container_name: doubao-butler
+    ports:
+      - "8095:8095"
+    environment:
+      - BUTLER_HOST=0.0.0.0
+      - BUTLER_PORT=8095
+      - BUTLER_BASE_URL=http://192.168.2.200:8095
+      - BUTLER_WEB_USER=butler-owner
+      - BUTLER_WEB_PASSWORD=e32xl1Pm1gMteXBjuXTM
+      - MQTT_HOST=192.168.2.200
+      - MQTT_PORT=1883
+      - MQTT_USER=butler
+      - MQTT_PASSWORD=your_mqtt_password_here
+      - MQTT_CLIENT_ID=butler-core-dev
+      - TV_HTTP_URL=http://192.168.2.238:8080
+      - TV_MQTT_PREFIX=tv/livingroom
+      - TVPILOT_HTTP_URL=http://192.168.2.200:8090
+      - GO2RTC_BASE_URL=http://192.168.2.200:1984
+      - GO2RTC_USER=lidicn
+      - GO2RTC_PASS=your_go2rtc_password_here
+      - NEW_API_URL=http://192.168.2.200:3001/v1
+      - NEW_API_KEY=your_new_api_key_here
+      - NEW_API_MODEL=deepseek-v4-flash
+      - DOUBAO_API_URL=http://192.168.2.200:9090/v1/chat/completions
+      - DOUBAO_API_KEY=your_doubao_api_key_here
+      - DOUBAO_MODEL=doubao-seed-1-6
+      - DOUBAO_BASE_URL=http://192.168.2.200:9090
+      - LLM_TIMEOUT=15
+      - WAKE_PHRASE=豆包管家
+      - MEMORY_AGENT_URL=http://192.168.2.200:8086
+      - MEMORY_AGENT_MCP_URL=http://192.168.2.200:8086/mcp
+      - MEMORY_AGENT_TOKEN=your_memory_agent_token_here
+      - MEMORY_AGENT_BUTLER_TOKEN=your_memory_agent_butler_token_here
+      - HA_URL=http://192.168.2.200:8123
+      - HA_TOKEN=your_ha_token_here
+      - XIAOMI_SERVICE_TOKEN=your_xiaomi_service_token_here
+      - XIAOMI_USER_ID=your_xiaomi_user_id_here
+      - XIAOMI_SSECURITY=your_xiaomi_ssecurity_here
+      - BARK_URL=http://192.168.2.200:18273
+      - BARK_KEY=your_bark_key_here
+      - TTS_PRIMARY=edge-tts
+      - TTS_EDGE_VOICE=zh-CN-XiaoxiaoNeural
+      - TTS_KOKORO_URL=http://doubao-butler-kokoro:8880/v1/audio/speech
+      - TTS_KOKORO_VOICE=zm_Yunzhe
+      - TTS_SPEED=1.0
+      - TTS_VOLUME=80
+      - TTS_CACHE_ENABLED=true
+      - COOLDOWN_SECONDS=600
+      - ACTIVE_DIALOG_TIMEOUT=10
+      - WAITING_SECONDS=5
+      - BUTLER_SPEAK_TARGET=mqtt
+      - DEDUP_WINDOW_DAYS=7
+      - DEDUP_JACCARD_THRESHOLD=0.6
+      - DND_WINDOWS=
+    volumes:
+      - ./butler:/app/butler
+      - /vol1/1000/docker/doubao-butler/data:/app/data
+      - /vol1/1000/docker/doubao-butler/tts:/app/tts
+      - /vol1/1000/books:/nas/books
+      - /vol1/1000/docker/new-api/data/one-api.db:/app/data/new-api.db
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+      # 挂载 HA 配置目录（用于自动读取小米 service_token）
+      - /vol1/1000/docker/homeassistant/config/.storage:/app/ha_config:ro
+    # 开发模式核心：覆盖启动命令为 --reload
+    command: uvicorn butler.app:app --host 0.0.0.0 --port 8095 --reload --reload-dir /app/butler
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

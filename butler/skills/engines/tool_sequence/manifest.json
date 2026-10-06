@@ -1,0 +1,9 @@
+{
+  "id": "tool_sequence",
+  "name": "工具序列引擎",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "ToolSequenceEngine",
+  "description": "按预定义步骤依次调用 Agent 工具，支持 {{param}} 占位符参数化。用于把成功的多步 ReAct 序列沉淀为可复用技能（M3 操作模板），命中时直接执行不逐步 LLM 规划，失败回退 ReAct。",
+  "modes": ["sequence"]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "my_engine",
+  "name": "我的引擎（模板）",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "Engine",
+  "desc": "用户自定义引擎模板。复制本目录到 data/plugins/<你的引擎id>/ 后改写 engine.py 的 run()。"
+}

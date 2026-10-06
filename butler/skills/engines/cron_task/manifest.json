@@ -1,0 +1,9 @@
+{
+  "id": "cron_task",
+  "name": "智动任务引擎",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "CronTaskEngine",
+  "description": "Koin Action 智动：调用注册的 HTTP API，按条件判断后执行 TTS/Bark/TV 推送。支持 hour_local 时区条件。",
+  "modes": ["http_condition"]
+}

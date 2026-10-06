@@ -1,0 +1,9 @@
+{
+  "id": "camera_vlm",
+  "name": "摄像头视觉引擎",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "CameraVLMEngine",
+  "description": "取帧 → 视觉识别（MA 实时分析或自定义提示词直连 VLM）→ 可选 LLM 组装 → 文本",
+  "modes": ["ma_analyze", "live_vlm"]
+}

@@ -1,0 +1,7 @@
+{
+  "id": "ha_inspection",
+  "name": "HA 设备巡检",
+  "version": "1.0.0",
+  "entry": "engine.py",
+  "class": "HAInspectionEngine"
+}

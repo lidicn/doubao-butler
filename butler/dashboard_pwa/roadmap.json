@@ -1,0 +1,43 @@
+{
+  "projects": [
+    {
+      "id": "doubao-butler",
+      "name": "豆包管家",
+      "color": "#4285f4",
+      "milestones": [
+        {"version": "v1.0", "name": "ReAct 闭环 + TVPilot 接入", "status": "done", "date": "2026-09-01"},
+        {"version": "v1.1", "name": "技能系统 + agent_collab + 429退避", "status": "done", "date": "2026-09-05"},
+        {"version": "v1.2 M5", "name": "DeskPilot 固定任务接入", "status": "done", "date": "2026-09-06"},
+        {"version": "v1.2 M5.5", "name": "NAS 运维能力", "status": "done", "date": "2026-09-07"},
+        {"version": "v1.2 M6", "name": "桌面原子操控 + 联调验收", "status": "done", "date": "2026-09-08"},
+        {"version": "v1.2 M6.5", "name": "PM调度系统 + 任务看板", "status": "done", "date": "2026-09-08"},
+        {"version": "v1.2 M7", "name": "看板PWA + 决策请示 + Bark通知", "status": "active", "date": "2026-09-08"},
+        {"version": "v1.3", "name": "技能沉淀 + 消息分级 + 超时监控", "status": "pending", "date": "2026-09-10"}
+      ]
+    },
+    {
+      "id": "tvpilot",
+      "name": "TVPilot",
+      "color": "#34a853",
+      "milestones": [
+        {"version": "v0.2", "name": "工具层就绪", "status": "done", "date": "2026-09-01"},
+        {"version": "v0.3", "name": "联调支撑（P0中文输入+操作存档）", "status": "done", "date": "2026-09-03"},
+        {"version": "v0.5", "name": "端到端验证（Arcface）", "status": "active", "date": "2026-09-08"},
+        {"version": "v0.7", "name": "PWA遥控器 + 语音", "status": "done", "date": "2026-09-07"},
+        {"version": "v1.0", "name": "整合联调 + 稳定版", "status": "pending", "date": "2026-09-10"}
+      ]
+    },
+    {
+      "id": "deskpilot",
+      "name": "DeskPilot",
+      "color": "#fbbc04",
+      "milestones": [
+        {"version": "v2.0", "name": "固定任务工具层", "status": "done", "date": "2026-09-05"},
+        {"version": "v2.5", "name": "UIA语义操控", "status": "done", "date": "2026-09-07"},
+        {"version": "v2.6", "name": "双进程方案（管理员服务+用户态代理）", "status": "active", "date": "2026-09-08"},
+        {"version": "v3.0", "name": "让豆包管家操控电脑（ReAct闭环）", "status": "pending", "date": "2026-09-12"},
+        {"version": "v3.5", "name": "SSH运维（5道约束）", "status": "pending", "date": "2026-09-15"}
+      ]
+    }
+  ]
+}

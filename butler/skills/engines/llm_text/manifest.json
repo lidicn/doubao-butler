@@ -1,0 +1,9 @@
+{
+  "id": "llm_text",
+  "name": "LLM 文本生成引擎",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "LLMTextEngine",
+  "description": "把 brain.prompt 交给 LLM，产出不超过 max_chars 的文本。支持 {{member}}/{{room}}/{{time}} 占位符从 payload 渲染。用于日程播报、总结、新闻简报等需要 LLM 生成口播文本的技能。",
+  "modes": ["template"]
+}

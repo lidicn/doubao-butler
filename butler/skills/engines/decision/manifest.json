@@ -1,0 +1,7 @@
+{
+  "id": "decision",
+  "name": "决策层心跳",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "DecisionSkillEngine"
+}

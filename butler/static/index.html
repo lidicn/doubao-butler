@@ -1,0 +1,2414 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>豆包管家 · 控制台</title>
+  <meta name="theme-color" content="#F59E0B" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="管家" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+  <script src="/vendor/tailwind.min.js?v=3"></script>
+  <script src="/vendor/alpine.min.js?v=3" defer></script>
+  <link rel="stylesheet" href="/css/app.css?v=3" />
+  <link rel="manifest" href="/manifest.webmanifest?v=3" />
+</head>
+<body x-data x-cloak>
+  <!-- ===== 登录页 ===== -->
+  <div x-show="!$store.app.authed" class="min-h-screen flex items-center justify-center p-5"
+       x-init="$store.app.init()">
+    <div class="glass w-full max-w-sm p-8 fade-in">
+      <div class="flex items-center gap-3 mb-6">
+        <img src="/images/doubao.png" class="w-12 h-12 rounded-2xl object-cover border border-white/10" alt="豆包" />
+        <div>
+          <div class="text-2xl font-semibold amber-gradient">豆包管家</div>
+          <div class="text-xs text-[var(--txt-2)]">家庭 AI 管家 · v1.4</div>
+        </div>
+      </div>
+      <div class="space-y-3">
+        <input class="input" placeholder="用户名" x-model="$store.app.user" @keyup.enter="$store.app.login()" />
+        <input class="input" type="password" placeholder="密码" x-model="$store.app.pass" @keyup.enter="$store.app.login()" />
+        <button class="btn-amber w-full" @click="$store.app.login()" :disabled="$store.app.loading">登录</button>
+        <div x-show="$store.app.loginErr" class="text-[var(--err)] text-sm" x-text="$store.app.loginErr"></div>
+      </div>
+      <div class="mt-5 flex gap-2 text-xs text-[var(--txt-2)] md:hidden">
+        <span class="dot" :class="$store.app.status && $store.app.status.connections && $store.app.status.connections.mqtt ? 'dot-ok':'dot-off'"></span>MQTT
+        <span class="dot" :class="$store.app.status && $store.app.status.connections && $store.app.status.connections.tv ? 'dot-ok':'dot-off'"></span>TV
+        <span class="dot" :class="$store.app.status && $store.app.status.connections && $store.app.status.connections.memory_agent ? 'dot-ok':'dot-off'"></span>记忆
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 主应用 ===== -->
+  <div x-show="$store.app.authed">
+
+    <!-- 桌面侧边栏 -->
+    <aside class="hidden md:flex flex-col fixed inset-y-0 left-0 w-[224px] glass rounded-none border-y-0 border-l-0 p-4 gap-1"
+           style="backdrop-filter:blur(16px)">
+      <div class="flex items-center gap-2 mb-6 px-2">
+        <img src="/images/doubao.png" class="w-9 h-9 rounded-xl object-cover border border-white/10" alt="豆包" />
+        <div class="font-semibold amber-gradient">豆包管家</div>
+      </div>
+      <template x-for="n in $store.app.nav" :key="n.k">
+        <button class="side-item" :class="$store.app.view===n.k && 'active'" @click="$store.app.switchView(n.k)">
+          <span class="text-lg w-6 text-center" x-text="n.i"></span><span x-text="n.l"></span>
+        </button>
+      </template>
+      <div class="mt-auto px-2 space-y-1 text-xs text-[var(--txt-2)]">
+        <template x-for="k in ['mqtt','tv','memory_agent','ha']" :key="k">
+          <div class="flex items-center gap-2">
+            <span class="dot" :class="$store.app.status && $store.app.status.connections && $store.app.status.connections[k] ? 'dot-ok':'dot-off'"></span>
+            <span x-text="k==='memory_agent'?'记忆':k==='mqtt'?'MQTT':k==='tv'?'电视':'HA'"></span>
+          </div>
+        </template>
+      </div>
+    </aside>
+
+    <!-- 主内容 -->
+    <div class="md:ml-[224px] max-w-5xl mx-auto p-4 pb-28 md:pb-10">
+
+      <!-- 顶栏 -->
+      <header class="flex items-center justify-between mb-5">
+        <div class="flex items-center gap-3">
+          <img src="/images/doubao.png" class="w-10 h-10 rounded-2xl object-cover md:hidden border border-white/10" alt="豆包" />
+          <div class="text-lg font-semibold amber-gradient md:hidden">豆包管家</div>
+          <div class="text-base font-semibold text-[var(--txt-1)] hidden md:block"
+               x-text="$store.app.nav.find(n=>n.k===$store.app.view)?.l || ''"></div>
+        </div>
+        <div class="flex items-center gap-3 text-xs text-[var(--txt-1)]">
+          <div class="hidden md:flex items-center gap-3">
+            <template x-for="k in ['mqtt','tv','memory_agent','ha']" :key="k">
+              <span class="flex items-center gap-1">
+                <span class="dot" :class="$store.app.status && $store.app.status.connections && $store.app.status.connections[k] ? 'dot-ok':'dot-off'"></span>
+                <span x-text="k==='memory_agent'?'记忆':k==='mqtt'?'MQTT':k==='tv'?'电视':'HA'"></span>
+              </span>
+            </template>
+          </div>
+          <button class="text-xs px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer"
+                  @click="$store.app.logout()" title="退出登录">
+            退出
+          </button>
+        </div>
+      </header>
+
+      <!-- 概览 -->
+      <section x-show="$store.app.view==='overview'" class="space-y-4 fade-in">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="glass p-4">
+            <div class="card-title">管家状态</div>
+            <div class="mt-1"><span class="state-badge" x-text="$store.app.status && $store.app.status.state ? $store.app.status.state.state : 'idle'"></span></div>
+          </div>
+          <div class="glass p-4">
+            <div class="card-title">当前在场</div>
+            <div class="metric mt-1" x-text="$store.app.status && $store.app.status.state ? $store.app.status.state.present.length : 0"></div>
+          </div>
+          <div class="glass p-4">
+            <div class="card-title">今日对话</div>
+            <div class="metric mt-1" x-text="$store.app.status && $store.app.status.state ? $store.app.status.state.today_turns : 0"></div>
+          </div>
+          <div class="glass p-4">
+            <div class="card-title">最近发声</div>
+            <div class="metric mt-1 text-sm truncate" x-text="$store.app.status && $store.app.status.state ? ($store.app.status.state.last_speak_member||'—') : '—'"></div>
+          </div>
+        </div>
+
+        <!-- v1.4 快捷场景 -->
+        <div class="glass p-4">
+          <div class="card-title mb-3">快捷场景</div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <template x-for="sc in $store.app.scenes" :key="sc.id">
+              <button class="p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-left"
+                      :disabled="$store.app.sceneRunning===sc.id"
+                      @click="$store.app.runScene(sc.id)">
+                <div class="text-2xl" x-text="sc.icon"></div>
+                <div class="text-sm font-medium mt-1" x-text="sc.name"></div>
+                <div class="text-xs text-[var(--txt-2)] mt-0.5" x-text="sc.desc"></div>
+                <div class="text-xs mt-1 text-green-400" x-show="$store.app.sceneResult && $store.app.sceneResult.scene===sc.id && $store.app.sceneResult.success">✓ 完成</div>
+                <div class="text-xs mt-1 text-red-400" x-show="$store.app.sceneResult && $store.app.sceneResult.scene===sc.id && !$store.app.sceneResult.success">部分失败</div>
+                <div class="text-xs mt-1 text-blue-300" x-show="$store.app.sceneRunning===sc.id">执行中…</div>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <div class="glass p-4">
+          <div class="card-title mb-3">在场人员</div>
+          <div class="flex flex-wrap gap-2">
+            <template x-for="p in ($store.app.status && $store.app.status.state ? $store.app.status.state.present : [])" :key="p.name">
+              <div class="px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                <div class="font-medium" x-text="p.name"></div>
+                <div class="text-xs text-[var(--txt-2)]" x-text="'相似度 ' + (p.confidence*100).toFixed(0) + '%'"></div>
+              </div>
+            </template>
+            <div x-show="$store.app.status && $store.app.status.state && $store.app.status.state.present.length===0" class="text-[var(--txt-2)] text-sm py-2">客厅暂无人在</div>
+          </div>
+        </div>
+
+        <div class="glass p-4">
+          <div class="card-title mb-3">最近对话</div>
+          <div class="space-y-3 max-h-80 overflow-auto">
+            <template x-for="t in $store.app.recent" :key="t.id">
+              <div class="timeline-item py-1">
+                <div class="flex justify-between text-xs text-[var(--txt-2)]">
+                  <span><span x-text="t.member"></span> · <span x-text="t.role==='butler'?'管家':'家人'"></span></span>
+                  <span x-text="$store.app.fmtTime(t.ts)"></span>
+                </div>
+                <div class="text-sm" x-text="t.text"></div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div class="glass p-4">
+          <div class="card-title mb-2">实时事件流</div>
+          <div class="text-xs text-[var(--txt-2)] space-y-1 max-h-40 overflow-auto">
+            <template x-for="(e,i) in $store.app.streamLog" :key="i">
+              <div><span class="text-[var(--amber-2)]" x-text="e.type"></span> · <span x-text="e.member"></span> · <span x-text="e.text"></span></div>
+            </template>
+            <div x-show="$store.app.streamLog.length===0">等待事件…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- v1.5 管家对话 -->
+      
+      <!-- v2.5: TTS 队列状态 -->
+      <div x-show="$store.app.authed" class="card fade-in">
+        <div class="card-title">🎙️ TTS 队列</div>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <div class="text-xs text-[var(--txt-2)]">队列长度</div>
+            <div class="font-mono" x-text="(ttsQueue && ttsQueue.size) || 0"></div>
+          </div>
+          <div>
+            <div class="text-xs text-[var(--txt-2)]">已播放</div>
+            <div class="font-mono" x-text="(ttsQueue && ttsQueue.played) || 0"></div>
+          </div>
+          <div>
+            <div class="text-xs text-[var(--txt-2)]">夜间静默</div>
+            <div x-text="(ttsQueue && ttsQueue.quiet_active) ? '🔇 启用中' : '🔊 正常'" class="text-xs"></div>
+          </div>
+          <div>
+            <div class="text-xs text-[var(--txt-2)]">熔断/过载</div>
+            <div class="text-xs" x-text="(ttsQueue && ttsQueue.breaker_active) ? '🔥 熔断中' : ((ttsQueue && ttsQueue.overloads > 0) ? '⚠️ 过载' : '✅ 正常')"></div>
+          </div>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <button class="btn-secondary text-xs" @click="loadTtsQueue()">刷新</button>
+          <button class="btn-primary text-xs" @click="testTtsQueue()">测试播报</button>
+        </div>
+      </div>
+<section x-show="$store.app.view==='butler_chat'" class="space-y-4 fade-in">
+        <div class="glass p-4 flex flex-col" style="height:calc(100vh - 180px);">
+          <div class="card-title mb-3">🤖 管家对话（LLM function calling）</div>
+          <div class="flex-1 overflow-y-auto space-y-2" style="min-height:200px;">
+            <template x-for="(m,i) in $store.app.chatHistory" :key="i">
+              <div class="p-2 rounded-lg" :class="m.who==='我' ? 'bg-blue-500/10 ml-12' : m.who==='管家' ? 'bg-white/5 mr-12' : 'bg-red-500/10'">
+                <div class="text-xs text-[var(--txt-2)]" x-text="m.who"></div>
+                <div class="text-sm" x-text="m.text"></div>
+              </div>
+            </template>
+            <div x-show="$store.app.chatHistory.length===0" class="text-center text-[var(--txt-2)] py-8">
+              跟管家说点什么吧，比如"书房太热了"或"明天天气怎么样"
+            </div>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <input type="text" x-model="$store.app.chatInput" @keydown.enter="$store.app.sendChat()"
+                   class="flex-1 bg-white/5 rounded-lg px-3 py-2 text-sm" placeholder="输入消息..." />
+            <button @click="$store.app.sendChat()" class="btn-primary text-sm px-4" :disabled="$store.app.chatLoading">
+              <span x-show="!$store.app.chatLoading">发送</span>
+              <span x-show="$store.app.chatLoading">思考中...</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 推送通知 -->
+      <section x-show="$store.app.view==='push'" class="space-y-4 fade-in">
+        <div class="glass p-4 space-y-3">
+          <div class="card-title">推送通知到电视</div>
+          <input class="input" placeholder="通知标题（必填）" x-model="$store.app.nTitle" />
+          <textarea class="input" placeholder="通知内容（必填）" x-model="$store.app.nContent"></textarea>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs text-[var(--txt-2)]">类型</span>
+            <button class="seg-btn" :class="$store.app.nType==='info' && 'active'" @click="$store.app.nType='info'">信息</button>
+            <button class="seg-btn" :class="$store.app.nType==='warning' && 'active'" @click="$store.app.nType='warning'">提醒</button>
+            <button class="seg-btn" :class="$store.app.nType==='error' && 'active'" @click="$store.app.nType='error'">紧急</button>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" x-model="$store.app.nImportant" /> 重要（需确认才关闭）
+            </label>
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" x-model="$store.app.nTts" /> 同步朗读
+            </label>
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" x-model="$store.app.nPause" /> 暂停当前媒体
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <label class="flex items-center gap-2">音量
+              <input type="range" min="0" max="100" x-model.number="$store.app.nVolume" class="flex-1" />
+              <span x-text="$store.app.nVolume" class="w-8 text-right"></span>
+            </label>
+            <label class="flex items-center gap-2" :class="$store.app.nImportant && 'opacity-40'">
+              时长(秒)
+              <input type="range" min="3" max="30" x-model.number="$store.app.nDuration" class="flex-1" :disabled="$store.app.nImportant" />
+              <span x-text="$store.app.nDuration" class="w-8 text-right"></span>
+            </label>
+            <select class="input" x-model="$store.app.nVoice">
+              <option value="">默认音色</option>
+              <option value="zh-CN-XiaoxiaoNeural">晓晓（女声·edge）</option>
+              <option value="zm_Yunzhe">云哲（男声·kokoro）</option>
+            </select>
+            <select class='input' x-model='$store.app.nMember'>
+              <option value=''>豆包管家（默认头像）</option>
+              <template x-for='m in $store.app.members' :key='m.id || m.name'>
+                <option :value='m.name' x-text='m.name + (m.nickname ? "（"+m.nickname+"）" : "")'></option>
+              </template>
+            </select>
+          </div>
+
+          <!-- 推送者头像 -->
+          <div class='flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10'>
+            <div class='shrink-0'>
+              <img class='w-12 h-12 rounded-full object-cover border border-white/10 bg-black/20'
+                   :src="`/avatars/${($store.app.nMember || 'doubao')}.png?v=${$store.app.avatarTs}`"
+                   onerror="this.src='/images/doubao.png'" alt='头像' />
+            </div>
+            <div class='flex-1 space-y-2 min-w-0'>
+              <input type='file' accept='image/png,image/jpeg,image/jpg,image/webp'
+                     class='input text-xs py-1.5 w-full'
+                     @change='$store.app.avatarFile = $event.target.files[0]; $store.app.avatarFileName = ($event.target.files[0] && $event.target.files[0].name) || ""' />
+              <div class='flex items-center gap-2'>
+                <button class='btn-ghost text-xs' :disabled='!$store.app.avatarFile' @click='$store.app.uploadAvatar()'>上传为 <span x-text='$store.app.nMember || "豆包管家"'></span> 头像</button>
+                <span x-show='$store.app.avatarFileName' class='text-xs text-[var(--txt-2)] truncate max-w-[120px]' x-text='$store.app.avatarFileName'></span>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn-amber w-full" @click="$store.app.pushNotify()" :disabled="$store.app.loading">推送到电视 📣</button>
+        </div>
+
+        <div class="glass p-4 space-y-2">
+          <div class="card-title mb-1">快捷模板</div>
+          <div class="flex flex-wrap gap-2">
+            <template x-for="(t,i) in $store.app.notifyTemplates" :key="i">
+              <button class="btn-ghost text-sm" @click="$store.app.applyTemplate(t)" x-text="t.title"></button>
+            </template>
+          </div>
+        </div>
+
+        <div class="glass p-4">
+          <div class="card-title mb-3">推送历史（最近 20 条）</div>
+          <div class="space-y-2 max-h-[60vh] overflow-auto">
+            <template x-for="h in $store.app.notifyHistory" :key="h.id">
+              <div class="timeline-item py-2 flex justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <img class="w-6 h-6 rounded-full object-cover shrink-0 border border-white/10"
+                         :src="`/avatars/${(h.member || 'doubao')}.png?v=${$store.app.avatarTs}`"
+                         onerror="this.src='/images/doubao.png'" alt="" />
+                    <span class="font-medium truncate" x-text="h.title"></span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded"
+                          :class="h.type==='error' ? 'bg-[var(--err)]/20 text-[var(--err)]' : h.type==='warning' ? 'bg-[var(--amber-1)]/20 text-[var(--amber-2)]' : 'bg-[var(--info)]/20 text-[var(--info)]'"
+                          x-text="h.type==='error'?'紧急':h.type==='warning'?'提醒':'信息'"></span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded"
+                          :class="h.status==='ok' ? 'bg-[var(--ok)]/20 text-[var(--ok)]' : 'bg-[var(--err)]/20 text-[var(--err)]'"
+                          x-text="h.status==='ok'?'成功':'失败'"></span>
+                  </div>
+                  <div class="text-sm text-[var(--txt-0)] truncate" x-text="h.content"></div>
+                  <div class="text-xs text-[var(--txt-2)]" x-text="($store.app.fmtTime(h.ts)) + ' · ' + (h.member||'管家') + (h.with_tts ? ' · 含朗读' : '')"></div>
+                </div>
+                <div class="flex flex-col gap-1 shrink-0">
+                  <button class="text-[var(--amber-2)] text-xs" @click="$store.app.resendNotify(h)">重发</button>
+                  <button class="text-[var(--err)] text-xs" @click="$store.app.delNotify(h.id)">删除</button>
+                </div>
+              </div>
+            </template>
+            <div x-show="$store.app.notifyHistory.length===0" class="text-[var(--txt-2)] text-sm py-2">暂无推送记录</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 对话 -->
+      <section x-show="$store.app.view==='dialog'" class="space-y-4 fade-in">
+        <div class="glass p-4 space-y-3">
+          <div class="card-title">对话测试</div>
+          <div class="flex gap-2 flex-wrap">
+            <input class="input" style="max-width:160px" placeholder="成员(可空)" x-ref="testMember" />
+            <input class="input flex-1" placeholder="对管家说点什么…" x-ref="testText" @keyup.enter="$store.app.testSpeak()" />
+            <button class="btn-amber" @click="$store.app.testSpeak()">发送</button>
+          </div>
+          <div class="card-title">TTS 试听</div>
+          <div class="flex gap-2 flex-wrap">
+            <input class="input flex-1" placeholder="输入要念出来的话" x-ref="ttsText" />
+            <button class="btn-ghost" @click="$store.app.ttsTry()">合成并播放</button>
+          </div>
+        </div>
+        <div class="glass p-4">
+          <div class="card-title mb-3">对话历史</div>
+          <div class="space-y-3 max-h-[60vh] overflow-auto">
+            <template x-for="t in $store.app.recent" :key="t.id">
+              <div class="timeline-item py-1 flex justify-between gap-2">
+                <div>
+                  <div class="flex justify-between text-xs text-[var(--txt-2)]">
+                    <span><span x-text="t.member"></span> · <span x-text="t.role==='butler'?'管家':'家人'"></span> · <span x-text="t.source||''"></span></span>
+                  </div>
+                  <div class="text-sm" x-text="t.text"></div>
+                </div>
+                <button class="text-[var(--err)] text-xs shrink-0" @click="$store.app.delTurn(t.id)">删除</button>
+              </div>
+            </template>
+          </div>
+        </div>
+      </section>
+
+      <!-- 人格与成员 -->
+      <section x-show="$store.app.view==='persona'" class="space-y-4 fade-in">
+        <div class="glass p-4 space-y-3">
+          <div class="card-title">系统人格</div>
+          <textarea class="input" x-model="$store.app.config.system" x-show="$store.app.config"></textarea>
+          <div class="card-title">主动问候模板（{nickname} 占位）</div>
+          <input class="input" x-model="$store.app.config.greeting_template" x-show="$store.app.config" />
+          <button class="btn-amber" @click="$store.app.savePersona()">保存并生效</button>
+        </div>
+        <div class="glass p-4">
+          <div class="card-title mb-3">成员与称呼（来自 memory-agent）</div>
+          <div class="space-y-2">
+            <template x-for="(m,i) in $store.app.members" :key="m.id || m.name">
+              <div class="flex items-center gap-2 text-sm flex-wrap">
+                <span class="w-24 truncate" x-text="m.name"></span>
+                <input class="input" style="max-width:120px" placeholder="昵称" x-model="$store.app.members[i].nickname" />
+                <input class="input" placeholder="语气" x-model="$store.app.members[i].tone" />
+                <button class="btn-ghost" @click="$store.app.saveMember($store.app.members[i])">保存</button>
+              </div>
+            </template>
+            <div x-show="$store.app.members.length===0" class="text-[var(--txt-2)] text-sm">未获取到成员名单</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 角色（Persona） -->
+      <section x-show="$store.app.view==='roles'" class="space-y-4 fade-in">
+        <div class="flex items-center justify-between">
+          <div class="card-title">角色（Persona）</div>
+          <button class="btn-amber text-sm" @click="$store.app.newRole()">+ 新角色</button>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-3">
+          <template x-for="r in $store.app.roles" :key="r.id">
+            <div class="glass p-4 space-y-2">
+              <div class="flex items-center justify-between">
+                <div class="font-semibold" x-text="r.name"></div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded"
+                        :class="r.enabled ? 'bg-[var(--ok)]/20 text-[var(--ok)]' : 'bg-[var(--err)]/20 text-[var(--err)]'"
+                        x-text="r.enabled ? '启用' : '停用'"></span>
+                  <span x-show="r.is_primary" class="text-[10px] px-1.5 py-0.5 rounded bg-[var(--amber-1)]/20 text-[var(--amber-2)]">主</span>
+                </div>
+              </div>
+              <div class="text-xs text-[var(--txt-2)] space-y-1">
+                <div>音色：<span class="amber-text" x-text="r.voice"></span> <span class="text-[10px] px-1 py-0.5 rounded bg-[var(--ok)]/15 text-[var(--ok)]">🔒 已锁定</span> · <span x-text="r.tts_backend"></span></div>
+                <div>出现房间：<span x-text="(r.presence_rooms || []).join('、')"></span></div>
+                <div>范围：<span x-text="r.scope==='private' ? '私人助理' : '全员通用'"></span><span x-show="r.scope==='private'"> · 仅 <span x-text="(r.bound_rooms || []).join('、')"></span></span></div>
+                <div x-show="r.wake_words && r.wake_words.length">唤醒词：<span class="amber-text" x-text="(r.wake_words || []).join('、')"></span></div>
+                <div>出声设备：<span x-text="(r.output_devices || []).join('、') || '—'"></span></div>
+                <div>技能：<span x-text="(r.skills || []).join('、') || '—'"></span> · 兜底：<span x-text="r.fallback"></span></div>
+              </div>
+              <div class="flex gap-2 pt-1">
+                <button class="btn-ghost text-xs" @click="$store.app.openRole(r)">编辑</button>
+                <button class="btn-ghost text-xs" @click="$store.app.roleTryText=''; $store.app.tryRole(r.id)">试跑</button>
+                <button class="text-[var(--err)] text-xs" x-show="!r.is_primary" @click="$store.app.deleteRole(r.id)">删除</button>
+              </div>
+            </div>
+          </template>
+          <div x-show="$store.app.roles.length===0" class="text-[var(--txt-2)] text-sm">暂无角色</div>
+        </div>
+
+        <div class="glass p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="card-title">设备登记表（全屋任意小爱）</div>
+            <button class="btn-ghost text-sm" @click="$store.app.newDevice()">+ 设备</button>
+          </div>
+          <div class="space-y-2">
+            <template x-for="d in $store.app.devices" :key="d.id">
+              <div class="flex items-center gap-2 text-sm flex-wrap border border-white/10 rounded-xl p-2">
+                <span class="font-medium w-32 truncate" x-text="d.id"></span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded"
+                      :class="d.type==='tv' ? 'bg-[var(--info)]/20 text-[var(--info)]' : 'bg-[var(--amber-1)]/20 text-[var(--amber-2)]'"
+                      x-text="d.type==='tv' ? '电视' : '小爱'"></span>
+                <span class="text-[var(--txt-2)]" x-text="d.room || '—'"></span>
+                <span class="text-[var(--txt-2)] truncate max-w-[200px]" x-text="d.ha_entity || (d.type==='tv' ? 'TV play_url' : '—')"></span>
+                <span x-show="!d.enabled" class="text-[var(--err)] text-xs">停用</span>
+                <button class="btn-ghost text-xs ml-auto" @click="$store.app.openDevice(d)">编辑</button>
+                <button class="text-[var(--err)] text-xs" @click="$store.app.deleteDevice(d.id)">删除</button>
+              </div>
+            </template>
+            <div x-show="$store.app.devices.length===0" class="text-[var(--txt-2)] text-sm">暂无设备</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 技能（Skill） -->
+      <section x-show="$store.app.view==='skills'" class="space-y-4 fade-in">
+        <div class="flex items-center justify-between">
+          <div class="card-title">技能（Skill）</div>
+          <div class="flex items-center gap-2">
+            <select class="input text-sm w-auto"
+                    @change="if($event.target.value){const e=$store.app.engines.find(x=>x.id===$event.target.value);$store.app.newSkillFromEngine(e);$event.target.value='';}">
+              <option value="">+ 基于模板新建</option>
+              <template x-for="e in $store.app.engines" :key="e.id">
+                <option :value="e.id" x-text="(e.name||e.id)+(e.builtin ? '（内置）' : '（插件）')"></option>
+              </template>
+            </select>
+            <button class="btn-amber text-sm" @click="$store.app.newSkill()">+ 新技能</button>
+          </div>
+        </div>
+
+        <!-- 自然语言创建技能 -->
+        <div class="glass p-4">
+          <h3 class="font-bold mb-2">✨ AI 一键创建</h3>
+          <p class="text-xs text-gray-400 mb-2">用自然语言描述需求，AI 自动生成技能</p>
+          <div class="flex gap-2">
+            <input class="input flex-1" placeholder="如：每天早上7点，如果中午有雨就提醒带伞"
+                   x-model="$store.app.naturalDesc"
+                   @keydown.enter="$store.app.naturalCreate()" />
+            <button class="btn-amber text-sm" @click="$store.app.naturalCreate()"
+                    :disabled="$store.app.creating">
+              <span x-text="$store.app.creating ? '生成中...' : '生成'"></span>
+            </button>
+          </div>
+          <div x-show="$store.app.draftPreview" class="mt-3 bg-white/5 rounded-lg p-3">
+            <div class="text-xs text-gray-400 mb-1">预览：</div>
+            <pre class="text-xs whitespace-pre-wrap" x-text="$store.app.draftPreview"></pre>
+            <div class="flex gap-2 mt-2">
+              <button class="btn-amber text-sm" @click="$store.app.confirmDraft()">确认创建</button>
+              <button class="btn-secondary text-sm" @click="$store.app.cancelDraft()">取消</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-3">
+          <template x-for="s in $store.app.skills" :key="s.id">
+            <div class="glass p-4 space-y-2">
+              <div class="flex items-center justify-between">
+                <div class="font-semibold" x-text="s.name"></div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded"
+                        :class="s.status==='quarantined' ? 'bg-red-500/20 text-red-400' : (s.status==='draft' ? 'bg-yellow-500/20 text-yellow-400' : (s.enabled ? 'bg-[var(--ok)]/20 text-[var(--ok)]' : 'bg-[var(--err)]/20 text-[var(--err)]'))"
+                        x-text="s.status==='quarantined' ? '已隔离' : (s.status==='draft' ? '草稿' : (s.enabled ? '启用' : '停用'))"></span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5" x-text="s.source || 'user'"></span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5" x-text="s.role || 'butler'"></span>
+                </div>
+              </div>
+              <div class="text-xs text-[var(--txt-2)] space-y-1">
+                <div>引擎：<span class="amber-text" x-text="(s.brain||{}).engine || '—'"></span> · 房间：<span x-text="((s.senses||[])[0]||{}).room || '—'"></span></div>
+                <div>输出：<span x-text="((s.output||[]).map(o=>o.type).join('、')) || '—'"></span> · 每日上限：<span x-text="((s.limits||{}).per_day)"></span></div>
+                <div class="flex items-center gap-2">
+                  熔断：
+                  <span x-show="$store.app.breakerOf(s.id)"
+                        :class="$store.app.breakerOf(s.id).tripped ? 'text-[var(--err)]' : 'text-[var(--ok)]'"
+                        x-text="$store.app.breakerOf(s.id).tripped
+                          ? ('冷却 ' + Math.ceil($store.app.breakerOf(s.id).cooldown_remaining) + 's')
+                          : ($store.app.breakerOf(s.id).window_hits + '/' + $store.app.breakerOf(s.id).window_max)"></span>
+                  <span x-show="!$store.app.breakerOf(s.id)">—</span>
+                </div>
+              </div>
+              <div class="flex gap-2 pt-1 flex-wrap">
+                <button class="btn-ghost text-xs" @click="$store.app.openSkill(s)">编辑</button>
+                <button class="btn-ghost text-xs" @click="$store.app.testSkill(s.id)">试跑</button>
+                <button class="btn-ghost text-xs" @click="$store.app.runSkill(s.id)">运行</button>
+                <button class="btn-ghost text-xs" @click="$store.app.loadRuns(s.id)">历史</button>
+                <button class="btn-ghost text-xs" @click="$store.app.loadSkillVersions(s.id)">版本</button>
+                <button class="text-xs" :class="s.enabled ? 'text-[var(--err)]' : 'text-[var(--ok)]'"
+                        @click="$store.app.toggleSkill(s.id, !s.enabled)"
+                        x-text="s.enabled ? '禁用' : '启用'"></button>
+                <button class="text-[var(--err)] text-xs" @click="$store.app.deleteSkill(s.id)">删除</button>
+              </div>
+            </div>
+          </template>
+          <div x-show="$store.app.skills.length===0" class="text-[var(--txt-2)] text-sm">暂无技能</div>
+        </div>
+
+        <!-- 版本历史（右侧抽屉，下方已移至右侧） -->
+        <div class="glass p-4 space-y-2" x-show="$store.app.skillVersions.length">
+          <div class="flex items-center justify-between">
+            <div class="card-title">版本历史 · <span class="amber-text" x-text="$store.app.versionsFor"></span></div>
+            <button class="btn-ghost text-xs" @click="$store.app.skillVersions=[]">关闭</button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs">
+              <thead class="text-[var(--txt-2)]">
+                <tr><th class="text-left py-1">时间</th><th class="text-left">名称</th><th class="text-left">状态</th><th class="text-left">引擎</th><th class="text-right">操作</th></tr>
+              </thead>
+              <tbody>
+                <template x-for="(v,i) in $store.app.skillVersions" :key="v.version">
+                  <tr class="border-t border-white/5">
+                    <td class="py-1" x-text="v.saved_at"></td>
+                    <td x-text="v.name"></td>
+                    <td x-text="v.status"></td>
+                    <td x-text="v.engine"></td>
+                    <td class="text-right">
+                      <button x-show="i>0" class="text-[var(--ok)] text-xs" @click="$store.app.rollbackSkill($store.app.versionsFor, v.version)">回滚</button>
+                      <span x-show="i===0" class="text-[var(--txt-2)] text-xs">当前</span>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Koin智动（Koin Action） -->
+      <section x-show="$store.app.view==='koin'" x-init="$store.app.authed && $store.koin.init()" class="space-y-4 fade-in">
+        
+        <!-- API 注册管理 -->
+        <div class="glass p-4">
+          <h3 class="font-bold mb-3">🔌 数据源 API</h3>
+          
+          <!-- 已注册 API 列表 -->
+          <div class="space-y-2 mb-4">
+            <template x-for="api in $store.koin.apis" :key="api.id">
+              <div class="flex items-center justify-between bg-white/5 rounded-lg p-3">
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium">
+                    <span x-text="api.id"></span>
+                    <span class="ml-2 text-xs px-1.5 py-0.5 rounded"
+                          :class="(api.method||'GET')==='POST' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'"
+                          x-text="(api.method||'GET')"></span>
+                  </div>
+                  <div class="text-xs text-gray-400 truncate max-w-md" x-text="api.url"></div>
+                  <div class="text-xs text-gray-500 mt-0.5" x-show="api.headers && Object.keys(api.headers).length">
+                    Headers: <span x-text="Object.keys(api.headers).join(', ')"></span>
+                  </div>
+                </div>
+                <button @click="$store.koin.unregisterApi(api.id)" class="text-red-400 hover:text-red-300 text-sm ml-2">删除</button>
+              </div>
+            </template>
+            <div x-show="$store.koin.apis.length===0" class="text-gray-500 text-sm text-center py-4">暂无已注册 API</div>
+          </div>
+          
+          <!-- 新建 API 表单 -->
+          <div class="border-t border-white/10 pt-3">
+            <div class="text-sm text-gray-400 mb-2">注册新 API</div>
+            <div class="space-y-2">
+              <input class="input" placeholder="API ID（如 caiyun_weather）" x-model="$store.koin.newApi.api_id" />
+              <input class="input" placeholder="API URL（如 https://api.caiyunapp.com/...）" x-model="$store.koin.newApi.url" />
+              <select class="input" x-model="$store.koin.newApi.method">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+              </select>
+              <textarea class="input" rows="2" placeholder="请求头 JSON（可选，如 {\"Authorization\":\"Bearer xxx\"}）" x-model="$store.koin.newApi.headers_text"></textarea>
+              <textarea class="input" rows="2" placeholder="POST Body（可选，JSON 字符串）" x-show="$store.koin.newApi.method==='POST'" x-model="$store.koin.newApi.body_text"></textarea>
+              <input class="input" type="number" placeholder="超时（秒）" x-model.number="$store.koin.newApi.timeout" />
+              <button class="btn-amber w-full" @click="$store.koin.registerApi()" :disabled="$store.koin.loading">
+                注册 API
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 新建任务 -->
+        <div class="glass p-4">
+          <h3 class="font-bold mb-3">🤖 新建智动任务</h3>
+          <div class="space-y-2">
+            <input class="input" placeholder="任务 ID（英文，如 rain_reminder）" x-model="$store.koin.newTask.id" />
+            <input class="input" placeholder="任务名称（如 下雨提醒）" x-model="$store.koin.newTask.name" />
+            <input class="input" placeholder="Cron 表达式（如 20 7 * * * = 每天 7:20）" x-model="$store.koin.newTask.cron" />
+            
+            <select class="input" x-model="$store.koin.newTask.api_id">
+              <option value="">选择数据源 API</option>
+              <template x-for="api in $store.koin.apis" :key="api.id">
+                <option :value="api.id" x-text="api.id"></option>
+              </template>
+            </select>
+            
+            <input class="input" placeholder="JSONPath（如 $.result.hourly.precipitation[0].probability）" x-model="$store.koin.newTask.jsonpath" />
+            
+            <div class="grid grid-cols-2 gap-2">
+              <select class="input" x-model="$store.koin.newTask.comparator">
+                <option value="gt">大于 (>)</option>
+                <option value="lt">小于 (<)</option>
+                <option value="eq">等于 (=)</option>
+                <option value="exists">存在</option>
+                <option value="contains">包含</option>
+              </select>
+              <input class="input" placeholder="比较值（如 50）" x-model="$store.koin.newTask.value" />
+            </div>
+            
+            <textarea class="input" rows="2" placeholder="播报模板（如 今天可能有雨，记得带伞）" x-model="$store.koin.newTask.message_template"></textarea>
+            
+            <div class="flex gap-2">
+              <button class="btn-secondary flex-1" @click="$store.koin.previewTask()">预览校验</button>
+              <button class="btn-amber flex-1" @click="$store.koin.saveTask()" :disabled="$store.koin.loading || !$store.koin.previewValid">创建任务</button>
+            </div>
+            
+            <!-- 预览结果 -->
+            <div x-show="$store.koin.preview" class="bg-white/5 rounded-lg p-3 text-sm">
+              <div class="text-xs text-gray-400 mb-1">任务预览</div>
+              <pre class="whitespace-pre-wrap" x-text="$store.koin.preview"></pre>
+              <div class="mt-2 text-sm" :class="$store.koin.previewValid ? 'text-green-400' : 'text-red-400'">
+                <span x-text="$store.koin.previewValid ? '✓ 校验通过' : '✗ 校验失败'"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 任务健康度 -->
+        <div class="glass p-4">
+          <h3 class="font-bold mb-3">❤️ 任务健康度</h3>
+          <div class="space-y-2">
+            <template x-for="h in $store.koin.health" :key="h.skill_id">
+              <div class="bg-white/5 rounded-lg p-3 text-sm">
+                <div class="flex items-center justify-between">
+                  <span class="font-medium" x-text="h.skill_id"></span>
+                  <span class="text-xs px-2 py-0.5 rounded-full"
+                        :class="h.success_rate>=80 ? 'bg-green-500/20 text-green-400' : h.success_rate>=50 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'"
+                        x-text="h.success_rate ? h.success_rate + '%' : 'N/A'"></span>
+                </div>
+                <div class="text-xs text-gray-400 mt-1">
+                  <span>共 <span x-text="h.total_runs"></span> 次</span>
+                  <span class="mx-2">|</span>
+                  <span>连续失败 <span x-text="h.consecutive_failures"></span> 次</span>
+                  <span class="mx-2">|</span>
+                  <span x-text="h.last_status"></span>
+                </div>
+              </div>
+            </template>
+            <div x-show="$store.koin.health.length===0" class="text-gray-500 text-sm text-center py-4">暂无任务记录</div>
+          </div>
+        </div>
+
+        <!-- 失败模式 -->
+        <div class="glass p-4">
+          <h3 class="font-bold mb-3">🐛 失败模式</h3>
+          <div class="space-y-2">
+            <template x-for="f in $store.koin.failures" :key="f.time">
+              <div class="bg-red-500/10 rounded-lg p-3 text-sm">
+                <div class="flex items-center justify-between">
+                  <span class="font-medium" x-text="f.skill_id"></span>
+                  <span class="text-xs text-gray-400" x-text="f.time"></span>
+                </div>
+                <div class="text-xs text-red-400 mt-1" x-text="f.reason"></div>
+              </div>
+            </template>
+            <div x-show="$store.koin.failures.length===0" class="text-gray-500 text-sm text-center py-4">暂无失败记录</div>
+          </div>
+        </div>
+
+        <!-- MCP 连接信息 -->
+        <div class="glass p-4">
+          <h3 class="font-bold mb-3">🔌 MCP Server</h3>
+          <div class="text-sm space-y-2">
+            <div class="bg-white/5 rounded-lg p-3">
+              <div class="text-gray-400 text-xs mb-1">端点</div>
+              <code class="text-amber-200">http://192.168.2.200:8095/api/mcp</code>
+            </div>
+            <div class="bg-white/5 rounded-lg p-3">
+              <div class="text-gray-400 text-xs mb-1">认证</div>
+              <code class="text-amber-200">Cookie 会话认证（登录后自动携带）</code>
+            </div>
+            <div class="bg-white/5 rounded-lg p-3">
+              <div class="text-gray-400 text-xs mb-1">可用工具（11个）</div>
+              <div class="text-xs text-gray-300 mt-1">
+                create_trigger / list_triggers / update_trigger / delete_trigger / run_skill / send_bark /<br/>
+                list_skills / create_skill / delete_skill / get_skill_health / list_cron_apis
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 执行日志 -->
+        <div class="glass p-4">
+          <h3 class="font-bold mb-3">📊 执行日志</h3>
+          <div class="space-y-2">
+            <template x-for="log in $store.koin.logs" :key="log.executed_at">
+              <div class="bg-white/5 rounded-lg p-3 text-sm">
+                <div class="flex items-center justify-between">
+                  <span class="font-medium" x-text="log.skill_id"></span>
+                  <span class="text-xs px-2 py-0.5 rounded-full"
+                        :class="log.status==='success' ? 'bg-green-500/20 text-green-400' : log.status==='skipped' ? 'bg-gray-500/20 text-gray-400' : 'bg-red-500/20 text-red-400'"
+                        x-text="log.status"></span>
+                </div>
+                <div class="text-xs text-gray-400 mt-1">
+                  <span x-text="log.executed_at"></span>
+                  <span class="mx-2">|</span>
+                  <span x-text="log.reason"></span>
+                </div>
+              </div>
+            </template>
+            <div x-show="$store.koin.logs.length===0" class="text-gray-500 text-sm text-center py-4">暂无执行记录</div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- 触发器（Trigger） -->
+      <!-- 指令中心 -->
+      <section x-show="$store.app.view==='commands'" x-data="$store.app" class="space-y-4 fade-in">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-bold flex items-center gap-2">📋 指令中心
+            <span class="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400" x-text="pendingCount + ' 待处理'"></span>
+          </h2>
+          <button @click="loadCommands(); loadPendingCount()" class="text-xs px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20">刷新</button>
+        </div>
+
+        <div class="glass p-4 space-y-3">
+          <div class="text-sm font-medium">下发新指令</div>
+          <div class="flex gap-2 flex-wrap">
+            <select x-model="newCmdTarget" class="flex-1 min-w-[80px] bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm">
+              <option value="TP">TP (TVPilot)</option>
+              <option value="DP">DP (DeskPilot)</option>
+              <option value="PM">PM (管家)</option>
+            </select>
+            <select x-model="newCmdPriority" class="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm">
+              <option value="normal">普通</option>
+              <option value="urgent">紧急</option>
+            </select>
+          </div>
+          <textarea x-model="newCmdText" rows="2" placeholder="指令内容，如：修复 mytv HTTP API 换台接口"
+            class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
+          <button @click="createCommand" :disabled="newCmdSaving || !newCmdText.trim()"
+            class="w-full py-2 rounded-lg bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-sm font-medium">
+            <span x-text="newCmdSaving ? '发送中...' : '下发指令'"></span>
+          </button>
+        </div>
+
+        <div class="flex gap-2 flex-wrap text-xs">
+          <button @click="commandsFilter='all'; loadCommands()" :class="commandsFilter==='all' ? 'bg-blue-500' : 'bg-white/10'" class="px-3 py-1 rounded-full">全部</button>
+          <button @click="commandsFilter='pending'; loadCommands()" :class="commandsFilter==='pending' ? 'bg-amber-500' : 'bg-white/10'" class="px-3 py-1 rounded-full">待处理</button>
+          <button @click="commandsFilter='accepted'; loadCommands()" :class="commandsFilter==='accepted' ? 'bg-blue-500' : 'bg-white/10'" class="px-3 py-1 rounded-full">进行中</button>
+          <button @click="commandsFilter='completed'; loadCommands()" :class="commandsFilter==='completed' ? 'bg-green-500' : 'bg-white/10'" class="px-3 py-1 rounded-full">已完成</button>
+          <select @change="loadCommands()" x-model="commandsTarget" class="bg-white/10 rounded-full px-3 py-1 ml-auto">
+            <option value="all">全部目标</option>
+            <option value="TP">TP</option>
+            <option value="DP">DP</option>
+            <option value="PM">PM</option>
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <div x-show="commandsLoading" class="text-center text-sm text-gray-400 py-8">加载中...</div>
+          <div x-show="!commandsLoading && commands.length===0" class="text-center text-sm text-gray-400 py-8">暂无指令</div>
+          <template x-for="cmd in commands" :key="cmd.id">
+            <div class="glass p-3 cursor-pointer hover:bg-white/5" @click="loadCommandDetail(cmd.id)">
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium truncate" x-text="cmd.text"></div>
+                  <div class="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                    <span x-text="cmd.target"></span>
+                    <span>·</span>
+                    <span x-text="cmd.created_at ? cmd.created_at.substring(0,16) : ''"></span>
+                    <span x-show="cmd.priority==='urgent'" class="text-red-400">紧急</span>
+                  </div>
+                </div>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-white/10 whitespace-nowrap" :class="cmdStatusColor(cmd.status)" x-text="cmdStatusText(cmd.status)"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div x-show="commandDetail" class="fixed inset-0 bg-black/60 z-50 flex items-end md:items-center justify-center" @click.self="commandDetail=null">
+          <div class="glass w-full md:max-w-lg max-h-[80vh] overflow-y-auto rounded-t-2xl md:rounded-2xl p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="font-bold">指令详情</h3>
+              <button @click="commandDetail=null" class="text-gray-400 hover:text-white text-xl">×</button>
+            </div>
+            <template x-if="commandDetail">
+              <div class="space-y-3">
+                <div class="text-sm" x-text="commandDetail.text"></div>
+                <div class="flex gap-4 text-xs text-gray-400">
+                  <span>目标: <span x-text="commandDetail.target"></span></span>
+                  <span>优先级: <span x-text="commandDetail.priority"></span></span>
+                  <span>创建: <span x-text="commandDetail.created_by"></span></span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs px-2 py-0.5 rounded-full bg-white/10" :class="cmdStatusColor(commandDetail.status)" x-text="cmdStatusText(commandDetail.status)"></span>
+                  <button x-show="commandDetail.status==='pending' || commandDetail.status==='accepted'" @click="cancelCommand(commandDetail.id)" class="text-xs px-3 py-1 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30">取消指令</button>
+                </div>
+                <div x-show="commandDetail.result" class="text-xs bg-white/5 rounded-lg p-3">
+                  <div class="text-gray-400 mb-1">完成说明</div>
+                  <div x-text="commandDetail.result"></div>
+                </div>
+                <div x-show="commandDetail.error" class="text-xs bg-red-500/10 rounded-lg p-3 text-red-400">
+                  <div class="mb-1">错误</div>
+                  <div x-text="commandDetail.error"></div>
+                </div>
+                <div class="space-y-1">
+                  <div class="text-xs text-gray-400 font-medium">状态流转</div>
+                  <template x-for="ev in (commandDetail.events || [])" :key="ev.id">
+                    <div class="flex items-center gap-2 text-xs">
+                      <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                      <span class="text-gray-300" x-text="ev.event_type"></span>
+                      <span class="text-gray-500" x-text="ev.created_at ? ev.created_at.substring(0,16) : ''"></span>
+                      <span x-show="ev.reporter" class="text-gray-500" x-text="'by ' + ev.reporter"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </section>
+
+      <section x-show="$store.app.view==='triggers'" class="space-y-4 fade-in">
+        <div class="flex items-center justify-between">
+          <div class="card-title">触发器（Trigger）</div>
+          <button class="btn-amber text-sm" @click="$store.app.newTrigger()">+ 新触发器</button>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-3">
+          <template x-for="t in $store.app.triggers" :key="t.id">
+            <div class="glass p-4 space-y-2">
+              <div class="flex items-center justify-between">
+                <div class="font-semibold" x-text="t.name"></div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded"
+                        :class="t.enabled ? 'bg-[var(--ok)]/20 text-[var(--ok)]' : 'bg-[var(--err)]/20 text-[var(--err)]'"
+                        x-text="t.enabled ? '启用' : '停用'"></span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5" x-text="t.event"></span>
+                </div>
+              </div>
+              <div class="text-xs text-[var(--txt-2)] space-y-1">
+                <div>事件：<span class="amber-text" x-text="t.event"></span> · 角色：<span x-text="t.role || 'butler'"></span></div>
+                <div>条件：<span x-text="(t.conditions.time_range || '不限时间') + ' · ' + (t.conditions.member || '不限成员') + ' · ' + (t.conditions.room || '不限房间')"></span></div>
+                <div>动作：<span x-text="(t.actions||[]).map(a=>a.skill).join('、') || '—'"></span> · 冷却：<span x-text="t.cooldown_sec + 's'"></span> · 优先级：<span x-text="t.priority"></span></div>
+              </div>
+              <div class="flex gap-2 pt-1 flex-wrap">
+                <button class="btn-ghost text-xs" @click="$store.app.openTrigger(t)">编辑</button>
+                <button class="btn-ghost text-xs" @click="$store.app.loadTriggerRuns(t.id)">历史</button>
+                <button class="text-xs" :class="t.enabled ? 'text-[var(--err)]' : 'text-[var(--ok)]'"
+                        @click="$store.app.toggleTrigger(t.id, !t.enabled)"
+                        x-text="t.enabled ? '禁用' : '启用'"></button>
+                <button class="text-[var(--err)] text-xs" @click="$store.app.deleteTrigger(t.id)">删除</button>
+              </div>
+            </div>
+          </template>
+          <div x-show="$store.app.triggers.length===0" class="text-[var(--txt-2)] text-sm">暂无触发器</div>
+        </div>
+
+      </section>
+
+      <!-- 触发器运行历史（右侧固定抽屉面板） -->
+      <div class="fixed right-0 top-14 bottom-0 w-[380px] z-30 glass p-4 space-y-3 overflow-y-auto border-l border-white/10 shadow-2xl"
+           x-show="$store.app.triggerRunsFor"
+           style="display:none;"
+           x-transition:enter="transition ease-out duration-200"
+           x-transition:enter-start="translate-x-full opacity-0"
+           x-transition:enter-end="translate-x-0 opacity-100"
+           x-transition:leave="transition ease-in duration-150"
+           x-transition:leave-start="translate-x-0 opacity-100"
+           x-transition:leave-end="translate-x-full opacity-0">
+        <div class="flex items-center justify-between">
+          <div class="card-title">运行历史 · <span class="amber-text" x-text="$store.app.triggerRunsFor"></span></div>
+          <button class="btn-ghost text-xs" @click="$store.app.triggerRunsFor=''; $store.app.triggerRuns=[]">✕ 关闭</button>
+        </div>
+        <div x-show="$store.app.triggerRuns.length===0" class="text-[var(--txt-2)] text-sm text-center py-8">暂无运行记录（该触发器尚未被触发过）</div>
+        <div class="overflow-x-auto" x-show="$store.app.triggerRuns.length>0">
+          <table class="w-full text-xs">
+            <thead class="text-[var(--txt-2)]">
+              <tr><th class="text-left py-1">时间</th><th class="text-left">状态</th><th class="text-left">结果</th></tr>
+            </thead>
+            <tbody>
+              <template x-for="(r,i) in $store.app.triggerRuns" :key="i">
+                <tr class="border-t border-white/5">
+                  <td class="py-1 whitespace-nowrap" x-text="$store.app.fmtTs(r.ts)"></td>
+                  <td :class="r.status==='ok' ? 'text-[var(--ok)]' : 'text-[var(--err)]'" x-text="r.status"></td>
+                  <td class="truncate max-w-[180px]" x-text="(r.result||'').slice(0,60)"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 技能运行历史（右侧固定抽屉面板） -->
+      <div class="fixed right-0 top-14 bottom-0 w-[400px] z-30 glass p-4 space-y-3 overflow-y-auto border-l border-white/10 shadow-2xl"
+           x-show="$store.app.skillRuns.length > 0 || $store.app.runsFor"
+           style="display:none;"
+           x-transition:enter="transition ease-out duration-200"
+           x-transition:enter-start="translate-x-full opacity-0"
+           x-transition:enter-end="translate-x-0 opacity-100"
+           x-transition:leave="transition ease-in duration-150"
+           x-transition:leave-start="translate-x-0 opacity-100"
+           x-transition:leave-end="translate-x-full opacity-0">
+        <div class="flex items-center justify-between">
+          <div class="card-title">运行历史 · <span class="amber-text" x-text="$store.app.runsFor"></span></div>
+          <button class="btn-ghost text-xs" @click="$store.app.runsFor=''; $store.app.skillRuns=[]">✕ 关闭</button>
+        </div>
+        <div x-show="$store.app.skillRuns.length===0" class="text-[var(--txt-2)] text-sm text-center py-8">暂无运行记录</div>
+        <div class="overflow-x-auto" x-show="$store.app.skillRuns.length>0">
+          <table class="w-full text-xs">
+            <thead class="text-[var(--txt-2)]">
+              <tr><th class="text-left py-1">时间</th><th class="text-left">来源</th><th class="text-left">状态</th><th class="text-right">耗时</th><th class="text-left">结果</th></tr>
+            </thead>
+            <tbody>
+              <template x-for="(r,i) in $store.app.skillRuns" :key="i">
+                <tr class="border-t border-white/5">
+                  <td class="py-1 whitespace-nowrap" x-text="$store.app.fmtTs(r.ts)"></td>
+                  <td x-text="r.source"></td>
+                  <td :class="(r.status==='ok'||r.status==='dry') ? 'text-[var(--ok)]' : 'text-[var(--err)]'" x-text="r.status"></td>
+                  <td class="text-right whitespace-nowrap" x-text="(r.duration_ms||0)+'ms'"></td>
+                  <td class="truncate max-w-[160px]" x-text="r.error || (r.text||'').slice(0,60)"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TA 的画像 -->
+      <section x-show="$store.app.view==='profile'" class="space-y-4 fade-in">
+        <div class="flex items-center justify-between">
+          <div class="card-title">TA 的画像</div>
+          <button class="btn-ghost text-sm" @click="$store.app.openOrganize()">贴一段话整理</button>
+        </div>
+
+        <div class="flex gap-2 flex-wrap">
+          <template x-for="m in $store.app.profMembers" :key="m.name">
+            <button class="flex items-center gap-2 px-3 py-2 rounded-xl border text-sm"
+                    :class="$store.app.profName===m.name ? 'border-[var(--amber-1)] bg-[var(--amber-1)]/10' : 'border-white/10 hover:bg-white/5'"
+                    @click="$store.app.loadProfile(m.name)">
+              <img class="w-6 h-6 rounded-full object-cover" :src="'/avatars/'+m.name+'.png'" alt="" />
+              <span x-text="m.name"></span>
+            </button>
+          </template>
+          <div x-show="$store.app.profMembers.length===0" class="text-[var(--txt-2)] text-sm">未读到成员（检查 butler_token / MA）</div>
+        </div>
+
+        <template x-if="$store.app.profData">
+          <div class="grid md:grid-cols-2 gap-4">
+            <!-- 主人设定：可编辑 -->
+            <div class="glass p-4 space-y-3">
+              <div class="card-title">主人设定（可编辑）</div>
+              <div class="text-sm">作息时间线
+                <template x-for="(r,i) in $store.app.draft().routine" :key="i">
+                  <div class="flex gap-2 mt-1">
+                    <input class="input flex-1" x-model="$store.app.draft().routine[i].label" placeholder="如 起床" />
+                    <input class="input w-24" x-model="$store.app.draft().routine[i].time" placeholder="07:00" />
+                    <button class="text-[var(--err)] text-xs" @click="$store.app.delRoutine(i)">✕</button>
+                  </div>
+                </template>
+                <button class="btn-ghost text-xs mt-1" @click="$store.app.addRoutine()">+ 加一条</button>
+              </div>
+              <div class="text-sm">每周课表
+                <template x-for="(c,i) in $store.app.draft().courses" :key="i">
+                  <div class="flex gap-2 mt-1">
+                    <input class="input w-16" x-model="$store.app.draft().courses[i].day" />
+                    <input class="input w-32" x-model="$store.app.draft().courses[i].time" placeholder="16:00-17:30" />
+                    <input class="input flex-1" x-model="$store.app.draft().courses[i].name" placeholder="课程/活动" />
+                    <button class="text-[var(--err)] text-xs" @click="$store.app.delCourse(i)">✕</button>
+                  </div>
+                </template>
+                <button class="btn-ghost text-xs mt-1" @click="$store.app.addCourse()">+ 加一节</button>
+              </div>
+              <label class="text-sm block">兴趣标签（顿号分隔）
+                <input class="input" x-model="$store.app.profData._interestsText" />
+              </label>
+              <label class="text-sm block">习惯（顿号分隔）
+                <input class="input" x-model="$store.app.profData._habitsText" />
+              </label>
+              <label class="text-sm block">补充说明
+                <textarea class="input" x-model="$store.app.draft().notes" rows="2"></textarea>
+              </label>
+              <button class="btn-amber w-full" :disabled="$store.app.profSaving" @click="$store.app.saveProfile()">
+                <span x-text="$store.app.profSaving ? '保存中…' : '保存写回 memory-agent'"></span>
+              </button>
+            </div>
+
+            <!-- 管家观察：只读 -->
+            <div class="glass p-4 space-y-3">
+              <div class="card-title">管家观察（只读 · 来自行为分析）</div>
+              <template x-for="o in $store.app.profData.observations" :key="o.id || o.tag">
+                <div class="rounded-xl border border-white/10 p-3 space-y-2">
+                  <div class="flex items-center gap-2 text-sm">
+                    <span x-text="o.emoji || '🔎'"></span>
+                    <span class="font-medium" x-text="o.tag"></span>
+                    <span class="text-[var(--txt-2)] text-xs" x-text="'来源 '+(o.source||'agent')"></span>
+                    <button class="text-[var(--err)] text-xs ml-auto" @click="$store.app.revokeObs(o.id)">撤销</button>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="h-1.5 flex-1 rounded bg-white/10 overflow-hidden">
+                      <div class="h-full bg-[var(--amber-1)]" :style="'width:'+Math.round((o.confidence||0)*100)+'%'"></div>
+                    </div>
+                    <span class="text-xs text-[var(--txt-2)]" x-text="Math.round((o.confidence||0)*100)+'%'"></span>
+                  </div>
+                  <ul class="text-xs text-[var(--txt-2)] space-y-0.5">
+                    <template x-for="(e,j) in (o.evidence||[])" :key="j"><li x-text="'· '+e"></li></template>
+                  </ul>
+                </div>
+              </template>
+              <div x-show="!$store.app.profData.observations.length" class="text-[var(--txt-2)] text-sm">暂无观察</div>
+
+              <div class="text-sm pt-2 border-t border-white/10">作息实测（近 14 天）
+                <pre class="text-[11px] bg-black/30 rounded-xl p-2 overflow-auto mt-1" x-text="JSON.stringify($store.app.profData.schedule, null, 2)"></pre>
+              </div>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- 记忆 -->
+      <section x-show="$store.app.view==='memory'" class="space-y-4 fade-in">
+        <div class="glass p-4 space-y-2">
+          <div class="card-title">写入一条家庭事实（需合法溯源）</div>
+          <textarea class="input" x-ref="memContent" placeholder="例如：小凯每周六上午有钢琴课"></textarea>
+          <input class="input" x-ref="memRefs" placeholder="source_refs，逗号分隔，如 event:tv_face,insight:daily" />
+          <button class="btn-amber" @click="$store.app.addMemory()">写入语义记忆</button>
+        </div>
+        <div class="grid md:grid-cols-2 gap-4">
+          <div class="glass p-4">
+            <div class="card-title mb-2">本地对话流水</div>
+            <div class="space-y-2 max-h-72 overflow-auto text-sm">
+              <template x-for="t in $store.app.recent" :key="t.id">
+                <div class="flex justify-between gap-2"><span x-text="t.member+'：'+t.text"></span><button class="text-[var(--err)] text-xs" @click="$store.app.delTurn(t.id)">删</button></div>
+              </template>
+            </div>
+          </div>
+          <div class="glass p-4">
+            <div class="card-title mb-2">语义记忆（memory-agent）</div>
+            <div class="space-y-2 max-h-72 overflow-auto text-sm">
+              <template x-for="(m,i) in $store.app.semantic" :key="i">
+                <div class="timeline-item py-1" x-text="(m.content!==undefined?m.content:(typeof m==='string'?m:JSON.stringify(m)))"></div>
+              </template>
+              <div x-show="$store.app.semantic.length===0" class="text-[var(--txt-2)]">暂无</div>
+            </div>
+          </div>
+        </div>
+        <div class="glass p-4 text-sm text-[var(--txt-1)]" x-show="$store.app.fp">
+          防重复指纹窗口 <span x-text="$store.app.fp && $store.app.fp.window_days"></span> 天，阈值 <span x-text="$store.app.fp && $store.app.fp.threshold"></span>：
+          <template x-for="(n,k) in ($store.app.fp && $store.app.fp.by_member)" :key="k"><span class="ml-2" x-text="k+': '+n"></span></template>
+        </div>
+
+        <!-- v1.1.1 记忆审核 + 投喂 -->
+        <div class="glass p-4 space-y-3">
+          <div class="flex justify-between items-center flex-wrap gap-2">
+            <div class="card-title">🧠 记忆审核与投喂</div>
+            <button class="btn-amber text-xs px-3 py-1" :disabled="$store.app.factRunning" @click="$store.app.runExtract()">
+              <span x-show="!$store.app.factRunning">▶ 立即提取（近7天）</span>
+              <span x-show="$store.app.factRunning">提取中…</span>
+            </button>
+          </div>
+
+          <!-- 审核过滤 -->
+          <div class="flex gap-2 flex-wrap items-center text-xs">
+            <span class="text-[var(--txt-2)]">审核:</span>
+            <template x-for="f in ['pending','approved','rejected','']" :key="f||'all'">
+              <button class="px-2 py-0.5 rounded-full border transition"
+                :class="$store.app.factStatusFilter===f ? 'bg-amber-500/30 border-amber-400 text-amber-200' : 'border-white/10 text-gray-400'"
+                @click="$store.app.setFactFilter(f)"
+                x-text="f===''?'全部':({pending:'待审',approved:'已通过',rejected:'已拒'}[f])"></button>
+            </template>
+            <span class="text-[var(--txt-2)] ml-3">|</span>
+            <template x-for="t in ['preference','family','event','habit']" :key="t">
+              <button class="px-2 py-0.5 rounded-full transition"
+                :class="$store.app.factTypeFilter===t ? $store.app.factTypeColor(t) : 'bg-white/5 text-gray-400'"
+                @click="$store.app.setFactTypeFilter(t)"
+                x-text="$store.app.factTypeLabel(t)"></button>
+            </template>
+          </div>
+
+          <!-- 待审核事实列表 -->
+          <div class="space-y-2 max-h-64 overflow-auto">
+            <template x-for="f in $store.app.facts" :key="f.id">
+              <div class="rounded-xl border border-white/10 p-2.5 space-y-1">
+                <div class="flex items-center gap-2 flex-wrap text-xs">
+                  <span class="px-1.5 py-0.5 rounded" :class="$store.app.factTypeColor(f.fact_type)" x-text="$store.app.factTypeLabel(f.fact_type)"></span>
+                  <span class="text-[var(--txt-2)]" x-text="'置信度 '+(f.confidence*100|0)+'%'"></span>
+                  <span class="text-[var(--txt-2)]" x-text="$store.app.fmtTs(f.ts)"></span>
+                </div>
+                <div class="text-sm" x-show="!$store.app.factEditing || $store.app.factEditing.id!==f.id" x-text="f.content"></div>
+                <textarea x-show="$store.app.factEditing && $store.app.factEditing.id===f.id" class="input text-sm" x-model="$store.app.factEditText"></textarea>
+                <div class="flex gap-2 pt-0.5 text-xs flex-wrap">
+                  <template x-if="f.status==='pending'">
+                    <div class="flex gap-2">
+                      <button class="px-2 py-0.5 rounded bg-green-500/20 text-green-300" @click="$store.app.approveFact(f.id)">✓ 通过</button>
+                      <button class="px-2 py-0.5 rounded bg-red-500/20 text-red-300" @click="$store.app.rejectFact(f.id)">✗ 拒绝</button>
+                    </div>
+                  </template>
+                  <button class="px-2 py-0.5 rounded bg-white/10 text-gray-300" x-show="!$store.app.factEditing || $store.app.factEditing.id!==f.id" @click="$store.app.startEditFact(f)">编辑</button>
+                  <template x-if="$store.app.factEditing && $store.app.factEditing.id===f.id">
+                    <div class="flex gap-2">
+                      <button class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300" @click="$store.app.saveEditFact()">保存</button>
+                      <button class="px-2 py-0.5 rounded bg-white/10 text-gray-300" @click="$store.app.cancelEditFact()">取消</button>
+                    </div>
+                  </template>
+                  <button class="px-2 py-0.5 rounded bg-white/5 text-gray-500 hover:text-red-300" @click="$store.app.deleteFact(f.id)">删除</button>
+                </div>
+              </div>
+            </template>
+            <div x-show="$store.app.facts.length===0" class="text-[var(--txt-2)] text-sm text-center py-4">暂无记录</div>
+          </div>
+        </div>
+
+        <!-- v1.1.1 按角色折叠投喂卡片 -->
+        <div class="space-y-2">
+          <!-- 一键投喂设备说明书 -->
+          <div class="flex items-center gap-2 mb-2">
+            <button class="px-3 py-1.5 rounded bg-blue-500/20 text-blue-300 text-sm" :disabled="$store.app.deviceManualBusy" @click="$store.app.feedDeviceManual()">
+              <span x-show="!$store.app.deviceManualBusy">📡 一键投喂设备说明书</span>
+              <span x-show="$store.app.deviceManualBusy">投喂中…</span>
+            </button>
+            <span class="text-[var(--txt-2)] text-xs">豆包忘设备清单时点这个重新投喂</span>
+          </div>
+          <div x-show="$store.app.deviceManualReply" class="bg-white/5 rounded-lg p-3 text-xs text-gray-300 mb-2 whitespace-pre-wrap" x-text="$store.app.deviceManualReply"></div>
+          <template x-for="(role, rid) in $store.app.feedOverview" :key="rid">
+            <div class="glass rounded-xl overflow-hidden">
+              <!-- 卡片头 -->
+              <div class="flex items-center gap-3 p-3 cursor-pointer hover:bg-white/5" @click="$store.app.toggleRole(rid)">
+                <span class="text-sm font-medium flex-1" x-text="role.name"></span>
+                <span x-show="!role.bound" class="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-300">未绑定对话</span>
+                <span x-show="role.failed_count>0" class="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-300">失败 {{role.failed_count}}</span>
+                <span x-show="role.changed_count>0" class="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">变更 {{role.changed_count}}</span>
+                <span class="text-xs text-amber-300" x-show="role.pending_count>0" x-text="'待投 ' + role.pending_count"></span>
+                <span class="text-xs text-green-300" x-show="role.fed_count>0" x-text="'已投 ' + role.fed_count"></span>
+                <span class="text-[var(--txt-2)] text-xs" x-text="$store.app.expandedRoles[rid] ? '▲' : '▼'"></span>
+              </div>
+
+              <!-- 卡片内容 -->
+              <div x-show="$store.app.expandedRoles[rid]" class="border-t border-white/10 p-3 space-y-3">
+                <!-- 操作行 -->
+                <div class="flex gap-2 flex-wrap items-center text-xs">
+                  <button class="btn-primary px-3 py-1" :disabled="!role.bound || role.pending_count===0 || $store.app.feedBusy" @click.stop="$store.app.feedRole(rid)">
+                    <span x-show="$store.app.feedBusy!==rid" x-text="'▶ 投喂全部待投 (' + role.pending_count + ')'"></span>
+                    <span x-show="$store.app.feedBusy===rid">投喂中…</span>
+                  </button>
+                  <button class="px-2 py-1 rounded bg-white/10 text-gray-300" @click.stop="$store.app.startBind(rid)" x-text="role.bound ? '重绑定对话' : '绑定对话'"></button>
+                  <button class="px-2 py-1 rounded bg-blue-500/20 text-blue-300" :disabled="$store.app.reconBusy" @click.stop="$store.app.runReconcile(rid)">
+                    <span x-show="$store.app.reconBusy!==rid">🔍 对账</span>
+                    <span x-show="$store.app.reconBusy===rid">对账中…</span>
+                  </button>
+                  <span x-show="!role.bound" class="text-red-300">未绑定对话，投喂不可用</span>
+                  <span x-show="role.bound" class="text-[var(--txt-2)]" x-text="'对话: '+role.conversation_id"></span>
+                </div>
+
+                <!-- 重绑定输入 -->
+                <div x-show="$store.app.bindingRole===rid" class="flex gap-2 items-center text-xs bg-white/5 p-2 rounded" @click.stop>
+                  <input class="input flex-1" x-model="$store.app.bindingConvId" placeholder="粘贴新的 conversation_id">
+                  <button class="px-2 py-1 rounded bg-blue-500/20 text-blue-300" @click="$store.app.saveBind()">保存</button>
+                  <button class="px-2 py-1 rounded bg-white/10 text-gray-300" @click="$store.app.cancelBind()">取消</button>
+                </div>
+
+                <!-- 待投喂事实 -->
+                <div x-show="role.facts && role.facts.pending && role.facts.pending.length>0">
+                  <div class="text-xs text-[var(--txt-2)] mb-1">待投喂：</div>
+                  <div class="space-y-1.5">
+                    <template x-for="f in role.facts.pending" :key="f.id">
+                      <div class="rounded-lg border border-white/10 p-2 text-sm flex items-start gap-2">
+                        <div class="flex-1">
+                          <span class="text-[10px] px-1 rounded" :class="$store.app.factTypeColor(f.fact_type)" x-text="$store.app.factTypeLabel(f.fact_type)"></span>
+                          <span class="text-[10px] text-[var(--txt-2)]" x-show="f.feed_status==='changed'"> ⚠ 已变更</span>
+                          <span class="text-[10px] text-red-300" x-show="f.feed_status==='failed'"> ✗ 失败: <span x-text="f.feed_error"></span></span>
+                          <div x-text="f.content"></div>
+                        </div>
+                        <button class="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-300 whitespace-nowrap" @click="$store.app.feedOneFact(f.id)">投</button>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- 当前长期记忆 -->
+                <div x-show="role.facts && role.facts.fed && role.facts.fed.length>0">
+                  <div class="text-xs text-[var(--txt-2)] mb-1">当前长期记忆（已投喂到豆包APP）：</div>
+                  <div class="space-y-1 max-h-40 overflow-auto">
+                    <template x-for="f in role.facts.fed" :key="f.id">
+                      <div class="text-xs text-gray-300 py-0.5">· <span x-text="f.content"></span></div>
+                    </template>
+                  </div>
+                </div>
+
+                <div x-show="(!role.facts || (!role.facts.pending || role.facts.pending.length===0) && (!role.facts.fed || role.facts.fed.length===0))" class="text-[var(--txt-2)] text-xs text-center py-3">暂无事实</div>
+
+                <!-- 对账结果 -->
+                <div x-show="$store.app.reconResult[rid]" class="border-t border-white/10 pt-3 space-y-2 text-xs">
+                  <div class="text-[var(--txt-2)]">对账结果：</div>
+                  <div x-show="$store.app.reconResult[rid].confirmed && $store.app.reconResult[rid].confirmed.length" class="text-green-300">
+                    ✅ 已对齐（<span x-text="$store.app.reconResult[rid].confirmed.length"></span>条）
+                  </div>
+                  <div x-show="$store.app.reconResult[rid].missing && $store.app.reconResult[rid].missing.length" class="text-amber-300">
+                    📤 豆包不知道（<span x-text="$store.app.reconResult[rid].missing.length"></span>条）——该投喂
+                    <template x-for="m in $store.app.reconResult[rid].missing" :key="m">
+                      <div class="text-gray-300 pl-3">· <span x-text="m"></span></div>
+                    </template>
+                  </div>
+                  <div x-show="$store.app.reconResult[rid].hallucinated && $store.app.reconResult[rid].hallucinated.length" class="text-purple-300">
+                    📥 豆包自己记住的（<span x-text="$store.app.reconResult[rid].hallucinated.length"></span>条）——考虑入库
+                    <template x-for="h in $store.app.reconResult[rid].hallucinated" :key="h">
+                      <div class="text-gray-300 pl-3">· <span x-text="h"></span></div>
+                    </template>
+                  </div>
+                  <div x-show="$store.app.reconResult[rid].conflicting && $store.app.reconResult[rid].conflicting.length" class="text-red-300">
+                    ⚠️ 两边矛盾（<span x-text="$store.app.reconResult[rid].conflicting.length"></span>条）——需纠正
+                    <template x-for="c in $store.app.reconResult[rid].conflicting" :key="c.our">
+                      <div class="bg-red-500/10 rounded p-2 mt-1">
+                        <div>我们记: <span x-text="c.our"></span></div>
+                        <div>它记: <span x-text="c.doubao"></span></div>
+                        <div class="flex gap-1 mt-1">
+                          <input class="input flex-1 text-xs" placeholder="它记错的" x-model="$store.app.correctWrong">
+                          <input class="input flex-1 text-xs" placeholder="正确的说法" x-model="$store.app.correctRight">
+                          <button class="px-2 py-0.5 rounded bg-red-500/20 text-red-300" @click="$store.app.doCorrect(rid)">纠正</button>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </section>
+
+      <!-- 感知（v1.7） -->
+      <section x-show="$store.app.view==='perception'" class="space-y-4 fade-in" x-init="$store.app.authed && $store.app.loadPerception()">
+        <h2 class="text-lg font-semibold">👁️ 主动感知</h2>
+
+        <!-- 谁在家 -->
+        <div class="card p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <div class="card-title">谁在家</div>
+            <button @click="$store.app.loadPerception()" class="btn-primary text-xs px-3 py-1">刷新</button>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+            <template x-for="(u, k) in ($store.app.presenceUsers || {})" :key="k">
+              <div class="bg-white/5 rounded p-2 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full" :class="u.online ? 'bg-green-400' : 'bg-gray-500'"></span>
+                <div>
+                  <div class="font-medium" x-text="u.name || k"></div>
+                  <div class="text-xs text-gray-500" x-text="u.room || '未知'"></div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 当前状态快照 -->
+        <div class="card p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <div class="card-title">当前设备状态</div>
+            <button @click="$store.app.loadPerception()" class="btn-primary text-xs px-3 py-1">刷新</button>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+            <template x-for="(v, k) in ($store.app.perceptionState || {})" :key="k">
+              <div class="bg-white/5 rounded p-2">
+                <div class="text-xs text-gray-400 truncate" x-text="k"></div>
+                <div class="font-medium" x-text="v.state"></div>
+                <div class="text-xs text-gray-500" x-text="v.room || ''"></div>
+              </div>
+            </template>
+          </div>
+          <div x-show="!$store.app.perceptionState || Object.keys($store.app.perceptionState).length === 0" class="text-sm text-gray-400 text-center py-4">
+            暂无状态数据（等待设备事件）
+          </div>
+        </div>
+
+        <!-- 最近事件流 -->
+        <div class="card p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <div class="card-title">最近事件流</div>
+            <button @click="$store.app.loadPerception()" class="btn-primary text-xs px-3 py-1">刷新</button>
+          </div>
+          <div class="max-h-96 overflow-y-auto space-y-1 text-xs font-mono">
+            <template x-for="(e, i) in ($store.app.perceptionEvents || []).slice().reverse()" :key="i">
+              <div class="bg-white/5 rounded px-2 py-1 flex gap-2">
+                <span class="text-gray-500" x-text="new Date(e.ts * 1000).toLocaleTimeString()"></span>
+                <span class="text-blue-300" x-text="e.room || '?'"></span>
+                <span x-text="e.entity_id"></span>
+                <span class="text-green-400" x-text="e.state"></span>
+              </div>
+            </template>
+          </div>
+          <div x-show="!$store.app.perceptionEvents || $store.app.perceptionEvents.length === 0" class="text-sm text-gray-400 text-center py-4">
+            暂无事件（凌晨可能没有活动）
+          </div>
+        </div>
+      </section>
+
+      <!-- 自进化（v2.0） -->
+      <section x-show="$store.app.view==='evolution'" class="space-y-4 fade-in" x-init="if(!$store.app.authed) return; $store.app.loadEvolution(); $store.app.loadFastRoutes(); $store.app.loadAliases(); $store.app.loadTokenStats(); $store.app.loadReports()">
+      <h2 class="text-lg font-semibold">自进化中心</h2>
+
+      <!-- Token 使用量总览 -->
+      <div class="glass p-4 space-y-3">
+        <div class="flex justify-between items-center">
+          <div class="card-title">📊 Token 使用量</div>
+          <button @click="$store.app.loadTokenStats()" class="btn-primary text-xs px-3 py-1">刷新</button>
+        </div>
+        <div class="grid grid-cols-4 gap-3 text-center">
+          <div class="bg-white/5 rounded-lg p-3">
+            <div class="text-2xl font-bold text-blue-400" x-text="$store.app.tokenStats ? $store.app.tokenStats.total_calls : '-'"></div>
+            <div class="text-xs text-gray-400">总调用次数</div>
+          </div>
+          <div class="bg-white/5 rounded-lg p-3">
+            <div class="text-2xl font-bold text-green-400" x-text="$store.app.tokenStats ? $store.app.tokenStats.total_prompt_tokens : '-'"></div>
+            <div class="text-xs text-gray-400">输入 token</div>
+          </div>
+          <div class="bg-white/5 rounded-lg p-3">
+            <div class="text-2xl font-bold text-amber-400" x-text="$store.app.tokenStats ? $store.app.tokenStats.total_completion_tokens : '-'"></div>
+            <div class="text-xs text-gray-400">输出 token</div>
+          </div>
+          <div class="bg-white/5 rounded-lg p-3">
+            <div class="text-2xl font-bold text-purple-400" x-text="$store.app.tokenStats ? $store.app.tokenStats.total_tokens : '-'"></div>
+            <div class="text-xs text-gray-400">总 token</div>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 text-center text-xs text-gray-400">
+          <div>成功率：<span class="text-green-400" x-text="$store.app.tokenStats ? Math.round(($store.app.tokenStats.success_rate || 0)*100) + '%' : '-'"></span></div>
+          <div>平均耗时：<span x-text="$store.app.tokenStats ? Math.round(($store.app.tokenStats.avg_duration_ms || 0)/1000) + 's' : '-'"></span></div>
+          <div>快速路由节省：<span class="text-amber-300" x-text="$store.app.tokenStats ? $store.app.tokenStats.fast_route_hits || 0 : '-'"></span> 次</div>
+        </div>
+      </div>
+        <!-- ═══════ 技能自进化 ═══════ -->
+        <div class="text-sm font-medium text-[var(--amber-2)]">⚙️ 技能自进化（技能执行分析）</div>
+        <div class="glass p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <div class="card-title">🔄 自进化引擎</div>
+            <div class="flex gap-2">
+              <select x-model="$store.app.evoMode" @change="$store.app.setEvolutionMode($store.app.evoMode)" class="text-xs px-2 py-1 rounded bg-white/10">
+                <option value="passive">被动（只建议）</option>
+                <option value="semi">半自动（需确认）</option>
+                <option value="active">主动（低风险自动）</option>
+              </select>
+              <button @click="$store.app.runEvolutionAnalyze()" class="btn-primary text-xs px-3 py-1" :disabled="$store.app.evoLoading">
+                <span x-text="$store.app.evoLoading ? '分析中...' : '立即分析'"></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 统计卡片 -->
+          <div class="grid grid-cols-4 gap-3 text-center" x-show="$store.app.evoDashboard">
+            <div class="bg-white/5 rounded-lg p-3">
+              <div class="text-2xl font-bold text-amber-300" x-text="$store.app.evoDashboard.pending_suggestions || 0"></div>
+              <div class="text-xs text-gray-400">待处理建议</div>
+            </div>
+            <div class="bg-white/5 rounded-lg p-3">
+              <div class="text-2xl font-bold text-green-400" x-text="$store.app.evoDashboard.executed_count || 0"></div>
+              <div class="text-xs text-gray-400">已执行</div>
+            </div>
+            <div class="bg-white/5 rounded-lg p-3">
+              <div class="text-2xl font-bold text-red-400" x-text="$store.app.evoDashboard.failed_count || 0"></div>
+              <div class="text-xs text-gray-400">执行失败</div>
+            </div>
+            <div class="bg-white/5 rounded-lg p-3">
+              <div class="text-2xl font-bold text-blue-400" x-text="$store.app.evoDashboard.learning_data_points || 0"></div>
+              <div class="text-xs text-gray-400">学习数据点</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 改进建议 -->
+        <div class="glass p-4 space-y-3">
+          <div class="card-title">💡 改进建议</div>
+          <div x-show="$store.app.evoSuggestions.length === 0" class="text-sm text-gray-400 text-center py-4">
+            暂无建议，点击"立即分析"检测系统状态
+          </div>
+          <template x-for="s in $store.app.evoSuggestions" :key="s.id">
+            <div class="bg-white/5 rounded-lg p-3 space-y-2">
+              <div class="flex justify-between items-start">
+                <div>
+                  <span class="text-sm font-medium" x-text="s.title"></span>
+                  <span class="ml-2 text-xs px-2 py-0.5 rounded"
+                    :class="s.priority === 'high' ? 'bg-red-500/20 text-red-300' : s.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-300' : 'bg-gray-500/20 text-gray-300'"
+                    x-text="s.priority === 'high' ? '高优先级' : s.priority === 'medium' ? '中优先级' : '低优先级'"></span>
+                </div>
+                <button @click="$store.app.executeSuggestion(s.id)" class="btn-primary text-xs px-2 py-1" x-show="s.status === 'pending'">执行</button>
+                <span class="text-xs text-green-400" x-show="s.status === 'executed'">已执行</span>
+              </div>
+              <div class="text-xs text-gray-400" x-text="s.description"></div>
+              <div class="text-xs text-gray-500" x-text="s.created_at"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- ═══════ Koin 对话轨迹 ═══════ -->
+        <div class="text-sm font-medium text-[var(--amber-2)]">🤖 Koin 对话轨迹（快速路由 vs LLM）</div>
+        <div class="glass p-4 space-y-3">
+          <div class="card-title">🔍 Koin 对话轨迹</div>
+          <div class="grid grid-cols-4 gap-3 text-center" x-show="$store.app.evoStats">
+            <div class="bg-white/5 rounded-lg p-2">
+              <div class="text-xl font-bold" x-text="$store.app.evoStats.total"></div>
+              <div class="text-xs text-gray-400">总对话</div>
+            </div>
+            <div class="bg-white/5 rounded-lg p-2">
+              <div class="text-xl font-bold text-green-400" x-text="$store.app.evoStats.fast"></div>
+              <div class="text-xs text-gray-400">快速路由</div>
+            </div>
+            <div class="bg-white/5 rounded-lg p-2">
+              <div class="text-xl font-bold text-amber-300" x-text="$store.app.evoStats.llm"></div>
+              <div class="text-xs text-gray-400">LLM调用</div>
+            </div>
+            <div class="bg-white/5 rounded-lg p-2">
+              <div class="text-xl font-bold text-blue-400" x-text="$store.app.evoStats.hit_rate + '%'"></div>
+              <div class="text-xs text-gray-400">快速命中率</div>
+            </div>
+          </div>
+          <div class="space-y-1 max-h-64 overflow-auto">
+            <template x-for="t in $store.app.evoTraces" :key="t.trace_id">
+              <div class="flex items-center justify-between text-xs py-1 border-b border-white/5">
+                <div class="flex items-center gap-2">
+                  <span class="px-1.5 py-0.5 rounded"
+                    :class="t.llm_calls === 0 ? 'bg-green-500/20 text-green-300' : 'bg-amber-500/20 text-amber-300'">
+                    <span x-text="t.llm_calls === 0 ? '快' : 'LLM'"></span>
+                  </span>
+                  <span class="text-gray-300 truncate max-w-xs" x-text="t.user_text"></span>
+                </div>
+                <div class="flex items-center gap-2 text-gray-500">
+                  <span x-text="t.source"></span>
+                  <span x-text="Math.round(t.total_ms/1000) + 's'"></span>
+                </div>
+              </div>
+            </template>
+            <div x-show="$store.app.evoTraces.length === 0" class="text-sm text-gray-400 text-center py-4">暂无对话记录</div>
+          </div>
+        </div>
+
+        <!-- 自进化历史 -->
+        <div class="glass p-4 space-y-3">
+          <div class="card-title">📜 自进化历史</div>
+          <div x-show="$store.app.evoHistory.length === 0" class="text-sm text-gray-400 text-center py-4">暂无历史记录</div>
+          <template x-for="h in $store.app.evoHistory" :key="h.id + h.executed_at">
+            <div class="flex justify-between items-center text-sm py-1 border-b border-white/5">
+              <span x-text="h.title"></span>
+              <span class="text-xs" :class="h.status === 'executed' ? 'text-green-400' : 'text-red-400'" x-text="h.status === 'executed' ? '成功' : '失败'"></span>
+            </div>
+          </template>
+        </div>
+
+        <!-- ═══════ Koin 快速路由 ═══════ -->
+        <div class="text-sm font-medium text-[var(--amber-2)]">⚡ Koin 快速路由（简单操作不走 LLM）</div>
+        <div class="glass p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <div class="card-title">⚡ 快速路由规则</div>
+            <div class="flex gap-2">
+              <button @click="$store.app.loadFastRoutes()" class="btn-primary text-xs px-3 py-1">刷新</button>
+              <button @click="$store.app.analyzeFastRoutes()" class="btn-amber text-xs px-3 py-1" :disabled="$store.app.frAnalyzing">
+                <span x-text="$store.app.frAnalyzing ? '分析中...' : '分析候选'"></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 当前规则列表 -->
+          <div class="space-y-2">
+            <template x-for="r in $store.app.fastRoutes" :key="r.id">
+              <div class="bg-white/5 rounded-lg p-3 flex justify-between items-center">
+                <div class="flex-1">
+                  <div class="text-sm font-medium" x-text="r.name"></div>
+                  <div class="text-xs text-gray-400 mt-1">
+                    关键词：<span x-text="r.keywords.join('、')"></span>
+                    <span class="mx-2">|</span>
+                    工具：<span x-text="r.tool"></span>
+                    <span class="mx-2">|</span>
+                    命中：<span class="text-green-400" x-text="r.hits || 0"></span> 次
+                    <span class="mx-2" x-show="(r.fallbacks || 0) > 0">|</span>
+                    <span x-show="(r.fallbacks || 0) > 0">误命中：<span class="text-red-400" x-text="r.fallbacks"></span></span>
+                  </div>
+                </div>
+                <div class="flex gap-2 items-center">
+                  <span class="badge" :class="r.enabled ? 'badge-green' : 'badge-gray'" x-text="r.enabled ? '启用' : '禁用'"></span>
+                  <button @click="$store.app.toggleFastRoute(r)" class="text-xs px-2 py-1 rounded bg-white/10">切换</button>
+                  <button @click="$store.app.deleteFastRoute(r)" class="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400">删除</button>
+                </div>
+              </div>
+            </template>
+            <div x-show="$store.app.fastRoutes.length === 0" class="text-sm text-gray-400 text-center py-4">暂无快速路由规则</div>
+          </div>
+        </div>
+
+        <!-- 候选规则 -->
+        <div class="glass p-4 space-y-3" x-show="$store.app.frCandidates.length > 0">
+          <div class="card-title">💡 候选规则（来自 LLM 轨迹分析）</div>
+          <template x-for="c in $store.app.frCandidates" :key="c.pattern">
+            <div class="bg-white/5 rounded-lg p-3 space-y-2">
+              <div class="flex justify-between items-center">
+                <div class="text-sm">
+                  <span class="font-medium" x-text="c.suggested_tool"></span>
+                  <span class="text-gray-400 text-xs ml-2">出现 <span x-text="c.count"></span> 次</span>
+                </div>
+                <button @click="$store.app.addFastRoute(c)" class="btn-amber text-xs px-3 py-1">采纳</button>
+              </div>
+              <div class="text-xs text-gray-400">
+                关键词：<span x-text="c.keywords.join('、')"></span>
+              </div>
+              <div class="text-xs text-gray-500 truncate" x-text="c.samples[0]"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- ═══════ 设备别名 ═══════ -->
+        <div class="text-sm font-medium text-[var(--amber-2)]">🔤 设备别名学习（用户说的话 → 实际设备）</div>
+        <div class="glass p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <div class="card-title">🔤 学习到的别名</div>
+            <button @click="$store.app.loadAliases()" class="btn-primary text-xs px-3 py-1">刷新</button>
+          </div>
+          <div class="space-y-2">
+            <template x-for="a in $store.app.aliases" :key="a.alias">
+              <div class="bg-white/5 rounded-lg p-3 flex justify-between items-center">
+                <div class="flex-1">
+                  <div class="text-sm font-medium" x-text="a.alias"></div>
+                  <div class="text-xs text-gray-400 mt-1">
+                    → <span class="text-amber-300" x-text="a.entity_id"></span>
+                    <span class="mx-2">|</span>
+                    出现 <span x-text="a.count"></span> 次
+                  </div>
+                </div>
+                <button @click="$store.app.deleteAlias(a)" class="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400">删除</button>
+              </div>
+            </template>
+            <div x-show="$store.app.aliases.length === 0" class="text-sm text-gray-400 text-center py-4">
+              暂无别名，多跟我说几次"打开客厅灯"之类的话，我会自动学习
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══════ 失败模式学习 ═══════ -->
+        <div class="text-sm font-medium text-[var(--amber-2)]">❌ 失败模式学习（哪里经常出错）</div>
+        <div class="glass p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <div class="card-title">❌ 失败分析</div>
+            <button @click="$store.app.analyzeFailures()" class="btn-amber text-xs px-3 py-1" :disabled="$store.app.failAnalyzing">
+              <span x-text="$store.app.failAnalyzing ? '分析中...' : '分析最近7天'"></span>
+            </button>
+          </div>
+
+          <!-- 统计概览 -->
+          <div class="grid grid-cols-3 gap-3 text-center" x-show="$store.app.failResult">
+            <div class="bg-white/5 rounded-lg p-3">
+              <div class="text-2xl font-bold text-red-400" x-text="$store.app.failResult.total_failures || 0"></div>
+              <div class="text-xs text-gray-400">总失败数</div>
+            </div>
+            <div class="bg-white/5 rounded-lg p-3">
+              <div class="text-2xl font-bold text-amber-300" x-text="Object.keys($store.app.failResult.by_tool || {}).length"></div>
+              <div class="text-xs text-gray-400">涉及工具</div>
+            </div>
+            <div class="bg-white/5 rounded-lg p-3">
+              <div class="text-2xl font-bold text-green-400" x-text="($store.app.failResult.suggestions || []).length"></div>
+              <div class="text-xs text-gray-400">优化建议</div>
+            </div>
+          </div>
+
+          <!-- 建议列表 -->
+          <div class="space-y-2" x-show="($store.app.failResult.suggestions || []).length > 0">
+            <template x-for="s in $store.app.failResult.suggestions" :key="s.tool">
+              <div class="bg-white/5 rounded-lg p-3 space-y-2">
+                <div class="flex justify-between items-center">
+                  <div class="text-sm font-medium" x-text="s.tool"></div>
+                  <span class="badge badge-red" x-text="`失败 ${s.failure_count} 次`"></span>
+                </div>
+                <div class="text-xs text-gray-400">
+                  主要原因：<span class="text-red-300" x-text="s.top_reason"></span>（<span x-text="s.reason_count"></span>次）
+                </div>
+                <div class="text-xs text-amber-200" x-text="'建议：' + s.fix"></div>
+                <div class="text-xs text-gray-500" x-show="s.example_keywords">
+                  示例关键词：<span x-text="(s.example_keywords || []).join('、')"></span>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div x-show="!$store.app.failResult || ($store.app.failResult.suggestions || []).length === 0" class="text-sm text-gray-400 text-center py-4">
+            暂无失败记录，点击"分析最近7天"查看
+          </div>
+        </div>
+
+        <!-- ═══════ 场景自动推断 ═══════ -->
+        <div class="text-sm font-medium text-[var(--amber-2)]">🎭 场景自动推断（从使用模式发现场景）</div>
+        <div class="glass p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <div class="card-title">🎭 场景候选</div>
+            <button @click="$store.app.inferScenes()" class="btn-amber text-xs px-3 py-1" :disabled="$store.app.sceneInferring">
+              <span x-text="$store.app.sceneInferring ? '分析中...' : '分析最近7天'"></span>
+            </button>
+          </div>
+
+          <!-- 统计概览 -->
+          <div class="text-center text-xs text-gray-400" x-show="$store.app.sceneResult">
+            共分析 <span x-text="$store.app.sceneResult.total_traces"></span> 条对话
+          </div>
+
+          <!-- 场景列表 -->
+          <div class="space-y-2" x-show="($store.app.sceneResult.scenes || []).length > 0">
+            <template x-for="s in $store.app.sceneResult.scenes" :key="s.hour">
+              <div class="bg-white/5 rounded-lg p-3 space-y-2">
+                <div class="flex justify-between items-center">
+                  <div class="text-sm font-medium">
+                    <span x-text="s.icon"></span>
+                    <span x-text="s.name"></span>
+                    <span class="text-gray-400 text-xs ml-2">（<span x-text="s.hour"></span>:00 时段）</span>
+                  </div>
+                  <span class="badge badge-green" x-text="`${s.frequency} 次`"></span>
+                </div>
+                <div class="text-xs text-gray-400">
+                  高频关键词：<span x-text="(s.top_keywords || []).join('、')"></span>
+                </div>
+                <div class="text-xs text-gray-500">
+                  置信度：<span x-text="Math.round(s.confidence * 100) + '%'"></span>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div x-show="!$store.app.sceneResult || ($store.app.sceneResult.scenes || []).length === 0" class="text-sm text-gray-400 text-center py-4">
+            暂无场景候选，点击"分析最近7天"查看
+          </div>
+        </div>
+
+        <!-- ═══════ 自进化历史记录 ═══════ -->
+        <div class="text-sm font-medium text-[var(--amber-2)]">📜 自进化历史报告</div>
+        <div class="glass p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <div class="card-title">历史分析报告</div>
+            <button @click="$store.app.loadReports()" class="btn-primary text-xs px-3 py-1">刷新</button>
+          </div>
+
+          <!-- 失败分析历史 -->
+          <div class="space-y-2">
+            <div class="text-xs text-gray-400">失败模式分析</div>
+            <template x-for="r in ($store.app.failureReports || []).slice(0, 5)" :key="r.id">
+              <div class="bg-white/5 rounded-lg p-2 text-xs">
+                <span class="text-gray-400" x-text="new Date(r.ts * 1000).toLocaleString()"></span>
+                <span class="mx-2">|</span>
+                失败 <span x-text="r.total_failures"></span> 次
+                <span class="mx-2">|</span>
+                建议 <span x-text="JSON.parse(r.suggestions_json || '[]').length"></span> 条
+              </div>
+            </template>
+            <div x-show="!$store.app.failureReports || $store.app.failureReports.length === 0" class="text-xs text-gray-500 text-center py-2">暂无历史</div>
+          </div>
+
+          <!-- 场景推断历史 -->
+          <div class="space-y-2">
+            <div class="text-xs text-gray-400">场景推断</div>
+            <template x-for="r in ($store.app.sceneReports || []).slice(0, 5)" :key="r.id">
+              <div class="bg-white/5 rounded-lg p-2 text-xs">
+                <span class="text-gray-400" x-text="new Date(r.ts * 1000).toLocaleString()"></span>
+                <span class="mx-2">|</span>
+                分析 <span x-text="r.total_traces"></span> 条对话
+                <span class="mx-2">|</span>
+                场景 <span x-text="JSON.parse(r.scenes_json || '[]').length"></span> 个
+              </div>
+            </template>
+            <div x-show="!$store.app.sceneReports || $store.app.sceneReports.length === 0" class="text-xs text-gray-500 text-center py-2">暂无历史</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- HA 设备管理（v1.4） -->
+      <section x-show="$store.app.view==='devices'" class="space-y-4 fade-in" x-init="if(!$store.app.authed) return; $store.app.loadHaDomains(); $store.app.loadHaDevices()">
+        <div class="glass p-4 space-y-3">
+          <div class="flex justify-between items-center flex-wrap gap-2">
+            <div class="card-title">🔌 HA 设备管理</div>
+            <div class="flex gap-2 items-center flex-wrap">
+              <select class="text-xs px-2 py-1 rounded bg-white/10 text-white" x-model="$store.app.haDomainFilter" @change="$store.app.loadHaDevices()">
+                <option value="">全部域</option>
+                <template x-for="d in $store.app.haDomains" :key="d.domain">
+                  <option :value="d.domain" x-text="d.domain + ' (' + d.count + ')'"></option>
+                </template>
+              </select>
+              <input class="input text-xs w-32" placeholder="搜索设备名" x-model="$store.app.haSearch" @keyup.enter="$store.app.loadHaDevices()" />
+              <label class="flex items-center gap-1 text-xs cursor-pointer">
+                <input type="checkbox" x-model="$store.app.haOnlineOnly" @change="$store.app.loadHaDevices()" />
+                <span>仅在线</span>
+              </label>
+              <button @click="$store.app.loadHaDevices()" class="btn-primary text-xs px-3 py-1" :disabled="$store.app.haLoading">
+                <span x-text="$store.app.haLoading ? '加载中...' : '刷新'"></span>
+              </button>
+            </div>
+          </div>
+          <div class="text-xs text-[var(--txt-2)]">
+            共 <span class="text-[var(--txt-1)] font-medium" x-text="$store.app.haTotal"></span> 个设备
+            <span x-show="$store.app.haDomainFilter">，域: <span x-text="$store.app.haDomainFilter"></span></span>
+            <span x-show="$store.app.haOnlineOnly">，仅在线</span>
+          </div>
+        </div>
+
+        <!-- 设备列表（按域分组） -->
+        <template x-for="(devices, domain) in $store.app.haDevices" :key="domain">
+          <div class="glass p-4 space-y-2">
+            <div class="flex justify-between items-center">
+              <div class="card-title text-sm" x-text="domain + ' (' + devices.length + ')'"></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              <template x-for="dev in devices" :key="dev.entity_id">
+                <div class="bg-white/5 rounded-lg p-2 text-xs space-y-1 hover:bg-white/10 transition-colors">
+                  <div class="flex justify-between items-start gap-2">
+                    <span class="font-medium truncate" x-text="dev.name" :title="dev.name"></span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap"
+                      :class="(dev.state === 'unavailable' || dev.state === 'unknown') ? 'bg-red-500/20 text-red-300' : (dev.state === 'on' || dev.state === 'playing') ? 'bg-green-500/20 text-green-300' : 'bg-gray-500/20 text-gray-300'"
+                      x-text="dev.state"></span>
+                  </div>
+                  <div class="text-[var(--txt-2)] truncate" x-text="dev.entity_id" :title="dev.entity_id"></div>
+                  <div class="flex gap-2 text-[10px] text-[var(--txt-2)]">
+                    <span x-show="dev.device_class" x-text="'class: ' + dev.device_class"></span>
+                    <span x-show="dev.unit_of_measurement" x-text="dev.unit_of_measurement"></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <div x-show="Object.keys($store.app.haDevices).length === 0 && !$store.app.haLoading" class="glass p-8 text-center text-sm text-[var(--txt-2)]">
+          暂无设备，点击"刷新"加载 HA 设备列表
+        </div>
+      </section>
+
+      <!-- 设置 -->
+      <section x-show="$store.app.view==='settings'" class="space-y-4 fade-in">
+        <div class="glass p-4 space-y-3">
+          <div class="card-title">TTS 设置</div>
+          <div class="grid grid-cols-2 gap-3 text-sm">
+            <div>主引擎：<span class="amber-text" x-text="$store.app.tts && $store.app.tts.primary"></span></div>
+            <div>音色：<span class="amber-text" x-text="$store.app.tts && $store.app.tts.edge_voice"></span></div>
+            <div>语速：<span x-text="$store.app.tts && $store.app.tts.speed"></span></div>
+            <div>音量：<span x-text="$store.app.tts && $store.app.tts.volume"></span></div>
+          </div>
+        </div>
+        <div class="glass p-4 space-y-3">
+          <div class="card-title">唤醒与免打扰</div>
+          <label class="flex items-center gap-2 text-sm">冷却秒数
+            <input class="input" style="max-width:120px" type="number" x-model="$store.app.config.cooldown_seconds" x-show="$store.app.config" />
+          </label>
+          <label class="flex items-center gap-2 text-sm">免打扰时段(如 23:00-07:30)
+            <input class="input" x-model="$store.app.config.dnd_windows" x-show="$store.app.config" />
+          </label>
+          <button class="btn-amber" @click="$store.app.saveWakeup()">保存唤醒设置</button>
+        </div>
+        <div class="glass p-4 text-sm text-[var(--txt-1)]">
+          数据目录挂载于 <code>/app/data</code>，音频缓存于 <code>/app/tts</code>。所有连接密码均从环境变量读取，不写入磁盘。
+        </div>
+      </section>
+
+      <!-- 通道配置页 -->
+      <section x-show="$store.app.view==='channels'" class="space-y-4 fade-in" x-init="$store.app.authed && $store.app.initChannels()">
+        <h2 class="text-lg font-semibold">推送通道</h2>
+
+        <!-- Bark -->
+        <div class="card p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-semibold">Bark 推送</div>
+              <div class="text-xs text-[var(--txt-2)]">推送到 iPhone 锁屏通知</div>
+            </div>
+            <span class="badge" :class="$store.app.barkStatus && $store.app.barkStatus.configured ? 'badge-green' : 'badge-red'"
+                  x-text="$store.app.barkStatus ? ($store.app.barkStatus.configured ? '已配置' : '未配置') : '...'"></span>
+          </div>
+          <div class="grid md:grid-cols-3 gap-3">
+            <label class="text-sm">标题<input class="input" x-model="$store.app.barkTestTitle" /></label>
+            <label class="text-sm">级别
+              <select class="input" x-model="$store.app.barkTestLevel">
+                <option value="active">Active</option>
+                <option value="timeSensitive">Time Sensitive</option>
+                <option value="critical">Critical</option>
+                <option value="passive">Passive</option>
+              </select>
+            </label>
+            <label class="text-sm">铃声
+              <select class="input" x-model="$store.app.barkTestSound">
+                <option value="">默认</option>
+                <option value="alarm">Alarm</option>
+                <option value="bell">Bell</option>
+                <option value="minuet">Minuet</option>
+                <option value="silence">Silence</option>
+              </select>
+            </label>
+          </div>
+          <label class="text-sm block">内容<textarea class="input" rows="2" x-model="$store.app.barkTestBody"></textarea></label>
+          <button class="btn-amber" @click="$store.app.testBark()">发送测试推送</button>
+        </div>
+
+        <!-- 小米/小爱 -->
+        <div class="card p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-semibold">小米 / 小爱音箱</div>
+              <div class="text-xs text-[var(--txt-2)]">全屋小爱语音入口（耳朵）</div>
+            </div>
+            <span class="badge badge-green" x-text="`${$store.app.xiaoaiDevices.length} 台`"></span>
+          </div>
+          <div class="space-y-2">
+            <template x-for="d in $store.app.xiaoaiDevices" :key="d.id">
+              <div class="flex items-center justify-between p-2 rounded-lg bg-white/5">
+                <div>
+                  <div class="text-sm font-medium" x-text="d.id"></div>
+                  <div class="text-xs text-[var(--txt-2)]" x-text="(d.room || '?') + ' · ' + (d.ha_sensor || '无对话传感器')"></div>
+                </div>
+                <span class="badge" :class="d.ha_sensor ? 'badge-green' : 'badge-red'" x-text="d.ha_sensor ? '已接耳朵' : '未接'"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 微信 -->
+        <div class="card p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-semibold">微信 / iLink</div>
+              <div class="text-xs text-[var(--txt-2)]">推送到微信聊天</div>
+            </div>
+            <span class="badge" :class="$store.app.wechatStatus.configured ? 'badge-green' : 'badge-red'"
+                  x-text="$store.app.wechatStatus.configured ? '已配置' : '未配置'"></span>
+          </div>
+          <div class="text-xs text-[var(--txt-2)]" x-text="'通道：' + ($store.app.wechatStatus.channel || 'wechat/user_id')"></div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- 角色编辑弹窗 -->
+    <div x-show="$store.app.editingRole" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50" @click.self="$store.app.editingRole=null">
+      <div class="glass w-full max-w-lg p-5 space-y-3 max-h-[90vh] overflow-auto">
+        <div class="flex items-center justify-between">
+          <div class="card-title" x-text="$store.app.editingRole && $store.app.editingRole.id ? '编辑角色' : '新角色'"></div>
+          <button class="text-[var(--txt-2)]" @click="$store.app.editingRole=null">✕</button>
+        </div>
+        <template x-if="$store.app.editingRole">
+          <div class="space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <label class="text-sm">角色ID<input class="input" x-model="$store.app.editingRole.id" :disabled="$store.app.editingRole.is_primary" placeholder="如 xiaoyue" /></label>
+              <label class="text-sm">名称<input class="input" x-model="$store.app.editingRole.name" /></label>
+              <label class="text-sm">性别
+                <select class="input" x-model="$store.app.editingRole.gender"><option>女</option><option>男</option></select>
+              </label>
+              <label class="text-sm">引擎
+                <select class="input" x-model="$store.app.editingRole.tts_backend">
+                  <option value="edge-tts">edge-tts</option>
+                  <option value="kokoro">kokoro</option>
+                  <option value="xiaoai">小爱（音箱直读）</option>
+                </select>
+              </label>
+            </div>
+            <label class="text-sm block">音色
+              <div class="flex gap-2">
+                <select class="input flex-1" x-model="$store.app.editingRole.voice"
+                        :disabled="$store.app.editingRole.tts_backend === 'xiaoai'">
+                  <template x-if="$store.app.editingRole.tts_backend === 'xiaoai'">
+                    <option value="xiaoai_default">小爱默认音色（音箱直读，不可选）</option>
+                  </template>
+                  <template x-for="o in $store.app.voicesList" :key="o.v">
+                    <option :value="o.v" :disabled="$store.app.voiceTakenBy(o.v)"
+                            x-text="o.l + ($store.app.voiceTakenBy(o.v) ? '  🔒 已被「' + $store.app.voiceTakenBy(o.v) + '」占用' : '')"></option>
+                  </template>
+                </select>
+                <button class="btn-ghost text-xs" @click="$store.app.voiceTry()">试听</button>
+              </div>
+            </label>
+            <label class="text-sm block">出现房间（顿号/逗号分隔，* = 全屋）
+              <input class="input" x-model="$store.app.editingRole.presence_rooms" />
+            </label>
+            <!-- Phase 6：按角色唤醒短语路由 -->
+            <div class="p-3 rounded-xl bg-white/5 border border-white/10 space-y-3">
+              <div class="text-[var(--amber-2)] text-xs font-semibold">按角色唤醒路由</div>
+              <label class="text-sm block">唤醒词（顿号/逗号分隔，如「小理、理叔」）
+                <input class="input" x-model="$store.app.editingRole.wake_words" placeholder="豆包管家、豆包" />
+              </label>
+              <div class="grid grid-cols-2 gap-3">
+                <label class="text-sm">范围
+                  <select class="input" x-model="$store.app.editingRole.scope"><option value="family">全员通用</option><option value="private">私人助理</option></select>
+                </label>
+                <label class="text-sm">绑定成员
+                  <input class="input" x-model="$store.app.editingRole.member" placeholder="lidicn / Kevin / Emily" />
+                </label>
+              </div>
+              <label class="text-sm block">绑定房间（私人助理专属，顿号/逗号分隔；空=不限）
+                <input class="input" x-model="$store.app.editingRole.bound_rooms" placeholder="书房" />
+              </label>
+            </div>
+            <div class="text-sm">出声设备
+              <div class="flex flex-wrap gap-2 mt-1">
+                <template x-for="d in $store.app.devices" :key="d.id">
+                  <label class="flex items-center gap-1 text-xs px-2 py-1 rounded-lg bg-white/5 border border-white/10">
+                    <input type="checkbox" :value="d.id" x-model="$store.app.editingRole.output_devices" />
+                    <span x-text="d.id"></span>
+                  </label>
+                </template>
+                <div x-show="$store.app.devices.length===0" class="text-[var(--txt-2)] text-xs">先在下方设备表添加设备</div>
+              </div>
+            </div>
+            <label class="text-sm block">系统提示词
+              <textarea class="input" x-model="$store.app.editingRole.system" rows="3"></textarea>
+            </label>
+            <label class="text-sm block">技能（顿号/逗号分隔）
+              <input class="input" x-model="$store.app.editingRole.skills" />
+            </label>
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <label class="text-sm">兜底策略
+                <select class="input" x-model="$store.app.editingRole.fallback"><option value="bark">Bark 文字</option><option value="tv">电视</option><option value="silent">静默</option></select>
+              </label>
+              <label class="flex items-center gap-2 text-sm pt-5"><input type="checkbox" x-model="$store.app.editingRole.enabled" /> 启用</label>
+            </div>
+            <div class="flex gap-2 pt-2">
+              <button class="btn-amber flex-1" @click="$store.app.saveRole()">保存</button>
+              <button class="btn-ghost" x-show="!$store.app.editingRole.is_primary" @click="$store.app.deleteRole($store.app.editingRole.id)">删除</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- 设备编辑弹窗 -->
+    <div x-show="$store.app.editingDevice" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50" @click.self="$store.app.editingDevice=null">
+      <div class="glass w-full max-w-md p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="card-title" x-text="$store.app.editingDevice && $store.app.editingDevice.id ? '编辑设备' : '新设备'"></div>
+          <button class="text-[var(--txt-2)]" @click="$store.app.editingDevice=null">✕</button>
+        </div>
+        <template x-if="$store.app.editingDevice">
+          <div class="space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <label class="text-sm">设备ID<input class="input" x-model="$store.app.editingDevice.id" placeholder="如 xiao_study" /></label>
+              <label class="text-sm">类型
+                <select class="input" x-model="$store.app.editingDevice.type"><option value="tv">电视</option><option value="xiaomi">小爱</option></select>
+              </label>
+            </div>
+            <label class="text-sm block">房间
+              <input class="input" x-model="$store.app.editingDevice.room" placeholder="客厅 / 厨房 / 书房 / *" />
+            </label>
+            <label class="text-sm block">HA 实体（小爱填 notify/实体 id）
+              <input class="input" x-model="$store.app.editingDevice.ha_entity" placeholder="notify.xiaomi_xxx 或 media_player.xxx" />
+            </label>
+            <!-- Phase 6：双通道发声 -->
+            <div class="p-3 rounded-xl bg-white/5 border border-white/10 space-y-3">
+              <div class="text-[var(--amber-2)] text-xs font-semibold">双通道发声</div>
+              <label class="text-sm">发声模式
+                <select class="input" x-model="$store.app.editingDevice.play_mode">
+                  <option value="notify_text">小爱自带 TTS（无循环，默认）</option>
+                  <option value="tts_speak">edge-tts 角色音色（需填 media_player）</option>
+                </select>
+              </label>
+              <div class="grid grid-cols-2 gap-3">
+                <label class="text-sm">tts 实体（tts_speak 用）
+                  <input class="input" x-model="$store.app.editingDevice.ha_tts_entity" placeholder="tts.edgetts_..." />
+                </label>
+                <label class="text-sm">media_player 实体（关循环用）
+                  <input class="input" x-model="$store.app.editingDevice.ha_player_entity" placeholder="media_player.xiaomi_..." />
+                </label>
+              </div>
+              <label class="text-sm block">conversation 传感器（耳朵→房间映射）
+                <input class="input" x-model="$store.app.editingDevice.ha_sensor" placeholder="sensor.xiaomi_xxx_conversation" />
+              </label>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="text-sm">声道/备注
+                <input class="input" x-model="$store.app.editingDevice.channel" placeholder="left / right" />
+              </label>
+              <label class="text-sm">音色覆盖
+                <input class="input" x-model="$store.app.editingDevice.voice_override" placeholder="可选" />
+              </label>
+            </div>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" x-model="$store.app.editingDevice.enabled" /> 启用</label>
+            <div class="flex gap-2 pt-2">
+              <button class="btn-amber flex-1" @click="$store.app.saveDevice()">保存</button>
+              <button class="btn-ghost" @click="$store.app.deleteDevice($store.app.editingDevice.id)">删除</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- 技能编辑弹窗 -->
+    <div x-show="$store.app.editingSkill" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50" @click.self="$store.app.editingSkill=null">
+      <div class="glass w-full max-w-2xl p-5 space-y-3 max-h-[92vh] overflow-auto">
+        <div class="flex items-center justify-between">
+          <div class="card-title" x-text="$store.app.editingSkill && $store.app.editingSkill.id ? '编辑技能' : '新技能'"></div>
+          <button class="text-[var(--txt-2)]" @click="$store.app.editingSkill=null">✕</button>
+        </div>
+        <template x-if="$store.app.editingSkill">
+          <div class="space-y-3">
+            <div class="grid md:grid-cols-3 gap-3">
+              <label class="text-sm">ID<input class="input" x-model="$store.app.editingSkill.id" placeholder="如 hello" /></label>
+              <label class="text-sm">名称<input class="input" x-model="$store.app.editingSkill.name" /></label>
+              <label class="text-sm">归属角色
+                <select class="input" x-model="$store.app.editingSkill.role">
+                  <template x-for="r in $store.app.roles" :key="r.id"><option :value="r.id" x-text="r.name"></option></template>
+                </select>
+              </label>
+            </div>
+            <div class="grid md:grid-cols-3 gap-3">
+              <label class="text-sm">引擎
+                <select class="input" x-model="$store.app.editingSkill.brain.engine">
+                  <template x-for="e in $store.app.engines" :key="e.id"><option :value="e.id" x-text="e.id"></option></template>
+                </select>
+              </label>
+              <label class="text-sm">模式（可选）
+                <input class="input" x-model="$store.app.editingSkill.brain.mode" placeholder="ma_analyze / live_vlm" />
+              </label>
+              <label class="text-sm">房间
+                <input class="input" x-model="$store.app.editingSkill.senses[0].room" placeholder="客厅" />
+              </label>
+            </div>
+            <label class="text-sm block">提示词
+              <textarea class="input" x-model="$store.app.editingSkill.brain.prompt" rows="4"></textarea>
+            </label>
+            <div class="grid md:grid-cols-3 gap-3">
+              <label class="text-sm">上下文（顿号分隔）
+                <input class="input" x-model="$store.app.editingSkill.contextText" placeholder="persona、member_profile" />
+              </label>
+              <label class="text-sm">最大字数
+                <input class="input" type="number" x-model.number="$store.app.editingSkill.brain.max_chars" />
+              </label>
+              <label class="text-sm">每日上限
+                <input class="input" type="number" x-model.number="$store.app.editingSkill.limits.per_day" />
+              </label>
+            </div>
+            <div class="text-sm">输出通道
+              <div class="flex flex-wrap gap-3 mt-1">
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" x-model="$store.app.skillOut.tv" /> 电视通知</label>
+                <label class="flex items-center gap-1 text-xs" x-show="$store.app.skillOut.tv"><input type="checkbox" x-model="$store.app.skillOut.tts" /> TTS 配音</label>
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" x-model="$store.app.skillOut.xiaomi" /> 小爱播报</label>
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" x-model="$store.app.skillOut.bark" /> Bark</label>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-3 gap-3">
+              <label class="text-sm">占用时
+                <select class="input" x-model="$store.app.editingSkill.on_busy"><option value="drop">丢弃</option><option value="queue">排队</option></select>
+              </label>
+              <label class="flex items-center gap-2 text-sm pt-5"><input type="checkbox" x-model="$store.app.editingSkill.brain.dedup" /> 内容去重</label>
+              <label class="flex items-center gap-2 text-sm pt-5"><input type="checkbox" x-model="$store.app.editingSkill.enabled" /> 启用</label>
+              <label class="flex items-center gap-2 text-sm pt-5"><input type="checkbox" x-model="$store.app.editingSkill.output.tts" /> TTS 语音播报</label>
+              <label class="flex items-center gap-2 text-sm pt-5"><input type="checkbox" x-model="$store.app.editingSkill.output.bark" /> Bark 推送通知</label>
+            </div>
+            <details class="text-sm">
+              <summary class="cursor-pointer text-[var(--txt-2)]">JSON 源码</summary>
+              <pre class="text-[11px] bg-black/30 rounded-xl p-3 overflow-auto mt-2" x-text="JSON.stringify($store.app.editingSkill, null, 2)"></pre>
+            </details>
+            <div x-show="$store.app.testResult" class="text-xs rounded-xl border border-white/10 p-2 space-y-1">
+              <div class="text-[var(--txt-2)]">试跑结果（dry_run，不推送）</div>
+              <div x-text="$store.app.testResult.text || $store.app.testResult.error || ''"></div>
+            </div>
+            <div class="flex gap-2 pt-1">
+              <button class="btn-amber flex-1" @click="$store.app.saveSkill()">保存</button>
+              <button class="btn-ghost" :disabled="$store.app.testing" @click="$store.app.testSkill($store.app.editingSkill.id)"><span x-text="$store.app.testing ? '试跑中…' : '试跑'"></span></button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- 触发器编辑弹窗 -->
+    <div x-show="$store.app.editingTrigger" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50" @click.self="$store.app.editingTrigger=null">
+      <div class="glass w-full max-w-2xl p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between">
+          <div class="card-title" x-text="$store.app.editingTrigger && $store.app.editingTrigger.id ? '编辑触发器' : '新触发器'"></div>
+          <button class="text-[var(--txt-2)]" @click="$store.app.editingTrigger=null">✕</button>
+        </div>
+        <template x-if="$store.app.editingTrigger">
+          <div class="space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <label class="text-sm">ID<input class="input" x-model="$store.app.editingTrigger.id" placeholder="如 morning_greet" /></label>
+              <label class="text-sm">名称<input class="input" x-model="$store.app.editingTrigger.name" /></label>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="text-sm">事件类型
+                <select class="input" x-model="$store.app.editingTrigger.event">
+                  <option value="face_detected">人脸识别</option>
+                  <option value="voice_wake">语音唤醒</option>
+                  <option value="button_pressed">按钮事件</option>
+                  <option value="device_state">设备状态变化</option>
+                  <option value="scheduled">定时触发</option>
+                  <option value="heartbeat">心跳定时</option>
+                  <option value="skill_completed">技能完成</option>
+                </select>
+              </label>
+              <label class="text-sm">角色
+                <select class="input" x-model="$store.app.editingTrigger.role">
+                  <option value="butler">豆包管家</option>
+                  <option value="jarvis">贾维斯</option>
+                  <option value="caesar">凯撒</option>
+                  <option value="luna">露娜</option>
+                  <option value="xiaoyue">晓月</option>
+                </select>
+              </label>
+            </div>
+            <div class="glass p-3 space-y-2">
+              <div class="text-sm font-semibold">触发条件</div>
+              <div class="grid grid-cols-2 gap-3">
+                <label class="text-xs">时间范围<input class="input" x-model="$store.app.editingTrigger.conditions.time_range" placeholder="07:00-08:00（留空不限）" /></label>
+                <label class="text-xs">指定成员
+                  <select class="input" x-model="$store.app.editingTrigger.conditions.member">
+                    <option value="">不限</option>
+                    <option value="lidicn">大佬</option>
+                    <option value="Kevin">凯文</option>
+                    <option value="Emily">爱美丽</option>
+                  </select>
+                </label>
+                <label class="text-xs">指定房间
+                  <select class="input" x-model="$store.app.editingTrigger.conditions.room">
+                    <option value="">不限</option>
+                    <option value="客厅">客厅</option>
+                    <option value="书房">书房</option>
+                    <option value="主卧室">主卧室</option>
+                    <option value="Kevin房间">Kevin房间</option>
+                    <option value="Emily房间">Emily房间</option>
+                  </select>
+                </label>
+                <label class="text-xs">按钮ID<input class="input" x-model="$store.app.editingTrigger.conditions.button_id" placeholder="仅按钮事件" /></label>
+              </div>
+              <label class="text-xs">文本包含关键词（逗号分隔，仅语音事件）
+                <input class="input" x-model="$store.app.editingTrigger.conditions.text_contains_str"
+                       :value="($store.app.editingTrigger.conditions.text_contains||[]).join('，')"
+                       @input="$store.app.editingTrigger.conditions.text_contains = $event.target.value.split(/[，,]/).map(x=>x.trim()).filter(Boolean)" />
+              </label>
+            </div>
+            <div class="glass p-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <div class="text-sm font-semibold">执行动作（按顺序）</div>
+                <button class="btn-ghost text-xs" @click="$store.app.editingTrigger.actions.push({skill:'',params:{}})">+ 添加</button>
+              </div>
+              <template x-for="(a,i) in $store.app.editingTrigger.actions" :key="i">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-[var(--txt-2)] w-6" x-text="i+1"></span>
+                  <input class="input flex-1" x-model="a.skill" placeholder="技能ID，如 greet" />
+                  <input class="input flex-1" x-model="a.params_str" :value="JSON.stringify(a.params||{})"
+                         @input="try{a.params=JSON.parse($event.target.value)}catch(e){}" placeholder='参数JSON，如 {"member":"{{event.member}}"}' />
+                  <button class="text-[var(--err)] text-xs" @click="$store.app.editingTrigger.actions.splice(i,1)">✕</button>
+                </div>
+              </template>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+              <label class="text-xs">冷却时间(秒)<input class="input" type="number" x-model.number="$store.app.editingTrigger.cooldown_sec" /></label>
+              <label class="text-xs">优先级<input class="input" type="number" x-model.number="$store.app.editingTrigger.priority" /></label>
+              <label class="text-xs flex items-center gap-1 pt-5"><input type="checkbox" x-model="$store.app.editingTrigger.enabled" /> 启用</label>
+            </div>
+            <div class="flex gap-2 pt-2">
+              <button class="btn-amber flex-1" :disabled="$store.app.loading" @click="$store.app.saveTrigger()">
+                <span x-text="$store.app.loading ? '保存中…' : '保存'"></span>
+              </button>
+              <button class="btn-ghost" @click="$store.app.editingTrigger=null">取消</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- 画像整理弹窗（贴文本 → LLM 整理 → 确认填入） -->
+    <div x-show="$store.app.orgOpen" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50" @click.self="$store.app.orgOpen=false">
+      <div class="glass w-full max-w-lg p-5 space-y-3">
+        <div class="card-title">贴一段话 → LLM 整理 → 确认写回</div>
+        <div class="text-xs text-[var(--txt-2)]">整理结果只填入左侧表单，需再点「保存写回」才落到 memory-agent；确认前可随时弃置。</div>
+        <textarea class="input" rows="5" x-model="$store.app.orgText"
+                  placeholder="例如：Kevin 周一三五 16:00-17:30 数学，周二四 18:00 钢琴；早上 6:50 起床，晚上 11 点半睡；喜欢乐高和画画……"></textarea>
+        <div class="flex gap-2">
+          <button class="btn-amber flex-1" :disabled="$store.app.orgLoading" @click="$store.app.runOrganize()">
+            <span x-text="$store.app.orgLoading ? '整理中…' : 'LLM 整理'"></span>
+          </button>
+          <button class="btn-ghost" @click="$store.app.orgOpen=false">弃置</button>
+        </div>
+        <template x-if="$store.app.orgDraft">
+          <div class="space-y-2">
+            <div class="text-[var(--txt-2)] text-xs">整理结果预览</div>
+            <pre class="text-[11px] bg-black/30 rounded-xl p-3 overflow-auto max-h-64" x-text="JSON.stringify($store.app.orgDraft, null, 2)"></pre>
+            <button class="btn-amber w-full" @click="$store.app.applyOrganize()">确认填入</button>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- ═══════ 系统日志（技能运行历史）═══════ -->
+    <section x-show="$store.app.view==='logs'" class="space-y-4 fade-in">
+      <div class="card">
+        <div class="card-title flex items-center justify-between">
+          <span>技能运行日志</span>
+          <button class="btn-ghost text-sm" @click="$store.app.loadLogs()">刷新</button>
+        </div>
+        <div class="space-y-2">
+          <template x-for="log in $store.app.logs" :key="log.id">
+            <div class="bg-black/20 rounded-xl p-3 text-xs space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="font-mono text-amber-400" x-text="log.skill_id"></span>
+                <span class="px-2 py-0.5 rounded-full text-[10px]"
+                      :class="log.status==='ok' ? 'bg-green-500/20 text-green-400' :
+                              log.status==='error' ? 'bg-red-500/20 text-red-400' :
+                              'bg-yellow-500/20 text-yellow-400'"
+                      x-text="log.status"></span>
+              </div>
+              <div class="text-gray-400">
+                <span x-text="new Date(log.ts * 1000).toLocaleString()"></span>
+                · <span x-text="log.source"></span>
+                · <span x-text="log.duration_ms + 'ms'"></span>
+              </div>
+              <div x-show="log.trace_id" class="text-blue-400/80 font-mono">
+                trace: <span x-text="log.trace_id"></span>
+              </div>
+              <div x-show="log.text" class="text-gray-300 truncate" x-text="log.text"></div>
+              <div x-show="log.error" class="text-red-400 truncate" x-text="log.error"></div>
+            </div>
+          </template>
+          <div x-show="$store.app.logs.length===0" class="text-gray-500 text-sm text-center py-8">
+            暂无运行记录
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 技能调试面板（v2.7 · 格16，2026-09-30）：trace 反查 + 变量查看 + 触发模拟 + 触发日志 -->
+    <section x-show="$store.app.view==='debug'" class="space-y-4 fade-in">
+      <div class="card">
+        <div class="card-title flex items-center justify-between">
+          <span>技能调试面板 · Agent trace</span>
+          <div class="flex items-center gap-2">
+            <input class="input text-xs" style="width:6.5rem" x-model="$store.app.dbgMember" placeholder="成员" @keyup.enter="$store.app.loadDbgTraces()" />
+            <select class="input text-xs" style="width:8rem" x-model="$store.app.dbgStatus" @change="$store.app.loadDbgTraces()">
+              <option value="">全部状态</option>
+              <option value="ok">ok</option>
+              <option value="error">error</option>
+              <option value="timeout">timeout</option>
+              <option value="max_iter">max_iter</option>
+              <option value="escaped">escaped</option>
+            </select>
+            <button class="btn-ghost text-sm" @click="$store.app.loadDebug()">刷新</button>
+          </div>
+        </div>
+        <div class="text-[10px] text-gray-500 mb-2">
+          状态取值按建表注释（<code>butler/store/db.py:317</code>）。
+          <span x-show="$store.app.dbgTraceLoading" class="text-amber-400">trace 读取中…</span>
+        </div>
+        <div class="space-y-1 max-h-80 overflow-y-auto">
+          <template x-for="t in $store.app.dbgTraces" :key="t.trace_id">
+            <div class="bg-black/20 rounded-lg p-2 text-xs flex items-center gap-2 cursor-pointer hover:bg-white/5"
+                 @click="$store.app.openDbgTrace(t.trace_id)">
+              <span class="font-mono text-blue-400/80" x-text="(t.trace_id||'').slice(0,8)"></span>
+              <span class="text-gray-400" x-text="$store.app.fmtTs(t.ts)"></span>
+              <span x-text="t.member"></span>
+              <span class="text-gray-300 truncate flex-1" x-text="t.user_text"></span>
+              <span class="text-[10px] text-gray-500" x-text="t.total_ms + 'ms'"></span>
+              <span class="text-[10px] text-gray-500" x-text="'llm ' + t.llm_calls + ' / tool ' + t.tool_calls + ' / step ' + t.step_count"></span>
+              <span class="px-2 py-0.5 rounded-full text-[10px]"
+                    :class="t.status==='ok' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'"
+                    x-text="t.status"></span>
+            </div>
+          </template>
+          <div x-show="$store.app.dbgTraces.length===0" class="text-gray-500 text-sm text-center py-6">暂无 trace</div>
+        </div>
+        <div class="text-[10px] text-gray-500 mt-2">
+          点一行看它的整行变量。<b>单步执行不提供</b>——<code>agent_traces</code> 只在 finish 落一条 INSERT
+          （<code>butler/agent_trace.py:84</code>），过程中没有可回放的落点。
+        </div>
+      </div>
+
+      <div class="card" x-show="$store.app.dbgTrace">
+        <div class="card-title flex items-center justify-between">
+          <span>变量查看 · <span class="font-mono text-xs" x-text="$store.app.dbgTrace ? $store.app.dbgTrace.trace_id : ''"></span></span>
+          <button class="btn-ghost text-xs" @click="$store.app.closeDbgTrace()">收起</button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 text-xs">
+          <template x-for="kv in $store.app.dbgVars()" :key="kv.k">
+            <div class="flex gap-2 border-b border-white/5 py-1">
+              <span class="text-gray-500 shrink-0" style="width:7rem" x-text="kv.k"></span>
+              <span class="text-gray-200 break-all flex-1" x-text="kv.v"></span>
+            </div>
+          </template>
+        </div>
+        <div class="mt-3" x-show="$store.app.dbgSteps.length>0">
+          <div class="text-xs text-gray-400 mb-1">
+            steps（后端已解析）· <span x-text="$store.app.dbgSteps.length"></span> 条
+            （一次 finish 落库的整段记录，不是逐步回放）
+          </div>
+          <pre class="bg-black/30 rounded-lg p-2 text-[10px] overflow-x-auto max-h-64" x-text="JSON.stringify($store.app.dbgSteps, null, 2)"></pre>
+        </div>
+        <div class="text-[10px] text-gray-500 mt-2" x-show="$store.app.dbgSteps.length===0">这条 trace 没有 steps_json 内容。</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">触发模拟</div>
+        <label class="flex items-start gap-2 text-xs mb-2 cursor-pointer select-none">
+          <input type="checkbox" class="mt-0.5 w-4 h-4 accent-amber-500" x-model="$store.app.dbgDryRun">
+          <span><b class="text-amber-400" x-text="$store.app.dbgDryRun===false ? '真执行' : '试运行（缺省）'"></b>：<span x-text="$store.app.dbgDryRun===false ? '播报和通知会真的发出去，并写 trigger_runs 执行流水' : '并发/资源/冷却三道闸照常判定，动作不跑——不播报、不发通知、不写执行流水'"></span>（后端入口缺省已 fail-closed＝不执行，<code>butler/api/trigger_routes.py:233-239</code>；本开关把选择显式发给后端）</span>
+        </label>
+        <div class="space-y-1">
+          <template x-for="t in $store.app.dbgTriggers" :key="t.id">
+            <div class="flex items-center gap-2 text-xs bg-black/20 rounded-lg p-2">
+              <span class="font-mono text-amber-400" x-text="t.id"></span>
+              <span x-text="t.name"></span>
+              <span class="text-gray-500" x-text="t.event"></span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded"
+                    :class="t.enabled ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-gray-400'"
+                    x-text="t.enabled ? '启用' : '停用'"></span>
+              <button class="btn-ghost text-xs ml-auto" :disabled="$store.app.dbgTestBusy===t.id"
+                      @click="$store.app.runDbgTrigger(t.id)"
+                      x-text="$store.app.dbgTestBusy===t.id ? ($store.app.dbgDryRun===false ? '执行中…' : '试跑中…') : '模拟触发'"></button>
+            </div>
+          </template>
+          <div x-show="$store.app.dbgTriggers.length===0" class="text-gray-500 text-sm py-4">暂无触发器</div>
+        </div>
+        <div x-show="$store.app.dbgTestResult" class="mt-3">
+          <div class="text-xs text-gray-400 mb-1">上次模拟结果</div>
+          <pre class="bg-black/30 rounded-lg p-2 text-[10px] overflow-x-auto max-h-48" x-text="JSON.stringify($store.app.dbgTestResult, null, 2)"></pre>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title flex items-center justify-between">
+          <span>触发日志 ·
+            <span class="text-xs text-gray-500"
+                  x-text="$store.app.dbgLogTrace ? ('trace ' + $store.app.dbgLogTrace.slice(0,8)) : '全部'"></span>
+          </span>
+          <button class="btn-ghost text-xs" @click="$store.app.clearDbgLogTrace()">看全部</button>
+        </div>
+        <div class="space-y-1">
+          <template x-for="(l, i) in $store.app.dbgLogs" :key="i">
+            <div class="text-xs bg-black/20 rounded-lg p-2 flex flex-wrap items-center gap-2">
+              <span class="text-gray-400" x-text="$store.app.fmtTs(l.ts)"></span>
+              <span class="font-mono text-amber-400" x-text="l.trigger_id"></span>
+              <span x-text="l.trigger_name"></span>
+              <span class="text-gray-500" x-text="l.event"></span>
+              <span class="px-2 py-0.5 rounded-full text-[10px]"
+                    :class="l.status==='ok' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'"
+                    x-text="l.status"></span>
+              <span class="text-gray-300" x-text="$store.app.dbgSkillNames(l)"></span>
+              <span class="text-blue-400/70 font-mono text-[10px]" x-show="l.trace_id" x-text="'trace ' + (l.trace_id||'').slice(0,8)"></span>
+              <span class="text-red-400" x-show="l.error" x-text="l.error"></span>
+            </div>
+          </template>
+          <div x-show="$store.app.dbgLogs.length===0" class="text-gray-500 text-sm py-4">暂无触发记录</div>
+        </div>
+      </div>
+    </section>
+    <!-- 手机底部导航 -->
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 flex justify-around py-2 glass rounded-none border-x-0 border-b-0 safe-bottom"
+         style="backdrop-filter:blur(16px)">
+      <template x-for="n in $store.app.nav" :key="n.k">
+        <div class="nav-item" :class="$store.app.view===n.k && 'active'" @click="$store.app.switchView(n.k)">
+          <span x-text="n.i" class="text-lg"></span><span x-text="n.l"></span>
+        </div>
+      </template>
+    </nav>
+  </div>
+
+  <!-- Toast -->
+  <div x-show="$store.app.toast" x-text="$store.app.toast"
+       class="fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl glass amber-text text-sm z-50 safe-bottom"
+       style="transition:opacity .2s"></div>
+
+  <script src="/js/api.js?v=9"></script>
+  <script src="/js/app.js?v=33"></script>
+  <script src="/js/pages/push.js?v=4"></script>
+  <script src="/js/pages/dialog.js?v=4"></script>
+  <script src="/js/pages/roles.js?v=4"></script>
+  <script src="/js/pages/devices.js?v=4"></script>
+  <script src="/js/pages/channels.js?v=3"></script>
+  <script src="/js/pages/skills.js?v=5"></script>
+  <script src="/js/pages/koin.js?v=5"></script>
+  <script src="/js/pages/triggers.js?v=4"></script>
+  <script src="/js/pages/profile.js?v=4"></script>
+  <script src="/js/pages/memory.js?v=8"></script>
+  <script src="/js/pages/evolution.js?v=6"></script>
+  <script src="/js/pages/commands.js?v=4"></script>
+  <script src="/js/pages/debug.js?v=2"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function () {});
+      });
+    }
+  </script>
+</body>
+</html>
+
+

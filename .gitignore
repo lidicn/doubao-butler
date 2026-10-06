@@ -1,0 +1,49 @@
+# 数据卷（运行时生成，不入库）
+data/
+tts/
+*.db
+*.db-wal
+*.db-shm
+
+# 密钥与环境
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 编辑器/系统
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# 临时
+tmp/
+*.bak
+tmp_*.py
+tmp_*.sh
+
+# 本地备份
+butler.local_backup/
+*.local_backup/
+
+# 本地调试产物
+*.png
+screenshot*.png
+_scratch_*/
+_wt2/
+_投递/
+.codebuddy/
+.qoder/
+.pytest_cache/
+agent-loop/
+patches/
+vibe_deploy/
+workorders/
+
+# 第三方依赖（如vendor是依赖目录）
+# vendor/

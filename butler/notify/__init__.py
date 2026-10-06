@@ -1,0 +1,1 @@
+"""通知路由层（新增包）：统一入口 notify(channel, text, **kwargs)。"""

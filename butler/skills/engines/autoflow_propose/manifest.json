@@ -1,0 +1,7 @@
+{
+  "id": "autoflow_propose",
+  "name": "持久化自动化提案（autoflow）",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "AutoflowProposeEngine"
+}

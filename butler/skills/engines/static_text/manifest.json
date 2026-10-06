@@ -1,0 +1,9 @@
+{
+  "id": "static_text",
+  "name": "静态文本引擎",
+  "version": 1,
+  "entry": "engine.py",
+  "class": "StaticTextEngine",
+  "description": "根据 payload 中的 member 调用 persona.greeting 生成问候语，或直接返回 brain.prompt 模板文本。用于 greet 等不需要 LLM 的简单技能。",
+  "modes": ["greeting", "template"]
+}
