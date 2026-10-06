@@ -15,9 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# WO-BUT-002⑦：homesdk 固化到镜像（consent 判定 + 质量门禁）
-COPY vendor/homesdk /tmp/homesdk
-RUN pip install --no-cache-dir /tmp/homesdk && rm -rf /tmp/homesdk
+# WO-BUT-002⑦：homesdk 固化到镜像（v2.6 升级到 0.3.1，含 http/auth/mqtt/presence/time 全模块）
+COPY vendor/homesdk-0.3.1-py3-none-any.whl /tmp/homesdk-0.3.1-py3-none-any.whl
+RUN pip install --no-cache-dir /tmp/homesdk-0.3.1-py3-none-any.whl && rm -f /tmp/homesdk-0.3.1-py3-none-any.whl
 
 COPY butler /app/butler
 
