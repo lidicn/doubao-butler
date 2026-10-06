@@ -600,15 +600,11 @@ def _build_app() -> Starlette:
             )
             logger.info("vibe decision timeout checker scheduled every 30s")
 
-            # v1.5 P1-1 设备巡检定时化：每天 9:00 和 21:00 自动执行，结果 Bark 推送
-            _di_morning_job = reg.wrap_scheduler_job("sched:device_inspection_morning", lambda: asyncio.run_coroutine_threadsafe(_scheduled_device_inspection(rt), _main_loop))
-            reg.register("sched:device_inspection_morning", "scheduler", "设备巡检（早）", expected_interval_sec=86400, description="每天 09:00 自动巡检全屋设备，结果 Bark 推送")
-            safe_add_job(sched, scheduler_job_failures, _di_morning_job, "cron", hour=9, minute=0, id="device_inspection_morning", max_instances=1)
-
-            _di_evening_job = reg.wrap_scheduler_job("sched:device_inspection_evening", lambda: asyncio.run_coroutine_threadsafe(_scheduled_device_inspection(rt), _main_loop))
-            reg.register("sched:device_inspection_evening", "scheduler", "设备巡检（晚）", expected_interval_sec=86400, description="每天 21:00 自动巡检全屋设备，结果 Bark 推送")
-            safe_add_job(sched, scheduler_job_failures, _di_evening_job, "cron", hour=21, minute=0, id="device_inspection_evening", max_instances=1)
-            logger.info("device inspection scheduled at 09:00 and 21:00 daily")
+            # v1.5 P1-1 设备巡检定时化：每天 9:00 自动执行，结果 Bark 推送（v2.5 改为一天1次）
+            _di_morning_job = reg.wrap_scheduler_job("sched:device_inspection", lambda: asyncio.run_coroutine_threadsafe(_scheduled_device_inspection(rt), _main_loop))
+            reg.register("sched:device_inspection", "scheduler", "设备巡检", expected_interval_sec=86400, description="每天 09:00 自动巡检全屋设备，结果 Bark 推送（一天1次）")
+            safe_add_job(sched, scheduler_job_failures, _di_morning_job, "cron", hour=9, minute=0, id="device_inspection", max_instances=1)
+            logger.info("device inspection scheduled at 09:00 daily (once per day)")
 
             # WO-DB-104 早报/晚报定时触发：到点 fire scheduled 事件，trigger 引擎按 time_range 匹配
             async def _scheduled_report_event(rt, label):
@@ -631,11 +627,11 @@ def _build_app() -> Starlette:
             safe_add_job(sched, scheduler_job_failures, _er_job, "cron", hour=21, minute=30, id="evening_report", max_instances=1)
             logger.info("morning/evening report scheduled at 07:20 and 21:30 daily")
 
-            # v1.7 P0-3 实时异常检测：每 15 分钟检查（v1.8 已改为汇总推送 + PushGuard 风控）
+            # v1.7 P0-3 异常检测：每天 8:30 检查（v2.5 改为一天1次，汇总为一条 Bark 推送）
             _anomaly_job = reg.wrap_scheduler_job("sched:anomaly_detector", lambda: asyncio.run_coroutine_threadsafe(_scheduled_anomaly_check(rt), _main_loop))
-            reg.register("sched:anomaly_detector", "scheduler", "实时异常检测", expected_interval_sec=900, description="每 15 分钟检测设备异常，汇总为一条 Bark 推送（PushGuard 风控）")
-            safe_add_job(sched, scheduler_job_failures, _anomaly_job, "interval", minutes=15, id="anomaly_detector", max_instances=1)
-            logger.info("anomaly detector scheduled every 15 minutes (summary push)")
+            reg.register("sched:anomaly_detector", "scheduler", "异常检测", expected_interval_sec=86400, description="每天 08:30 检测设备异常，汇总为一条 Bark 推送（一天1次）")
+            safe_add_job(sched, scheduler_job_failures, _anomaly_job, "cron", hour=8, minute=30, id="anomaly_detector", max_instances=1)
+            logger.info("anomaly detector scheduled at 08:30 daily (once per day, summary push)")
 
             # v1.7 P0-1 晨起场景：每 5 分钟检查（6:00-10:00 时段内才会实际触发）
             _morning_job = reg.wrap_scheduler_job("sched:morning_routine", lambda: asyncio.run_coroutine_threadsafe(_scheduled_morning_routine(rt), _main_loop))

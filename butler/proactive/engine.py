@@ -326,12 +326,16 @@ class ProactiveEngine:
             except Exception as e:
                 logger.warning("proactive tts failed: %s", e)
 
-        # Bark 同步推送（文字版）
+        # Bark 同步推送（文字版，含触发原因便于试验阶段排查）
         if self.rt and getattr(self.rt, "bark", None):
             try:
                 body = question
                 if options:
                     body += "\n" + "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(options)])
+                # 试验阶段：正文末尾追加触发原因
+                trigger_reason = (context or {}).get("trigger_reason", "")
+                if trigger_reason:
+                    body += f"\n\n【触发原因】{trigger_reason}"
                 await self.rt.bark.push(
                     body=body,
                     title=f"【主动问询】{title}",
@@ -437,6 +441,12 @@ class ProactiveEngine:
         if not self.is_enabled():
             return []
 
+        # 全局时间窗口：仅 7:00-23:00 允许主动问询（避免凌晨打扰）
+        now_hour = time.localtime().tm_hour
+        if now_hour < 7 or now_hour >= 23:
+            logger.debug("proactive scenes skipped (outside 7:00-23:00 window, hour=%d)", now_hour)
+            return []
+
         triggered = []
         for scene in self.get_scenes(enabled_only=True):
             try:
@@ -448,22 +458,56 @@ class ProactiveEngine:
                     if self.is_event_asked(event_key, cooldown_hours=cooldown):
                         continue
 
+                    # 构建触发原因（试验阶段用于排查）
+                    trigger_reason = self._build_trigger_reason(scene)
+
                     inquiry = await self.ask(
                         event_key=event_key,
                         title=inquiry_cfg.get("title", scene.get("name", "")),
                         question=inquiry_cfg.get("question", ""),
                         options=inquiry_cfg.get("options", []),
-                        context={"scene_id": scene["id"], "scene_name": scene.get("name", "")},
+                        context={"scene_id": scene["id"], "scene_name": scene.get("name", ""), "trigger_reason": trigger_reason},
                         tts_device=inquiry_cfg.get("tts_device"),
                         cooldown_hours=cooldown,
                     )
                     if inquiry:
                         triggered.append({"scene_id": scene["id"], "inquiry_id": inquiry.id})
-                        logger.info("scene triggered: %s -> %s", scene["id"], inquiry.id)
+                        logger.info("scene triggered: %s -> %s (reason: %s)", scene["id"], inquiry.id, trigger_reason)
             except Exception as e:
                 logger.warning("check scene %s failed: %s", scene.get("id"), e)
 
         return triggered
+
+    def _build_trigger_reason(self, scene: dict) -> str:
+        """根据场景配置构建触发原因描述（试验阶段用于排查触发条件）。"""
+        scene_name = scene.get("name", scene.get("id", "unknown"))
+        trigger = scene.get("trigger", {})
+        conditions = trigger.get("conditions", [])
+        parts = [f"场景「{scene_name}」"]
+        for cond in conditions:
+            cond_type = cond.get("type", "")
+            if cond_type == "indoor_temp":
+                op = cond.get("operator", ">=")
+                val = cond.get("value", 28)
+                parts.append(f"室温{op}{val}℃")
+            elif cond_type == "user_in_room":
+                conf = cond.get("confidence", 0.6)
+                parts.append(f"检测到用户在房间(置信度≥{conf})")
+            elif cond_type == "user_still":
+                room = cond.get("room", "未知")
+                dur = cond.get("duration_minutes", 45)
+                parts.append(f"{room}用户静止≥{dur}分钟")
+            elif cond_type == "entity_state":
+                kw = cond.get("keyword", "")
+                state = cond.get("state", "")
+                dur = cond.get("duration_minutes", 0)
+                parts.append(f"实体「{kw}」状态={state}持续≥{dur}分钟")
+            elif cond_type == "ac_off":
+                room = cond.get("room", "same")
+                parts.append(f"空调未开({room})")
+            else:
+                parts.append(f"条件类型={cond_type}")
+        return "，".join(parts)
 
     async def _check_scene_conditions(self, scene: dict) -> bool:
         """检查场景触发条件（简化版：只检查类型为 scheduled 的场景，基于时间间隔）。"""
