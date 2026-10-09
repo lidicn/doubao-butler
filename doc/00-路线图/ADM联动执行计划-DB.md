@@ -375,6 +375,16 @@ DB ── 订阅 butler/inbox/speak|notify|tv  ← AF（✚新增投递方）+ M
 - 不替 AF 接 MA（AF 自己调三路径，DB 与 AF 是两条独立的 MA 调用方）。
 - 记忆读写工具不收敛（DB 强依赖 7 个记忆读写 MCP 工具，见 `memory_agent.py` 调用清单）。
 
+### 9.3 进度快照（DB 侧码面实测 · 2026-10-09）
+
+> 口径说明：以下为**本仓镜像码面**读数（权威树未同步，⛔ push 未授权）；真机腿一律待合并窗。本节口径覆盖 10-08 立项时的"全部未启动"默认态。
+
+| # | 状态 | 依据（可点开） |
+|---|------|------|
+| 1 | **码腿在册 · 真机验收待合并窗** | `butler/bus/inbox.py`：Sentinel/InboxGate 每源每日预算（speak 源）在册；drop 判定返回 `(outcome, reason)` 后统一进 `_record`  Sole 记账点 → `inbox_events` 审计行（source/trace/outcome/reason）。验收硬线「AF 投 speak → TTS 播报」需 AF 侧联调＝合并窗格。 |
+| 2 | **已落地**（批135，commit `7f0f9c7`） | `butler/bus/topics.py`：`SUB_AF_AUTOMATION_FIRED/FAILED` 常量化并入 `SUB_TOPICS`（`mqtt_client` 对 `SUB_TOPICS` 自动 qos=1 订阅＝订阅腿）；新增 `butler/bus/af_events.py`：fired→告知含 `automation_id/ref/trace_id`，failed→`error` 原样进正文，缺 `trace_id`/非 dict→dropped，通知异常→`notify_failed` 不假绿；`app.py` 路由分支接线。验收测试 `tests/test_audit_1009_batch135_af_fired_failed.py`。 |
+| 3 | **前置受阻 · 登记不启动** | 依赖「MA 三路径 MCP MVP」（MA 路线图 §八，MA 侧交付物盘上未见）。DB 侧 `route_question` 入口改造在 MA 出口前无可对接面，⛔ 空转。 |
+
 ---
 
 —— 关键决策部 · DCD
