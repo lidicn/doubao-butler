@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from butler.logging_setup import get_logger
+from butler.config import get_settings
 from butler.integrations.ilink.client import ILinkClient
 
 logger = get_logger("butler.ilink.bridge")
@@ -39,8 +40,18 @@ class ILinkBridge:
         self._get_updates_buf = ""
 
         self._history: dict[str, deque] = defaultdict(lambda: deque(maxlen=MAX_HISTORY_PER_USER))
-        self._context_dir = Path("/app/data/ilink/contexts")
+        # 批87 B-19：会话档目录跟随 settings.data_dir（⛔ 烤死 /app/data 字面量——
+        # 用户换 DATA_DIR 后账实分叉，且 /app 不可写的运行面上构造即 PermissionError）。
+        self._context_dir = Path(self._data_dir()) / "ilink" / "contexts"
         self._context_dir.mkdir(parents=True, exist_ok=True)
+
+    def _data_dir(self) -> Path:
+        """data_dir 取数序：注入运行时的 settings → 全局 get_settings()。"""
+        settings = getattr(self.rt, "settings", None) if self.rt is not None else None
+        data_dir = getattr(settings, "data_dir", None)
+        if not data_dir:
+            data_dir = get_settings().data_dir
+        return Path(data_dir)
 
     def start(self) -> None:
         if self._running:

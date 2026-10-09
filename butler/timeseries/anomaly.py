@@ -302,7 +302,13 @@ class AnomalyDetector:
         return (time.time() - last) < DEDUP_WINDOW
 
     def _mark_pushed(self, key: str) -> None:
-        _dedup_cache[key] = time.time()
+        now = time.time()
+        _dedup_cache[key] = now
+        # 批85：顺手剪掉过期键。小时粒度键（mode_anomaly_{user}_{YYYYMMDDHH}）每小时
+        # 换新，只写不清 ⇒ 这张进程级 dict 无界增长。窗口外的键已不具抑制意义，可安全删。
+        for stale in [k for k, ts_last in _dedup_cache.items()
+                      if now - ts_last >= DEDUP_WINDOW]:
+            _dedup_cache.pop(stale, None)
 
     # ---- 推送 ----
 
