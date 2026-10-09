@@ -49,15 +49,17 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 def _ensure_paths_on_sys_path() -> None:
-    """仓根 + vendored homesdk（`vendor/homesdk/src`，即 Dockerfile 的安装源）。
+    """仓根置前；homesdk 一律**先装好的库、vendor 只垫底**。
 
-    宿主机没装 homesdk（它只在镜像的 site-packages 里），而 `butler/core/dialog.py:22`
-    就 `from homesdk.consent import ...` ⇒ 这条补径只是让本文件的腿在宿主机能跑到真代码
-    （与 tests/test_cross_repo_contracts.py 的 ROOT 补径同一手法），⛔ 生产修复。
+    `vendor/homesdk/src` 现在只是 consent+gates 的局部摘出（0.1.1 形制），置顶会把整套
+    0.3.x 遮成 `No module named 'homesdk.http'`（1009 逐模块扫描 6 红的真因＝这行置顶，
+    与 Dockerfile 从 vendor/*.whl 安装的事实也不符）。宿主没装 homesdk 时才落到 vendor 兜底。
     """
-    for p in (REPO, REPO / "vendor" / "homesdk" / "src"):
-        if p.is_dir() and str(p) not in sys.path:
-            sys.path.insert(0, str(p))
+    if str(REPO) not in sys.path:
+        sys.path.insert(0, str(REPO))
+    vend = REPO / "vendor" / "homesdk" / "src"
+    if vend.is_dir() and str(vend) not in sys.path:
+        sys.path.append(str(vend))
 
 
 _ensure_paths_on_sys_path()
