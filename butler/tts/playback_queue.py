@@ -2,7 +2,7 @@
 
 设计：
 - 每个 device_id 一个 asyncio.Queue + 一个消费 task
-- 队列项 = (TTSResult, device_id, play_delay_s)
+- 队列项 = (TTSResult, url, trace_id)：号随条目本体走，⛔ 指望 worker 的 contextvar 继承
 - 消费顺序：合成完成 → 打给 HA → 等播放间隔 → 下一个
 - 不同 device_id 之间完全并发，互不阻塞
 - 队列长度上限 5，超出丢最旧的（防内存膨胀）
@@ -13,6 +13,7 @@ import asyncio
 import time
 from collections import defaultdict
 
+from butler.core.trace_ctx import current_trace_id
 from butler.logging_setup import get_logger
 from butler.tts.base import TTSResult
 
@@ -64,13 +65,17 @@ class PlaybackQueue:
         logger.info("playback queue worker started: %s", device_id)
         while True:
             try:
-                result, url = await q.get()
+                result, url, trace_id = await q.get()
+                # 这条 task 的上下文是「第一条 enqueue」那一刻的快照，之后进来的条目各属各的调用方
+                token = current_trace_id.set(trace_id) if trace_id else None
                 try:
                     await self._play_one(device_id, result, url)
                 except Exception as e:
                     logger.warning("playback error on %s: %s", device_id, e)
                 finally:
                     q.task_done()
+                    if token is not None:
+                        current_trace_id.reset(token)
             except asyncio.CancelledError:
                 logger.info("playback queue worker stopped: %s", device_id)
                 break
@@ -104,8 +109,10 @@ class PlaybackQueue:
         # 播放间隔：让音箱真正播完再放第二条
         await asyncio.sleep(self._gap)
 
-    async def enqueue(self, device_id: str, result: TTSResult) -> bool:
+    async def enqueue(self, device_id: str, result: TTSResult, trace_id: str = "") -> bool:
         """把一条合成好的音频排入设备播放队列。
+
+        ``trace_id``＝调用方那一刻的号，随条目走（worker task 的上下文不跟着条目换）。
 
         Returns:
             True=入队成功, False=队列满被丢弃
@@ -115,17 +122,17 @@ class PlaybackQueue:
         q = await self._ensure_worker(device_id)
         url = result.public_url
         try:
-            q.put_nowait((result, url))
+            q.put_nowait((result, url, trace_id))
             logger.debug("enqueued to %s (queue=%d): %.30s", device_id, q.qsize(), result.voice)
             return True
         except asyncio.QueueFull:
             # 队列满：丢最旧的一条，腾位置
             try:
-                old_result, _ = q.get_nowait()
+                old_result, _, _ = q.get_nowait()
                 logger.warning("playback queue full on %s, dropping oldest: %.30s",
                                device_id, old_result.voice)
                 q.task_done()
-                q.put_nowait((result, url))
+                q.put_nowait((result, url, trace_id))
                 return True
             except Exception:
                 logger.error("playback queue full on %s and drain failed", device_id)
