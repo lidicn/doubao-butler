@@ -40,7 +40,12 @@ class BaiduTTS:
 
     async def synthesize(self, text: str, per: int = 5003, spd: int = 5, pit: int = 5, vol: int = 5) -> Optional[bytes]:
         """合成语音，返回 MP3 二进制。失败返回 None。"""
-        token = await self._get_token()
+        # D10 硬化（DCD 20261009 裁丙）：token 腿收进 try——百度返回错误响应时⛔ 从发声路径抛穿
+        try:
+            token = await self._get_token()
+        except Exception as e:
+            logger.error("baidu tts token fetch failed: %s", e)
+            return None
         params = {
             "tex": text[:2048],
             "tok": token,

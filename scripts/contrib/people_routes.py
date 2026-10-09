@@ -1,4 +1,12 @@
-"""人员状态 API：当前用户位置、场景推断、活动时间线"""
+"""人员状态 API：当前用户位置、场景推断、活动时间线
+
+【未接线半成品 · DCD 20261008-DB孤儿资产处置 裁乙】
+- 未注册：butler/app.py 零挂载点，GET /api/people/status 现网 404
+- 无消费方：前端/脚本 0 调用
+- 数据腿缺：perception_engine 全仓无赋值落点
+- 形制分叉：全仓唯一 fastapi 路由（其余 34 枚 starlette）；⛔ 为其加依赖
+真上线前先按 starlette 重写并接 perception_engine。
+"""
 from __future__ import annotations
 
 import time

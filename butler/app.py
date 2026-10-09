@@ -365,7 +365,7 @@ def _build_app() -> Starlette:
             try:
                 from butler.core.tts_baidu import BaiduTTS
                 rt.baidu_tts = BaiduTTS(api_key=_baidu_key, secret_key=_baidu_secret)
-                logger.info("baidu tts initialized")
+                logger.info("baidu tts object built — 未接入发声名册（DCD 20261009 裁丙：待接线登记，不静默当在役）")
             except Exception as e:
                 logger.warning("baidu tts init failed: %s", e)
                 rt.baidu_tts = None
