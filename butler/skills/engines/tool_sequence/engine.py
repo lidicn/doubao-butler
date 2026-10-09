@@ -27,15 +27,30 @@ logger = get_logger("butler.skills.engines.tool_sequence")
 
 _PARAM_RE = re.compile(r"\{\{(\w+)\}\}")
 
+# D12 深度预算：现网加载面 args 可达深度实测为 2，崩溃带起点实测为 500，
+# 64＝现测真值的 32 倍、崩溃带起点的 1/8，放行一切合法技能档。
+_MAX_RENDER_DEPTH = 64
 
-def _render(value, params: dict):
-    """递归渲染字符串里的 {{param}} 占位符。"""
+
+def _render(value, params: dict, _depth: int = 0, _path: tuple = ()):
+    """递归渲染字符串里的 {{param}} 占位符。
+
+    带深度预算与环检测（D12）：超预算或自引用/互引用模板抛 ValueError，
+    ⛔ 让 RecursionError 逃逸。环判定沿「当前路径上的祖先容器」比身份，
+    ⇒ 同一对象作为兄弟字段出现（共享子树/DAG）不算环，照常渲染。
+    """
     if isinstance(value, str):
         return _PARAM_RE.sub(lambda m: str(params.get(m.group(1), m.group(0))), value)
-    if isinstance(value, dict):
-        return {k: _render(v, params) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_render(v, params) for v in value]
+    if isinstance(value, (dict, list)):
+        if _depth >= _MAX_RENDER_DEPTH:
+            raise ValueError(f"模板嵌套超过深度预算 {_MAX_RENDER_DEPTH}")
+        for ancestor in _path:
+            if ancestor is value:
+                raise ValueError("模板变量存在自引用/互引用环")
+        child_path = _path + (value,)
+        if isinstance(value, dict):
+            return {k: _render(v, params, _depth + 1, child_path) for k, v in value.items()}
+        return [_render(v, params, _depth + 1, child_path) for v in value]
     return value
 
 
@@ -54,10 +69,35 @@ class ToolSequenceEngine:
 
         params = dict(ctx.payload or {})
         results = []
+
+        # D12：先渲染再发令——success_text 是承诺的口播，炸了⛔ 算成功；
+        # 任一步 args 没渲染出来⇒一条工具都不许发。_render 的 ValueError 必须被
+        # 捕获转成失败结果，⛔ 穿出 run() 被兜网当『技能匹配失败』吞掉。
+        success_tpl = brain.get("success_text") or ""
+        try:
+            success_text = _render(success_tpl, params) if success_tpl else ""
+        except (ValueError, RecursionError) as e:
+            logger.warning("tool_sequence success_text 渲染失败: %s", e)
+            return SkillResult(
+                ok=False, error=f"success_text 渲染失败: {e}",
+                status="error", meta={"stage": "success_text", "results": results},
+            )
+
+        rendered_steps = []
         for i, step in enumerate(steps):
             tool = step.get("tool", "")
             raw_args = step.get("args") or {}
-            args = _render(raw_args, params)
+            try:
+                args = _render(raw_args, params)
+            except (ValueError, RecursionError) as e:
+                logger.warning("tool_sequence step %d (%s) args 渲染失败: %s", i + 1, tool, e)
+                return SkillResult(
+                    ok=False, error=f"步骤{i+1}({tool})参数渲染失败: {e}",
+                    status="error", meta={"failed_step": i, "tool": tool, "stage": "args", "results": results},
+                )
+            rendered_steps.append((tool, args))
+
+        for i, (tool, args) in enumerate(rendered_steps):
             logger.info("tool_sequence step %d: %s(%s)", i + 1, tool, str(args)[:120])
             try:
                 result = await dispatch_tool(tool, args, rt.agent)
@@ -77,13 +117,8 @@ class ToolSequenceEngine:
                 )
             results.append({"step": i + 1, "tool": tool, "result": str(result)[:300]})
 
-        # 成功：渲染 success_text
-        text = ""
-        success_tpl = brain.get("success_text") or ""
-        if success_tpl:
-            text = _render(success_tpl, params)
-        else:
-            text = f"已执行 {len(steps)} 步操作。"
+        # 成功：口播已在发令前渲染完毕（success_text 缺省时给计数文案）
+        text = success_text or f"已执行 {len(steps)} 步操作。"
 
         return SkillResult(
             ok=True, text=text, status="ok",
