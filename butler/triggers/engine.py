@@ -14,6 +14,7 @@ import time
 import uuid
 from datetime import datetime
 
+from butler.core.trace_ctx import current_trace_id
 from butler.logging_setup import get_logger
 from butler.store import repo, write_failures
 
@@ -145,20 +146,25 @@ class TriggerEngine:
 
         dry_run=True（DCD 裁定 C）＝只评估不执行：闸门照过、动作不跑、冷却与熔断不写、
         事件防抖窗口不占、trigger_runs 执行流水不落。默认 False＝既有行为一字不变。
+
+        批151：trace 号在事件边界上生、在边界上还。事件流跑在长驻 task 上
+        （`event_stream` / `xiaomi_ear` 的队列循环），set 而不 reset 会把上一条事件的号
+        发给下一条——现网 4 次 face_detected 共用 1 个号就是这条。
         """
+        inherited = self._trace_id()
+        trace_id = inherited or uuid.uuid4().hex[:16]
+        token = None if inherited else current_trace_id.set(trace_id)
+        try:
+            return await self._handle_event_inner(event_type, payload, dry_run, trace_id)
+        finally:
+            if token is not None:
+                current_trace_id.reset(token)
+
+    async def _handle_event_inner(self, event_type: str, payload: dict | None,
+                                  dry_run: bool, trace_id: str) -> list[dict]:
         payload = dict(payload or {})
         payload.setdefault("event", event_type)
         payload.setdefault("timestamp", datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
-
-        # v2.6: 事件入口写入 trace 上下文，trigger 驱动的技能/发声与上游同链
-        trace_id = self._trace_id()
-        if not trace_id:
-            trace_id = uuid.uuid4().hex[:16]
-            try:
-                from butler.core.agent import _current_trace_id
-                _current_trace_id.set(trace_id)
-            except Exception:
-                pass
 
         # GATE 2: 事件级防抖 — 同 (event, member, room) 30s 内重复事件直接丢弃
         debounce_key = f"{event_type}:{payload.get('member','')}:{payload.get('room','')}"
@@ -220,12 +226,13 @@ class TriggerEngine:
 
     @staticmethod
     def _trace_id() -> str:
-        """当前链路 trace_id；未设返回空串，不抛。"""
-        try:
-            from butler.core.agent import _current_trace_id
-            return _current_trace_id.get() or ""
-        except Exception:
-            return ""
+        """当前链路 trace_id；未设返回空串，不抛。
+
+        批151：改读叶子 `butler.core.trace_ctx`（与 `agent` 里那枚是同一个对象）。
+        原先走 `butler.core.agent` 的 import 在宿主（无 homesdk）会抛，而外面那圈
+        `except Exception: pass` 把它静静吃掉＝整条 trace 腿空转、读数看着却像跑过了。
+        """
+        return current_trace_id.get() or ""
 
     # ---- 匹配 ----
 
