@@ -117,10 +117,8 @@ class Settings:
     allow_no_auth: bool = False  # WO-ME-204：显式 true 才允许未配置 web_user 时放行全站鉴权（仅内网调试）
 
     # MQTT
-    mqtt_host: str = "192.168.2.200"
-    mqtt_port: int = 1883
-    mqtt_user: str = "butler"
-    mqtt_password: str = ""
+    # 模块4（批137）：broker 地址与凭据收编 homesdk.mqtt（每次现读 env、缺凭据 fail-closed），
+    # 本数据类只保留 client_id。
     mqtt_client_id: str = "butler-core"
 
     # TV
@@ -252,10 +250,6 @@ class Settings:
             doubao_webhook_token=_env("DOUBAO_WEBHOOK_TOKEN"),
             doubao_webhook_allow_unauthenticated=_env_bool("DOUBAO_WEBHOOK_ALLOW_UNAUTHENTICATED", False),
             allow_no_auth=_env_bool("BUTLER_ALLOW_NO_AUTH", False),
-            mqtt_host=_env("MQTT_HOST", "192.168.2.200"),
-            mqtt_port=_env_int("MQTT_PORT", 1883),
-            mqtt_user=_env("MQTT_USER", "butler"),
-            mqtt_password=_env("MQTT_PASSWORD"),
             mqtt_client_id=_env("MQTT_CLIENT_ID", "butler-core"),
             tv_http_url=_env("TV_HTTP_URL", "http://192.168.2.238:8080"),
             tv_mqtt_prefix=_env("TV_MQTT_PREFIX", "tv/livingroom"),
@@ -450,7 +444,7 @@ class Settings:
     def mask_secrets(self) -> dict[str, Any]:
         """返回用于日志/状态的脱敏配置快照。"""
         d = self.__dict__.copy()
-        for k in ("mqtt_password", "doubao_api_key", "new_api_key", "memory_agent_token", "memory_agent_pass", "memory_agent_butler_token", "memory_agent_app_token", "go2rtc_pass", "ha_token", "web_password", "bark_key", "doubao_webhook_token", "xiaomi_service_token", "xiaomi_pass_token", "xiaomi_ssecurity", "autoforge_api_token", "autoforge_inbox_key"):
+        for k in ("doubao_api_key", "new_api_key", "memory_agent_token", "memory_agent_pass", "memory_agent_butler_token", "memory_agent_app_token", "go2rtc_pass", "ha_token", "web_password", "bark_key", "doubao_webhook_token", "xiaomi_service_token", "xiaomi_pass_token", "xiaomi_ssecurity", "autoforge_api_token", "autoforge_inbox_key"):
             if d.get(k):
                 d[k] = "***"
         return d

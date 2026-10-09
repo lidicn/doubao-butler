@@ -10,10 +10,8 @@ import json
 import logging
 import time
 
-import paho.mqtt.client as mqtt
-from paho.mqtt.client import CallbackAPIVersion
-
 from homesdk.adm.status import STATE_OFFLINE, STATE_ONLINE, decode_status, encode_status
+from homesdk.mqtt import broker_settings, get_client, resolve_credentials
 
 from butler import __version__
 from butler.bus.topics import ADM_CAPS, ADM_STATUS, PUB_STATUS, SUB_TOPICS, SUB_TV_RESULT
@@ -32,12 +30,12 @@ class MQTTClient:
         self.on_result = None  # 由 app 注入 (payload)->None；zap-tv 回执短路通道
         self.connected = asyncio.Event()
         self.dropped = 0                  # P1-3：队列满丢件计数（⛔ 只打日志＝丢了多少不可查）
-        self._client = mqtt.Client(
-            callback_api_version=CallbackAPIVersion.VERSION2,
-            client_id=settings.mqtt_client_id,
-            clean_session=False,
-        )
-        self._client.username_pw_set(settings.mqtt_user, settings.mqtt_password)
+        # 模块4（批137）：凭据与地址的取值收编 homesdk.mqtt——缺凭据/半对（只带用户名）
+        # 都在**构造期**抛 MqttCredentialsMissing，⛔ 匿名回退（匿名接入＝拿到这套网络
+        # 就能指挥全屋）。client_id 仍随 settings.mqtt_client_id（库内 default_client_id 不顶替）。
+        creds = resolve_credentials(peer="butler")
+        self._mqtt_user = creds[0]
+        self._client = get_client(client_id=settings.mqtt_client_id, peer="butler")
         # ADM_STATUS 心跳周期。caps 里的 hb/stale 两格、以及心跳协程实际睡的时长，
         # 都由这一枚派生——⛔ 三处各写一个 60（下发的是 60、实际跳 90 那类自相矛盾）。
         self.adm_hb_interval = 60.0
@@ -51,7 +49,7 @@ class MQTTClient:
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
-            logger.info("MQTT connected as %s", self.s.mqtt_user)
+            logger.info("MQTT connected as %s", self._mqtt_user)
             for t in SUB_TOPICS:
                 client.subscribe(t, qos=1)
             self._publish(PUB_STATUS, {"online": True, "ts": time.time()}, qos=1, retain=True)
@@ -149,7 +147,9 @@ class MQTTClient:
         self._client.publish(topic, text, qos=qos, retain=retain)
 
     def start(self) -> None:
-        self._client.connect_async(self.s.mqtt_host, self.s.mqtt_port, keepalive=60)
+        # 地址不内置：MQTT_HOST 缺失当场 MissingEnv，connect 根本不发（库内零私网地址）。
+        host, port, keepalive = broker_settings()
+        self._client.connect_async(host, port, keepalive=keepalive)
         self._client.loop_start()
 
     def stop(self) -> None:

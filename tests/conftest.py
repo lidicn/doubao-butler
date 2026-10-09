@@ -25,10 +25,6 @@ def sample_settings():
     """测试用配置。"""
     from butler.config import Settings
     return Settings(
-        mqtt_host="localhost",
-        mqtt_port=1883,
-        mqtt_user="test",
-        mqtt_password="test",
         new_api_url="http://localhost:3001/v1",
         new_api_key="test-key",
         doubao_api_url="http://localhost:9090/v1/chat/completions",

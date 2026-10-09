@@ -30,6 +30,7 @@ import time
 import types
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 from butler.runtime import Runtime
 from butler.bus.topics import PUB_DIALOG
@@ -132,16 +133,28 @@ class MqttQueueFullLegs(unittest.TestCase):
         self.mc = importlib.import_module("butler.bus.mqtt_client")
         from butler.config import Settings
         self.loop = asyncio.new_event_loop()
+        # 批137：MQTTClient 构造改走 homesdk.mqtt（凭据现读 env、缺则抛）。本套件验队列满
+        # 语义，两腿替身化，⛔ 依赖宿主机有没有配 MQTT 凭据。
+        self._b20_patchers = [
+            mock.patch.object(self.mc, "get_client", lambda *a, **kw: _FakeClient()),
+            mock.patch.object(self.mc, "resolve_credentials", lambda *a, **kw: ("test", "test")),
+        ]
+        for p in self._b20_patchers:
+            p.start()
         self.c = self.mc.MQTTClient(Settings(data_dir=self.tmp), self.loop)
         self.cb_errors = []
         self.loop.set_exception_handler(self._capture_cb_error)
 
     def tearDown(self):
-        for step in (self._close_loop, self._put_back_modules, self._rmtree):
+        for step in (self._stop_patchers, self._close_loop, self._put_back_modules, self._rmtree):
             try:
                 step()
             except Exception as e:
                 print("[b20-restore] %s failed: %r" % (step.__name__, e))
+
+    def _stop_patchers(self):
+        for p in getattr(self, "_b20_patchers", []):
+            p.stop()
 
     def _capture_cb_error(self, loop, context):
         self.cb_errors.append(context)

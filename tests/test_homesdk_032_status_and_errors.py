@@ -27,13 +27,8 @@ FORBIDDEN_TOKENS = ("INBOX_DROP", "INBOX_FAIL", "AF_CHANNEL_ERROR")
 
 
 def _fake_settings() -> SimpleNamespace:
-    return SimpleNamespace(
-        mqtt_client_id="test-butler",
-        mqtt_user="u",
-        mqtt_password="p",
-        mqtt_host="localhost",
-        mqtt_port=1883,
-    )
+    # 批137 后 MQTTClient 只读 settings.mqtt_client_id；地址与凭据现读 env（由替身代管）。
+    return SimpleNamespace(mqtt_client_id="test-butler")
 
 
 class _FakePahoClient:
@@ -77,9 +72,16 @@ class _FakePahoClient:
 class _MQTTFixture(unittest.TestCase):
     def setUp(self):
         _FakePahoClient.instances = []
-        patcher = mock.patch.object(mqtt_client_mod.mqtt, "Client", _FakePahoClient)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        # 批137：构造改走 homesdk.mqtt.get_client（凭据现读 env、缺则抛）。
+        # 本套件验的是 status/LWT 形状，两腿用替身，⛔ 依赖宿主机 env。
+        p1 = mock.patch.object(mqtt_client_mod, "get_client",
+                               lambda client_id=None, **kw: _FakePahoClient())
+        p2 = mock.patch.object(mqtt_client_mod, "resolve_credentials",
+                               lambda peer=None, **kw: ("u", "p"))
+        p1.start()
+        p2.start()
+        self.addCleanup(p1.stop)
+        self.addCleanup(p2.stop)
         self.loop = mock.MagicMock()
         self.mc = mqtt_client_mod.MQTTClient(_fake_settings(), self.loop)
         self.paho = _FakePahoClient.instances[-1]
