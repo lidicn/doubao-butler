@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -24,6 +25,7 @@ except Exception:  # pragma: no cover
 
 logger = get_logger("butler.notify.router")
 
+from butler.core.trace_ctx import current_trace_id
 from butler.modes.engine import gate_bark  # DCD 裁定②：推送入口的模式门（⛔ 循环依赖：modes/⛔ import notify）
 
 # 通知类型白名单的**单一真源**：api/notify_routes.py 与 core/cron_task.py 都从这里取。
@@ -210,12 +212,17 @@ class NotifyRouter:
             raise ValueError(f"priority 必须是 1-5: {note.priority!r}")
         targets = self.resolve_targets(note)
         result = NotifyResult(channel=ch, text=text, targets=targets)
-        trace = note.trace_id or _current_trace_id()
+        # v2.6#2：不在对话链上的推送（定时/主动/巡检）也得有个号，否则这条通知在日志里＝匿名开口
+        trace = note.trace_id or _current_trace_id() or uuid.uuid4().hex[:8]
         note.trace_id = trace
-        for target in targets:
-            result.results[target] = await self._deliver(target, note)
-            logger.info("notify channel=%s trace=%s ok=%s",
-                        target, trace or "-", result.results[target].ok)
+        token = current_trace_id.set(trace)
+        try:
+            for target in targets:
+                result.results[target] = await self._deliver(target, note)
+                logger.info("notify channel=%s trace=%s ok=%s",
+                            target, trace, result.results[target].ok)
+        finally:
+            current_trace_id.reset(token)
         return result
 
     # ── 目标解析 ──────────────────────────────────────────────────
