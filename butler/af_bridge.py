@@ -31,6 +31,8 @@ from typing import Any
 
 import aiohttp
 
+from homesdk.adm.errors import ADM_ERR_INTERNAL
+
 logger = logging.getLogger("butler.af_bridge")
 
 # 待答表：ask_id → {room, prompt, prompt_ts}
@@ -258,9 +260,10 @@ async def on_user_reply(room: str, text: str) -> bool:
                     if resp.get("channel_error"):
                         # DCD 2026-10-02 §三③：AF HTTP 200 但写通道坏了 ⇒ 告警 + ⛔ 标记已答
                         # （一记 delivered_ts 就会被下面「已投递」分支永久吞掉＝假绿）
-                        logger.error("AF_CHANNEL_ERROR ask=%s inbox=%s resp=%.200s"
+                        # 错误码用 homesdk.adm.errors（契约 v2.0 §7.2），⛔ 再手写 ad-hoc 前缀
+                        logger.error("%s af_bridge channel_error ask=%s inbox=%s resp=%.200s"
                                      "（200 但 AF 写通道失败 ⇒ 不记 delivered_ts，用户可重答）",
-                                     aid, str(resp.get("inbox", "")), str(resp))
+                                     ADM_ERR_INTERNAL, aid, str(resp.get("inbox", "")), str(resp))
                         return False
             info["delivered_ts"] = time.time()
             info["inbox"] = str(resp.get("inbox", ""))

@@ -13,6 +13,8 @@ import time
 import paho.mqtt.client as mqtt
 from paho.mqtt.client import CallbackAPIVersion
 
+from homesdk.adm.status import STATE_OFFLINE, STATE_ONLINE, decode_status, encode_status
+
 from butler import __version__
 from butler.bus.topics import ADM_CAPS, ADM_STATUS, PUB_STATUS, SUB_TOPICS, SUB_TV_RESULT
 from butler.mcp.schema_gen import get_tool_names as mcp_tool_names
@@ -39,10 +41,10 @@ class MQTTClient:
         # ADM_STATUS 心跳周期。caps 里的 hb/stale 两格、以及心跳协程实际睡的时长，
         # 都由这一枚派生——⛔ 三处各写一个 60（下发的是 60、实际跳 90 那类自相矛盾）。
         self.adm_hb_interval = 60.0
-        # LWT 挂 ADM_STATUS：契约表 §1.1 的离线语义由 broker 代发，载荷是字面量 `offline`。
-        # ⛔ JSON——homesdk.presence.is_online() 比的是 "online" 这个串，形状混发＝
-        # 别的仓把管家读成永不在线（PUB_STATUS 那条既有主题不动，仍发 JSON 心跳）。
-        self._client.will_set(ADM_STATUS, self.adm_status_literal(False), qos=1, retain=True)
+        # LWT 挂 ADM_STATUS：契约表 §1.1 的离线语义由 broker 代发，载荷是 encode_status JSON
+        # （契约 v2.0 §7.1／homesdk 0.3.2：state=offline）。消费侧一律走 decode_status，
+        # 过渡期还能读对端旧字面量 online/offline。（PUB_STATUS 那条既有主题不动，仍发 JSON 心跳。）
+        self._client.will_set(ADM_STATUS, self.adm_status_json(False), qos=1, retain=True)
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.on_message = self._on_message
@@ -100,11 +102,15 @@ class MQTTClient:
             text = raw.decode("utf-8", "replace")  # 行为不变：仍然尽力解，只是从此有声
         if "\ufffd" in text:
             self._note_bad_payload(msg.topic, raw, "含替换符U+FFFD")
-        # ADM 生态链约定：adm/<成员>/status 载荷是字面量 online/offline（非 JSON）。
-        # 契约表 §1.1 + homesdk.presence.is_online 同式——这里必须跳过 JSON 解析，
-        # 否则字面量在 json.loads 阶段就被丢弃，adm_peers 永远空（MA联动收尾附带发现）。
+        # ADM 生态链约定（契约 v2.0 §7.1／homesdk 0.3.2）：adm/<成员>/status 载荷是 JSON，
+        # 消费一律过 decode_status——它同时兼容旧字面量 online/offline（不丢弃、不抛错），
+        # 过渡期对端没升级也不会丢件；真正解不开的才记坏件并丢弃。
         if msg.topic.startswith("adm/") and msg.topic.endswith("/status"):
-            payload = text.strip()
+            try:
+                payload = decode_status(text)
+            except ValueError:
+                self._note_bad_payload(msg.topic, raw, "ADM status载荷不可解")
+                return
         else:
             try:
                 payload = json.loads(text)
@@ -136,9 +142,9 @@ class MQTTClient:
             logger.warning("publish %s failed: %s", topic, e)
 
     def _publish_raw(self, topic: str, text: str, qos: int = 1, retain: bool = False) -> None:
-        """字面量主题专用：契约表 §1.1 的 status 载荷就是 `online`/`offline` 两个词。
-        ⛔ 复用 _publish——那条腿 json.dumps 会把 offline 编成 "offline"，
-        按字面量比在线的仓（homesdk.presence）会把管家读成永远不在线。
+        """已序列化文本载荷专用（ADM_STATUS 的 encode_status JSON 就从这里原样发出）。
+        ⛔ 复用 _publish——那条腿会再 json.dumps 把 JSON 字符串二次编码成 JSON 字符串字面量，
+        消费侧 decode_status 解出来的是 str 不是对象，形状就错了。
         """
         self._client.publish(topic, text, qos=qos, retain=retain)
 
@@ -149,7 +155,7 @@ class MQTTClient:
     def stop(self) -> None:
         try:
             self._publish(PUB_STATUS, {"online": False, "ts": time.time()}, qos=1, retain=True)
-            self._publish_raw(ADM_STATUS, self.adm_status_literal(False), qos=1, retain=True)
+            self._publish_raw(ADM_STATUS, self.adm_status_json(False), qos=1, retain=True)
         except Exception as e:
             # P2-9 ②类（批42 组4）：吞掉的是**下线通知**⇒ 契约表 §1.1 另一头仍以为管家在线
             logger.warning("MQTT offline notice failed: %s", e)
@@ -159,15 +165,17 @@ class MQTTClient:
         except Exception:
             pass
 
-    def adm_status_literal(self, online: bool) -> str:
-        """ADM_STATUS 载荷单点：契约表 §1.1 的字面量 `online`/`offline`。
-        LWT、在线、优雅下线三条腿共用——⛔ 三处各拼一遍，迟早拼成两种形状。
+    def adm_status_json(self, online: bool) -> str:
+        """ADM_STATUS 载荷单点（契约 v2.0 §7.1）：homesdk.adm.status.encode_status 编 JSON。
+        LWT、在线心跳、优雅下线三条腿共用——⛔ 三处各拼一遍，迟早拼成两种形状。
+        version 取应用版本常量 butler.__version__；本模块暂不产出 degraded/reasons
+        （降级判定在业务层， encode_status 默认 degraded=False、reasons=[]）。
         """
-        return "online" if online else "offline"
+        return encode_status(STATE_ONLINE if online else STATE_OFFLINE, version=__version__)
 
     def adm_caps_payload(self) -> dict:
         """adm/<成员>/caps：契约表要求的 mcp/tools/version，新鲜度两格现在随这条下发
-        （status 已是字面量，装不下 ts/hb/stale；消费侧靠 LWT＋新鲜度两条腿判在线）。
+        （status 载荷是 encode_status JSON，装不下 hb/stale 两格；消费侧靠 LWT＋新鲜度两条腿判在线）。
         """
         detail = self.adm_status_payload(online=True)
         return {
@@ -198,7 +206,7 @@ class MQTTClient:
     def _publish_adm_online(self) -> None:
         """§13.4 在线探测：retained 状态 + 能力摘要，供 ADM 生态各仓读取。"""
         try:
-            self._publish_raw(ADM_STATUS, self.adm_status_literal(True), qos=1, retain=True)
+            self._publish_raw(ADM_STATUS, self.adm_status_json(True), qos=1, retain=True)
             self._publish(ADM_CAPS, self.adm_caps_payload(), qos=1, retain=True)
         except Exception as e:
             logger.warning("adm status publish failed: %s", e)
