@@ -246,7 +246,7 @@ class TTSManager:
             return None
         if device_id and self.ha is not None:
             try:
-                await self.queue.enqueue(device_id, res)
+                await self.queue.enqueue(device_id, res, trace_id=trace_id or "")
                 logger.info("tts.speak queued on %s: %.30s", device_id, text)
             except Exception as e:
                 logger.warning("tts.speak play failed on %s: %s", device_id, e)
