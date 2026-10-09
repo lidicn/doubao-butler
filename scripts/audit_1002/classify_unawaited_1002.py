@@ -49,21 +49,28 @@ PKG = "butler"
 # 批5 之后普查在册的 30 枚（原样抄自台账 §6；行号漂了我自己报 DRIFT，⛔ 手改名单）
 SITES = [
     ("api/agent_routes.py", 159, "delete_alias"),
-    ("api/cron_task_routes.py", 56, "register_api"),
-    ("api/cron_task_routes.py", 70, "unregister_api"),
-    ("api/doubao_webhook.py", 760, "execute"),
-    ("app.py", 267, "run"),
-    ("app.py", 464, "start"),
-    ("app.py", 539, "start"),
-    ("app.py", 740, "start"),
-    ("app.py", 755, "start"),
-    ("app.py", 763, "start"),
-    ("app.py", 781, "stop"),
-    ("app.py", 784, "stop"),
-    ("app.py", 788, "shutdown"),
-    ("core/dialog.py", 518, "notify"),
-    ("core/event_stream.py", 243, "execute"),
-    ("core/event_stream.py", 251, "record"),
+    ("api/cron_task_routes.py", 58, "register_api"),
+    ("api/cron_task_routes.py", 72, "unregister_api"),
+    ("api/doubao_webhook.py", 794, "execute"),
+    # 1009-b6-REANCHOR (2026-10-10): app.py 生命周期 9 枚随批135/homesdk0.3.2 接线漂移，已重钉。
+    # run 槽＝已裁退役（PM 裁 1009）：原 `subprocess.run`（EXTERNAL 族）已被重构进
+    #   `await ensure_wake_ding`（startup_assets），app.py 再无未 await 的外部 run；名册 30→29，
+    #   期望分布 SYNC_OK=20／EXTERNAL_SYNC=9。
+    # sched.start / rt._sched.shutdown＝尺子盲区已修：`sched = None`（防御性初始化）曾经
+    #   scope_assigns 的 setdefault 遮蔽 `sched = AsyncIOScheduler(...)` 那枚绑定⇒两枚判 UNKNOWN。
+    #   现规则：None 初始化不遮蔽后续构造绑定；非 None 先到先得语义不变。宿主
+    #   `inspect.iscoroutinefunction(AsyncIOScheduler.start/shutdown)` 现读双 False⇒EXTERNAL_SYNC。
+    ("app.py", 502, "start"),
+    ("app.py", 579, "start"),
+    ("app.py", 792, "start"),
+    ("app.py", 807, "start"),
+    ("app.py", 815, "start"),
+    ("app.py", 845, "stop"),
+    ("app.py", 848, "stop"),
+    ("app.py", 852, "shutdown"),
+    ("core/dialog.py", 513, "notify"),
+    ("core/event_stream.py", 245, "execute"),
+    ("core/event_stream.py", 253, "record"),
     ("core/perception_learn.py", 192, "execute"),
     ("core/perception_learn.py", 198, "execute"),
     ("core/perception_learn.py", 213, "execute"),
@@ -75,13 +82,16 @@ SITES = [
     # 逼重看，重看点开结果仍是 sync 的 TVClient.notify（判定不变）。
     ("notify/router.py", 320, "notify"),
     ("proactive/engine.py", 301, "execute"),
-    ("proactive/engine.py", 360, "execute"),
+    ("proactive/engine.py", 364, "execute"),
     # 411→424：批10（裁②）在 run() 里加模式闸门 +13 行，_push_tv 内的 rt.tv.notify 随之推移。
-    ("skills/runner.py", 424, "notify"),
+    # 1009-b6-REANCHOR: _push_tv 内 rt.tv.notify 424→429（批75/批135 推移）。
+    ("skills/runner.py", 429, "notify"),
     ("tools/registry.py", 1074, "notify"),
     ("tools/schedule.py", 105, "notify"),
-    ("triggers/engine.py", 175, "record"),
-    ("triggers/engine.py", 434, "record"),
+    # 1009-b6-REANCHOR: triggers 两枚 write_failures.record（async def _record_evaluation / _fire
+    #   里的 census 腿）175→217、434→483；同文件另有 3 枚同名 record 在同步冷却写路径，未在册。
+    ("triggers/engine.py", 217, "record"),
+    ("triggers/engine.py", 483, "record"),
 ]
 
 WRAPPERS = ("create_task", "ensure_future", "run_coroutine_threadsafe",
@@ -235,6 +245,10 @@ class Idx:
         self.i = i
 
 
+def _is_none_const(n):
+    return isinstance(n, ast.Constant) and n.value is None
+
+
 def scope_assigns(fn, cls):
     """作用域内 {目标: RHS | Idx(RHS, 位置)}；`self.x` 记成 "self.x"。"""
     out = {}
@@ -245,7 +259,10 @@ def scope_assigns(fn, cls):
         if isinstance(node, ast.Assign):
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name):
-                    out.setdefault(tgt.id, node.value)
+                    # 1009-b6：`x = None` 防御性初始化⛔ 遮蔽后续构造绑定；其余保持先到先得
+                    if tgt.id not in out or (_is_none_const(out[tgt.id])
+                                             and not _is_none_const(node.value)):
+                        out[tgt.id] = node.value
                 elif isinstance(tgt, ast.Attribute) and isinstance(tgt.value, ast.Name) \
                         and tgt.value.id == "self":
                     out.setdefault("self." + tgt.attr, node.value)

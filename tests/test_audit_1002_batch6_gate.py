@@ -12,8 +12,10 @@ A. **负控（先证尺会咬）**：合成包里埋 4 枚 —— ①async 未 a
    ③`await` 过的 async、④`create_task()` 包的 async。
    门必须给出**逐枚点名**的判定，且各 verdict 计数＝{ASYNC_UNAWAITED:1, SYNC_OK:1, WRAPPED:2}
    （⛔ 只要求「>0」——那等于没测）。
-B. **现网 30 枚**：`gate(butler/, SITES)` 必须 0 枚 ASYNC_UNAWAITED、0 枚 UNKNOWN，
-   且 SYNC_OK=20 / EXTERNAL_SYNC=10（这两个数＝今天点出来的分布，⛔ 靠"全对"两字过关）。
+B. **现网点开的调用点名单**：`gate(butler/, SITES)` 必须 0 枚 ASYNC_UNAWAITED、0 枚 UNKNOWN，
+   且 SYNC_OK=20 / EXTERNAL_SYNC=9（**1009-b6 重钉后口径覆盖 10-02 原读数**：名册 29＝原 30
+   减一枚 `subprocess.run` 槽——该调用已重构进 `await ensure_wake_ding`，PM 裁退役；
+   sched 两枚因尺子 None-遮蔽盲区修复转 EXTERNAL_SYNC。⛔ 靠"全对"两字过关）。
 C. **锚点**：判定所依赖的 12 处 `def` 仍是**同步体**且仍在登记的行号上
    ⇒ 谁把 `TVClient.notify` 改成 `async def` 而不动 5 个调用点，这里当场红。
 
@@ -129,8 +131,8 @@ class ProductionRosterTest(unittest.TestCase):
     def test_distribution_equals_todays_readings(self):
         counts = self.mod.verdict_counts(self.rows)
         self.assertEqual(counts.get("SYNC_OK"), 20, counts)
-        self.assertEqual(counts.get("EXTERNAL_SYNC"), 10, counts)
-        self.assertEqual(sum(counts.values()), 30, counts)
+        self.assertEqual(counts.get("EXTERNAL_SYNC"), 9, counts)
+        self.assertEqual(sum(counts.values()), 29, counts)
 
     def test_roster_sites_all_classified(self):
         self.assertEqual(len(self.rows), len(self.mod.SITES),
@@ -139,16 +141,16 @@ class ProductionRosterTest(unittest.TestCase):
 
 ANCHORS = [
     ("integrations/tv.py", "TVClient", "notify", 54),
-    ("bus/mqtt_client.py", "MQTTClient", "start", 117),
-    ("bus/mqtt_client.py", "MQTTClient", "stop", 121),
-    ("integrations/ilink/bridge.py", "ILinkBridge", "start", 45),
-    ("integrations/ilink/bridge.py", "ILinkBridge", "stop", 56),
+    ("bus/mqtt_client.py", "MQTTClient", "start", 151),
+    ("bus/mqtt_client.py", "MQTTClient", "stop", 155),
+    ("integrations/ilink/bridge.py", "ILinkBridge", "start", 56),
+    ("integrations/ilink/bridge.py", "ILinkBridge", "stop", 67),
     ("core/event_stream.py", "EventStream", "start", 96),
     ("core/xiaomi_ear.py", "XiaomiEar", "start", 29),
     ("core/xiaomi_ear.py", "XiaomiEar", "stop", 36),
-    ("core/aliases.py", "AliasStore", "delete_alias", 84),
-    ("core/cron_task.py", "CronTaskExecutor", "register_api", 116),
-    ("core/cron_task.py", "CronTaskExecutor", "unregister_api", 134),
+    ("core/aliases.py", "AliasStore", "delete_alias", 93),
+    ("core/cron_task.py", "CronTaskExecutor", "register_api", 120),
+    ("core/cron_task.py", "CronTaskExecutor", "unregister_api", 138),
     ("store/write_failures.py", "", "record", 87),
 ]
 
