@@ -11,11 +11,12 @@
    ⇒ 投递后 ask 留在待答表（⛔ 立刻 pop：否则下一轮 poll 会把它当新 ask 重新播报），
      AF 撤下才记 CONSUMED；超过 _ACK_WARN_S 仍在 pending ⇒ 点名一次 AF_ANSWER_UNCONSUMED。
 
-配置（data/config.json 或环境变量）：
-- AUTOFORGE_BASE_URL: AF API 地址（默认 http://127.0.0.1:8787）
-- AUTOFORGE_POLL_INTERVAL: 轮询间隔（秒，默认 5）
+配置项（由 butler/config.py 读入 Settings，app.py 经 init() 注入）：
+- AUTOFORGE_BASE_URL: AF API 地址（留空＝沿用本模块 `_base_url`）
 - AUTOFORGE_API_TOKEN: AF 写权限令牌
 - AUTOFORGE_INBOX_KEY: 与 AF 共享的 HMAC 签名密钥（DCD 20260929 P3 必须启用）
+- AUTOFORGE_ANSWER_WINDOW_S: 真人回答窗口（>0 时才覆盖模块默认）
+轮询间隔＝本模块 `_poll_interval`，由 init() 覆盖，无独立配置键。
 """
 from __future__ import annotations
 
