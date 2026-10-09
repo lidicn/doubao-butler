@@ -61,10 +61,11 @@ def adm_status_is_online(payload: Any) -> bool:
         return bool(payload.get("online"))
     return False
 
-# AF 自动化事件（契约 v2.0 §D）：DB↔AF 事件腿走 HTTP 轮询 /api/asks/pending，
-# 不订阅 af/automation/fired|failed（避免与 HTTP 轮询重复消费）。登记于此供后续切换。
-# SUB_AF_AUTOMATION_FIRED = "af/automation/fired"
-# SUB_AF_AUTOMATION_FAILED = "af/automation/failed"
+# AF 自动化上报（契约表 §1.2 行 57-58）：fired {trace_id, ts, automation_id, ref}；
+# failed 多带 error。QoS1 非 retained。DCD 2026-10-08 采纳走 MQTT 订阅（替代 HTTP 轮询获知自动化结果）；
+# /api/asks/pending 是用户问询桥，与本事件腿不重叠、不重复消费。
+SUB_AF_AUTOMATION_FIRED = "af/automation/fired"
+SUB_AF_AUTOMATION_FAILED = "af/automation/failed"
 
 SUB_TOPICS = (
     SUB_TV_STATUS,
@@ -83,6 +84,8 @@ SUB_TOPICS = (
     SUB_INBOX_TV,
     SUB_ADM_MA_STATUS,
     SUB_ADM_AF_STATUS,
+    SUB_AF_AUTOMATION_FIRED,
+    SUB_AF_AUTOMATION_FAILED,
     f"{BUTLER_ROOT}/dialog/event",  # 订阅自身发布的对话事件，用于 SSE 推送
 )
 

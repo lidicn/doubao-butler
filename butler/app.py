@@ -62,7 +62,9 @@ from butler.integrations.ilink import api as ilink_routes
 from butler.api.deps import err, is_login_locked, login, ok
 from butler.bus.mqtt_client import MQTTClient
 from butler.bus.topics import (PUB_DIALOG, SUB_MA_PRESENCE, SUB_MA_DEVICE_HEALTH,
-                        SUB_MA_INSIGHTS, adm_status_is_online)
+                        SUB_MA_INSIGHTS, SUB_AF_AUTOMATION_FIRED, SUB_AF_AUTOMATION_FAILED,
+                        adm_status_is_online)
+from butler.bus.af_events import handle_af_automation_event
 from butler.config import get_settings, set_settings
 from butler.core.dedup import DedupChecker
 from butler.core.dialog import DialogManager
@@ -147,6 +149,9 @@ async def _consume(rt) -> None:
                             nr.bark.send(f"安全告警[{kind}]", summary)
                     except Exception as e:
                         logger.warning("MA insights bark notify failed: %s", e)
+            elif topic in (SUB_AF_AUTOMATION_FIRED, SUB_AF_AUTOMATION_FAILED):
+                # §9 任务2（批135）：AF 上报 fired/failed → 告知用户，failed 带 error 可读
+                handle_af_automation_event(topic, payload)
             elif topic.startswith("butler/inbox/"):
                 # §13.4 公共收件箱：任何仓投递 → DB 过闸（schema/限流/冷却/预算）后播出/分发
                 if getattr(rt, "inbox", None) is not None:
