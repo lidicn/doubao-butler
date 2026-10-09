@@ -346,4 +346,35 @@ DB 是**交互中枢**：用户/设备经 DB 进入生态，DB 编排"感知→�
 
 ---
 
+## 九、以 AF 为核心的联动版本（DCD 2026-10-08）
+
+> 依据：用户定向指令 2026-10-08「以 AF 为核心」+ MA 三路径立项（`20261008-MA三路径架构立项-裁定.md`）。
+> 契约登记：`homesdk/doc/ADM联动主题注册表与消息契约.md` §1.5（AF 升编排中枢、AF 订阅 presence/device-health、AF 投 inbox）。
+> 定位变化：DB 从"交互中枢（感知→决策→表达）"降为**表达中枢**——被 AF/MA 驱动"说话/通知/TV"；决策/编排上收到 AF。
+
+**核心数据流（DB 视角）**：
+
+```
+DB ── 订阅 butler/inbox/speak|notify|tv  ← AF（✚新增投递方）+ MA（已有）投递
+        → Sentinel 闸门（夜间/冷却/角色/每日预算）→ TTS/通知/TV 表达
+      ── 订阅 af/automation/fired|failed  ← 知道自动化结果、告知用户（✚ 走 MQTT）
+      ── 调 MA 三路径入口 route_question（✚ 优先于直接打 90 工具面）
+```
+
+### 9.1 任务卡（按依赖序）
+
+| # | 任务 | 验收 | 前置 |
+|---|------|------|------|
+| 1 | 收件箱确认 AF 投递：AF 成为 inbox **正式来源**，Sentinel 闸门对 AF 来源限流/每日预算生效 | AF 投 `butler/inbox/speak` → DB TTS 播报；AF 来源超预算被 Sentinel 拦 + 审计 | 合并窗（§七 第 1 件收件箱 schema 已对齐） |
+| 2 | 订阅 `af/automation/fired|failed` **走 MQTT**（替代 HTTP 轮询获知自动化结果，**已采纳 2026-10-08**） | AF 发布 fired → DB 订阅收到 → 告知用户；失败事件带 `error` 可读 | — |
+| 3 | DB 调 MA 改走三路径入口：`route_question` 优先于直接打 90 工具面（工具面收敛见 MA 三路径立项） | DB 答"昨天书房空调时长"走 `route_question` → 路径1 `run_analysis_template` | MA 三路径 MCP MVP（MA 路线图 §八） |
+
+### 9.2 本版不做的（边界）
+
+- 不抢 AF 的编排权（DB 不做自动化调度，只做表达）。
+- 不替 AF 接 MA（AF 自己调三路径，DB 与 AF 是两条独立的 MA 调用方）。
+- 记忆读写工具不收敛（DB 强依赖 7 个记忆读写 MCP 工具，见 `memory_agent.py` 调用清单）。
+
+---
+
 —— 关键决策部 · DCD
