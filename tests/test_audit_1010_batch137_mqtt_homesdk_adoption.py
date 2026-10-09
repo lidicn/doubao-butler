@@ -163,7 +163,8 @@ class ConstructionFailClosed(unittest.TestCase):
         self.assertEqual(seen.get("client_id"), "test-butler")
         self.assertEqual(seen.get("peer"), "butler")
         self.assertEqual(getattr(mc, "_mqtt_user", None), "u9")
-        self.assertIsNotNone(fake.will)  # LWT 腿仍在构造期挂上（形状由 homesdk_032 套件验）
+        # 批138 起 LWT 随 start()（CONNECT 之前）注册——构造期只配客户端，不留发布副作用。
+        self.assertIsNone(fake.will)
 
 
 class StartUsesBrokerSettings(unittest.TestCase):

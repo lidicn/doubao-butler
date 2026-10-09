@@ -141,8 +141,8 @@ class ProductionRosterTest(unittest.TestCase):
 
 ANCHORS = [
     ("integrations/tv.py", "TVClient", "notify", 54),
-    ("bus/mqtt_client.py", "MQTTClient", "start", 149),  # 批137 re-anchor 151→149（import 段并腿）
-    ("bus/mqtt_client.py", "MQTTClient", "stop", 155),
+    ("bus/mqtt_client.py", "MQTTClient", "start", 146),  # 批138 re-anchor 149→146（will 腿并进 advertise）
+    ("bus/mqtt_client.py", "MQTTClient", "stop", 156),   # 批138 re-anchor 155→156
     ("integrations/ilink/bridge.py", "ILinkBridge", "start", 56),
     ("integrations/ilink/bridge.py", "ILinkBridge", "stop", 67),
     ("core/event_stream.py", "EventStream", "start", 96),

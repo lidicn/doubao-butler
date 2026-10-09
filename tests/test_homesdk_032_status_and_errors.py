@@ -17,8 +17,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from butler import __version__ as BUTLER_VERSION
 from butler.bus import mqtt_client as mqtt_client_mod
+from butler.bus.mqtt_client import ADM_PLAN_VERSION
 from butler.bus.topics import ADM_STATUS, SUB_ADM_AF_STATUS, adm_status_is_online
 from homesdk.adm.status import decode_status, encode_status
 
@@ -73,15 +73,17 @@ class _MQTTFixture(unittest.TestCase):
     def setUp(self):
         _FakePahoClient.instances = []
         # 批137：构造改走 homesdk.mqtt.get_client（凭据现读 env、缺则抛）。
-        # 本套件验的是 status/LWT 形状，两腿用替身，⛔ 依赖宿主机 env。
+        # 批138：LWT 随 start() 注册，start 里 broker_settings 现读 env——
+        # 本套件验的是 status/LWT 形状，三腿用替身，⛔ 依赖宿主机 env。
         p1 = mock.patch.object(mqtt_client_mod, "get_client",
                                lambda client_id=None, **kw: _FakePahoClient())
         p2 = mock.patch.object(mqtt_client_mod, "resolve_credentials",
                                lambda peer=None, **kw: ("u", "p"))
-        p1.start()
-        p2.start()
-        self.addCleanup(p1.stop)
-        self.addCleanup(p2.stop)
+        p3 = mock.patch.object(mqtt_client_mod, "broker_settings",
+                               lambda: ("localhost", 1883, 60))
+        for p in (p1, p2, p3):
+            p.start()
+            self.addCleanup(p.stop)
         self.loop = mock.MagicMock()
         self.mc = mqtt_client_mod.MQTTClient(_fake_settings(), self.loop)
         self.paho = _FakePahoClient.instances[-1]
@@ -100,7 +102,7 @@ class StatusPublishLeg(_MQTTFixture):
             set(obj.keys()), {"state", "ts", "degraded", "reasons", "version"}, obj
         )
         self.assertEqual(obj["state"], "online")
-        self.assertEqual(obj["version"], BUTLER_VERSION)
+        self.assertEqual(obj["version"], ADM_PLAN_VERSION)
         self.assertFalse(obj["degraded"])
         self.assertEqual(obj["reasons"], [])
 
@@ -112,23 +114,29 @@ class StatusPublishLeg(_MQTTFixture):
         obj = decode_status(sent[0]["payload"])
         self.assertEqual(obj["state"], "offline")
 
-    def test_payload_single_point_roundtrips(self):
-        obj = decode_status(self.mc.adm_status_json(True))
-        self.assertEqual(obj["state"], "online")
-        obj = decode_status(self.mc.adm_status_json(False))
-        self.assertEqual(obj["state"], "offline")
+    def test_online_and_offline_legs_roundtrip_same_shape(self):
+        # 批138 后单点＝presence.advertise：在线腿与下线腿都从库函数出，读侧 decode_status 原样回。
+        self.mc._publish_adm_online()
+        self.mc.stop()
+        sts = [m for m in self.paho.published if m["topic"] == ADM_STATUS]
+        self.assertEqual([decode_status(m["payload"])["state"] for m in sts],
+                         ["online", "offline"], sts)
+        self.assertEqual({decode_status(m["payload"])["version"] for m in sts},
+                         {ADM_PLAN_VERSION})
 
 
 class LwtLeg(_MQTTFixture):
-    """(d) LWT 遗嘱：offline 由 broker 代发，载荷同样是 encode_status JSON。"""
+    """(d) LWT 遗嘱：offline 由 broker 代发，载荷同样是 encode_status JSON。
+    批138：LWT 随 start()（CONNECT 之前）经 presence.advertise 注册，构造期不再有副作用。"""
 
     def test_lwt_payload_is_json_offline(self):
-        self.assertIsNotNone(self.paho.will, "构造时未挂 LWT")
+        self.mc.start()
+        self.assertIsNotNone(self.paho.will, "start() 未挂 LWT")
         self.assertEqual(self.paho.will["topic"], ADM_STATUS)
         self.assertTrue(self.paho.will["retain"])
         obj = decode_status(self.paho.will["payload"])
         self.assertEqual(obj["state"], "offline")
-        self.assertEqual(obj["version"], BUTLER_VERSION)
+        self.assertEqual(obj["version"], ADM_PLAN_VERSION)
 
 
 class LegacyLiteralCompat(unittest.TestCase):
