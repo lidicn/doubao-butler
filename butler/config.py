@@ -355,7 +355,11 @@ class Settings:
             return
         try:
             raw = json.loads(cfg_path.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as e:
+            logger.error("config.json persona load failed, keeping defaults: %s (path=%s)", e, cfg_path)
+            return
+        if not isinstance(raw, dict):
+            logger.error("config.json top-level is %s, not an object — ignoring persona overrides", type(raw).__name__)
             return
         pc = self.persona
         if isinstance(raw.get("system"), str):
