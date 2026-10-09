@@ -12,8 +12,14 @@ from butler.logging_setup import get_logger
 logger = get_logger("butler.pwa_chat_api")
 
 # DeskPilot PM 消息管道（20260909_003 上线，替代独立 18766 转发服务）
-DESKPILOT_PM_SEND_URL = "http://192.168.2.201:8765/api/v1/pm/send"
 # WO-BUT-018: token 从 config 读取，不再硬编码
+# 审计 D5（批63）：发送 URL 基址走 settings.deskpilot_http_url（env DESKPILOT_HTTP_URL），
+# 不再烤死 LAN 字面量 ⇒ 换 DeskPilot 地址改配置即生效。
+
+
+def _deskpilot_pm_send_url() -> str:
+    """由 Settings 基址派生 DeskPilot PM 发送 URL（尾部斜杠裁剪）。"""
+    return get_settings().deskpilot_http_url.rstrip("/") + "/api/v1/pm/send"
 
 
 async def pwa_chat_send(request: Request):
@@ -39,7 +45,7 @@ async def pwa_chat_send(request: Request):
         import httpx
         async with httpx.AsyncClient(timeout=25) as client:
             r = await client.post(
-                DESKPILOT_PM_SEND_URL,
+                _deskpilot_pm_send_url(),
                 json={"target": "PM", "message": text, "press_enter": True},
                 headers={"Authorization": f"Bearer {get_settings().deskpilot_api_token}"},
             )

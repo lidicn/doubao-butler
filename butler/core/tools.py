@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from butler.tools import (
-    DESKPILOT_PM_SEND_URL,
     TOOL_SCHEMAS,
     _assign_task_to_dp,
     _assign_task_to_tp,
@@ -52,5 +51,4 @@ __all__ = [
     "_send_to_tp",
     "_send_to_dp",
     "_deskpilot_pm_send",
-    "DESKPILOT_PM_SEND_URL",
 ]

@@ -4,12 +4,20 @@ from __future__ import annotations
 import asyncio
 import time
 
+from butler.config import get_settings
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.tools")
 
-DESKPILOT_PM_SEND_URL = "http://192.168.2.201:8765/api/v1/pm/send"
 # WO-BUT-018: token 从 config 读取，不再硬编码
+# 审计 D5（批63）：PM 发送 URL 基址走 settings.deskpilot_http_url（env DESKPILOT_HTTP_URL），
+# 不再烤死 LAN 字面量 ⇒ 换 DeskPilot 地址改配置即生效。
+
+
+def _deskpilot_pm_send_url() -> str:
+    """由 Settings 基址派生 DeskPilot PM 发送 URL（尾部斜杠裁剪）。"""
+    return get_settings().deskpilot_http_url.rstrip("/") + "/api/v1/pm/send"
+
 
 async def _deskpilot_pm_send(target: str, message: str, press_enter: bool = True) -> tuple[bool, str]:
     """通过 DeskPilot PM 消息管道发送消息到豆包对话。
@@ -17,12 +25,11 @@ async def _deskpilot_pm_send(target: str, message: str, press_enter: bool = True
     返回 (ok, error_msg)
     """
     import httpx
-    from butler.config import get_settings
     try:
         token = get_settings().deskpilot_api_token
         async with httpx.AsyncClient(timeout=25) as client:
             r = await client.post(
-                DESKPILOT_PM_SEND_URL,
+                _deskpilot_pm_send_url(),
                 json={"target": target, "message": message, "press_enter": press_enter},
                 headers={"Authorization": f"Bearer {token}"},
             )

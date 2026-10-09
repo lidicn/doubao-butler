@@ -17,7 +17,6 @@ from butler.tools.schedule import (
 from butler.tools.devices import _resolve_entity
 from butler.tools.media import _play_music, _switch_channel
 from butler.tools.desk_pilot import (
-    DESKPILOT_PM_SEND_URL,
     _assign_task_to_dp,
     _assign_task_to_tp,
     _deskpilot_pm_send,
@@ -52,5 +51,4 @@ __all__ = [
     "_send_to_tp",
     "_send_to_dp",
     "_deskpilot_pm_send",
-    "DESKPILOT_PM_SEND_URL",
 ]
