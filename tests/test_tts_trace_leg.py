@@ -65,9 +65,11 @@ class _Result:
 class _RecordingQueue:
     def __init__(self):
         self.plays: list[tuple[str, object]] = []
+        self.traces: list[str] = []
 
-    async def enqueue(self, device_id, res):
+    async def enqueue(self, device_id, res, trace_id=""):
         self.plays.append((device_id, res))
+        self.traces.append(trace_id)
 
 
 class _Mouth:
@@ -258,6 +260,27 @@ class LockNamingTest(unittest.TestCase):
 def time_struct_noon():
     import time as _t
     return _t.struct_time((2026, 9, 30, 12, 0, 0, 2, 273, -1))
+
+
+class MouthToPlaybackTraceTest(unittest.TestCase):
+    """批150：speak 拿到号以后，得把号交给播放队列——否则音箱那一行永远是匿名的。"""
+
+    def test_speak_hands_the_trace_to_the_playback_queue(self):
+        m = _Mouth()
+        _run(m.speak("有人在门口", device_id="dev-9", trace_id="cafe1234"))
+        self.assertEqual(m.queue.traces, ["cafe1234"])
+
+    def test_speak_without_a_trace_hands_an_empty_one_not_a_invented_one(self):
+        m = _Mouth()
+        _run(m.speak("有人在门口", device_id="dev-9"))
+        self.assertEqual(m.queue.traces, [""])
+
+    def test_the_two_legs_do_not_share_a_mutable_default(self):
+        a = _Mouth()
+        _run(a.speak("第一条", device_id="dev-9", trace_id="a1a1a1"))
+        b = _Mouth()
+        _run(b.speak("第二条", device_id="dev-9", trace_id="b2b2b2"))
+        self.assertEqual([a.queue.traces, b.queue.traces], [["a1a1a1"], ["b2b2b2"]])
 
 
 class BypassRulerTest(unittest.TestCase):
