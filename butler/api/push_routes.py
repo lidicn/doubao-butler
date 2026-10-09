@@ -8,6 +8,7 @@ from pathlib import Path
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.core.atomic_json import write_json_atomic
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
 
@@ -148,8 +149,7 @@ async def push_skill_update(request):
             d["push_to_app"] = bool(body["doubao_app"])
 
         # 写回文件
-        with open(skill_file, "w", encoding="utf-8") as fp:
-            json.dump(d, fp, ensure_ascii=False, indent=2)
+        write_json_atomic(skill_file, d)
 
         # 热加载技能
         rt = get_runtime()

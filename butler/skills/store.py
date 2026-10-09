@@ -16,6 +16,7 @@ import threading
 import time
 from pathlib import Path
 
+from butler.core.atomic_json import write_json_atomic
 from butler.logging_setup import get_logger
 from butler.skills.schema import validate_skill
 
@@ -115,7 +116,7 @@ class SkillStore:
                 normalized["source"] = "user"
                 target = user_dir / f.name
                 if not target.exists():
-                    target.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+                    write_json_atomic(target, normalized)
                 # 备份原文件
                 shutil.move(str(f), str(backup_dir / f.name))
                 migrated += 1
@@ -144,7 +145,11 @@ class SkillStore:
             return self._index.get(skill_id)
 
     def save(self, skill: dict) -> None:
-        """保存（内存索引 + 落盘到对应 source 目录）。"""
+        """保存（内存索引 + 落盘到对应 source 目录），两件事在同一次持锁里做完。
+
+        落盘留在锁内是有意的：两条同 id 的并发 save 会在同一个固定名 `x.json.tmp` 上互相踩，
+        rename 只保证「目标不是半截」，不保证「顶上去的是自己那一份」。
+        """
         sid = skill["id"]
         source = skill.get("source", "user")
         if source not in _SOURCES:
@@ -152,12 +157,9 @@ class SkillStore:
             skill["source"] = source
         with self._lock:
             self._index[sid] = skill
-        d = self._dir_for(source)
-        d.mkdir(parents=True, exist_ok=True)
-        path = d / f"{sid}.json"
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(skill, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(path)
+            d = self._dir_for(source)
+            d.mkdir(parents=True, exist_ok=True)
+            write_json_atomic(d / f"{sid}.json", skill)
         # 版本快照（v1.4）
         if self.version_mgr:
             try:

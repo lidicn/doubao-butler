@@ -8,6 +8,7 @@ import json
 import threading
 from pathlib import Path
 
+from butler.core.atomic_json import write_json_atomic
 from butler.logging_setup import get_logger
 from butler.triggers.schema import validate_trigger
 
@@ -83,13 +84,11 @@ class TriggerStore:
         if err:
             raise ValueError("trigger 校验失败: " + err)
         tid = normalized["id"]
+        # 落盘在锁内：与 skills/store.py 同一枚缺陷——同 id 并发 save 会踩同一个固定名 tmp
         with self._lock:
             self._index[tid] = normalized
-        self.dir.mkdir(parents=True, exist_ok=True)
-        path = self.dir / f"{tid}.json"
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(path)
+            self.dir.mkdir(parents=True, exist_ok=True)
+            write_json_atomic(self.dir / f"{tid}.json", normalized)
 
     def delete(self, trigger_id: str) -> bool:
         with self._lock:
