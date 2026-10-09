@@ -16,11 +16,23 @@ from butler.modes.engine import gate_tts
 from butler.tts.base import TTSResult, cache_filename
 from butler.tts.edge_tts import EdgeTTS
 from butler.tts.kokoro import KokoroTTS
+from butler.tts.nowvoice_client import SAMPLE_VOICES
 from butler.tts.nowvoice_tts import NowVoiceTTS
 from butler.tts.playback_queue import PlaybackQueue
 from butler.tts.queue import PRIORITY_ALERT
 
 logger = get_logger("butler.tts.manager")
+
+
+def _is_hex8(v) -> bool:
+    return bool(v) and len(v) == 8 and all(c in "0123456789abcdef" for c in v.lower())
+
+
+def _voice_name_to_hex(name: str | None) -> str | None:
+    """角色档嗓子名（如 zh-CN-YunyangNeural）→ nowvoice 对照表的 8 位号。"""
+    if not name:
+        return None
+    return SAMPLE_VOICES.get(name.strip().removesuffix("Neural"))
 
 
 class _CircuitBreaker:
@@ -77,16 +89,22 @@ class TTSManager:
                    nowvoice_voice: str | None = None) -> str:
         backend = backend or self.s.tts_primary
         if backend == "nowvoice":
-            # 优先用角色绑定的 nowvoice voice ID
-            if nowvoice_voice and len(nowvoice_voice) == 8 and all(
-                c in "0123456789abcdef" for c in nowvoice_voice.lower()
-            ):
+            # 优先用角色绑定的 nowvoice voice ID（显式 8 位号优先，原语义不动）
+            if _is_hex8(nowvoice_voice):
                 return nowvoice_voice
-            # 其次用传入的 voice（可能是 hex ID）
-            if voice and len(voice) == 8 and all(
-                c in "0123456789abcdef" for c in voice.lower()
-            ):
+            if _is_hex8(voice):
                 return voice
+            # 件四甲（DCD 20261008-DB五件）：落全局默认【之前】，先拿角色档嗓子名反查对照表
+            for cand in (nowvoice_voice, voice):
+                hexed = _voice_name_to_hex(cand)
+                if hexed:
+                    return hexed
+            if nowvoice_voice or voice:
+                logger.error(
+                    "角色档嗓子 %r/nowvoice=%r 既非 8 位号也不在 SAMPLE_VOICES 对照表 ⇒ "
+                    "落全局默认 %s（件四甲：记账，不静默）",
+                    voice, nowvoice_voice, self.s.nowvoice_voice,
+                )
             return self.s.nowvoice_voice
         if voice:
             return voice
@@ -136,6 +154,7 @@ class TTSManager:
         allow_bark_fallback: bool = True, nowvoice_voice: str | None = None,
     ) -> TTSResult | None:
         backend = backend or self.s.tts_primary
+        raw_voice = voice  # 角色档原始嗓子名/号：备引擎兜底也带上（件四甲），⛔ 用 _voice_for 之后的值
         voice = self._voice_for(member, voice, backend, nowvoice_voice)
         # 音色与引擎自动对齐：zm_ 前缀是 kokoro 音色
         if voice and voice.startswith("zm_") and backend == "edge-tts":
@@ -163,9 +182,15 @@ class TTSManager:
                         continue
                     fb_voice = self.s.tts_kokoro_voice
                 elif fb == "nowvoice":
-                    fb_voice = nowvoice_voice or self.s.nowvoice_voice
+                    # 件四甲：兜底带角色嗓（nowvoice 槽优先，其次角色名反查），⛔ 直接落全局小晨
+                    fb_voice = ((nowvoice_voice if _is_hex8(nowvoice_voice)
+                                 else _voice_name_to_hex(nowvoice_voice))
+                                or (raw_voice if _is_hex8(raw_voice)
+                                    else _voice_name_to_hex(raw_voice))
+                                or self.s.nowvoice_voice)
                 else:
-                    fb_voice = self.s.tts_edge_voice
+                    # 件四甲：角色档写着 edge 嗓名（…Neural）就带上，⛔ 直接落全局晓晓
+                    fb_voice = raw_voice if raw_voice and raw_voice.endswith("Neural") else self.s.tts_edge_voice
                 logger.info("TTS fallback -> %s", fb)
                 result = await self._try_engine(fb, text, fb_voice, speed)
                 return result
