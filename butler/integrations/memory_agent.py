@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 import httpx
 
+from homesdk.adm.errors import ADM_ERR_AUTH_REQUIRED, ADM_ERR_INTERNAL, ADM_ERR_UPSTREAM_TIMEOUT
 from homesdk.auth import AuthMissing, require_auth_headers, require_basic_headers
 from homesdk.http import ma_url, join_url
 from butler.config import Settings
@@ -34,6 +35,18 @@ class CredentialMissing(RuntimeError):
         super().__init__("MA 凭据未配置：面 %s 缺 %s" % (surface, env_key))
         self.surface = surface
         self.env_key = env_key
+
+
+def _code_for_status(status):
+    # 契约 v2.0 §7.2/§B 落点：401/403＝凭据/越权，其余 ≥400＝未分类兜底（ADM_ERR_INTERNAL）。
+    return ADM_ERR_AUTH_REQUIRED if status in (401, 403) else ADM_ERR_INTERNAL
+
+
+def _code_for_exc(e):
+    # 超时与连不上在联动语义里同判"对端不可达"（计划 §八#4 点名 ADM_ERR_UPSTREAM_TIMEOUT）。
+    if isinstance(e, (httpx.TimeoutException, httpx.TransportError)):
+        return ADM_ERR_UPSTREAM_TIMEOUT
+    return ADM_ERR_INTERNAL
 
 
 class MemoryAgentClient:
@@ -248,19 +261,21 @@ class MemoryAgentClient:
             basic = self._ma_basic()
         except CredentialMissing as e:
             logger.warning("analyze_room_live skipped: %s", e)
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "code": ADM_ERR_AUTH_REQUIRED}
         try:
             async with httpx.AsyncClient(timeout=timeout) as c:
                 r = await c.post(url, json={"room": room, "force": True, "wait": True}, headers=basic)
                 r.raise_for_status()
                 data = r.json()
         except Exception as e:
-            logger.warning("analyze_room_live failed: %s", e)
-            return {"ok": False, "error": str(e)}
+            logger.warning("analyze_room_live failed: %s (%s)", _code_for_exc(e), e)
+            return {"ok": False, "error": str(e), "code": _code_for_exc(e)}
         if not isinstance(data, dict):
-            return {"ok": False, "error": "invalid response"}
+            return {"ok": False, "error": "invalid response", "code": ADM_ERR_INTERNAL}
         if not data.get("ok"):
-            return {"ok": False, "error": str(data.get("error") or data.get("message") or "识别失败")}
+            return {"ok": False,
+                    "error": str(data.get("error") or data.get("message") or "识别失败"),
+                    "code": ADM_ERR_INTERNAL}
         return data
 
     async def add_memory(self, content: str, source_refs: list[str], member: str = "", dry_run: bool = False) -> dict:
@@ -333,17 +348,19 @@ class MemoryAgentClient:
             headers = self._butler_headers()
         except CredentialMissing as e:
             logger.warning("MA GET %s skipped: %s", path, e)
-            return {"ok": False, "data": None, "error": str(e)}
+            return {"ok": False, "data": None, "error": str(e), "code": ADM_ERR_AUTH_REQUIRED}
         try:
             async with httpx.AsyncClient(timeout=timeout) as c:
                 r = await c.get(url, headers=headers, params=clean)
                 if r.status_code >= 400:
-                    logger.warning("MA GET %s http %s", path, r.status_code)
-                    return {"ok": False, "data": None, "error": "HTTP %s" % r.status_code}
-                return {"ok": True, "data": r.json(), "error": ""}
+                    logger.warning("MA GET %s http %s (%s)", path, r.status_code,
+                                   _code_for_status(r.status_code))
+                    return {"ok": False, "data": None, "error": "HTTP %s" % r.status_code,
+                            "code": _code_for_status(r.status_code)}
+                return {"ok": True, "data": r.json(), "error": "", "code": ""}
         except Exception as e:
-            logger.warning("MA GET %s failed: %s", path, e)
-            return {"ok": False, "data": None, "error": str(e)}
+            logger.warning("MA GET %s failed: %s (%s)", path, e, _code_for_exc(e))
+            return {"ok": False, "data": None, "error": str(e), "code": _code_for_exc(e)}
 
     async def _butler_get(self, path: str, params: dict | None = None) -> Any:
         res = await self._butler_fetch(path, params)
@@ -467,7 +484,7 @@ class MemoryAgentClient:
         try:
             headers = self._app_token_headers()
         except CredentialMissing as e:
-            return {"ok": False, "raw": "", "error": str(e)}
+            return {"ok": False, "raw": "", "error": str(e), "code": ADM_ERR_AUTH_REQUIRED}
 
         url = join_url(ma_url(), "/api/agent/memories")
         body: dict[str, Any] = {"text": text, "dry_run": dry_run}
@@ -478,14 +495,15 @@ class MemoryAgentClient:
             async with httpx.AsyncClient(timeout=10) as c:
                 r = await c.post(url, headers=headers, json=body)
                 if r.status_code == 403:
-                    return {"ok": False, "raw": r.text, "error": "app_token 无权限（403）"}
+                    return {"ok": False, "raw": r.text, "error": "app_token 无权限（403）",
+                            "code": ADM_ERR_AUTH_REQUIRED}
                 r.raise_for_status()
                 data = r.json()
             ok = bool(data.get("ok")) if isinstance(data, dict) else True
             return {"ok": ok, "raw": json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else r.text, "error": ""}
         except Exception as e:
             logger.warning("add_memory_via_app_token failed: %s", e)
-            return {"ok": False, "raw": "", "error": str(e)}
+            return {"ok": False, "raw": "", "error": str(e), "code": _code_for_exc(e)}
 
     async def list_memories_via_app_token(self, source: str = "", limit: int = 20) -> list[dict]:
         """通过 app_token 列出记忆（可按 source 过滤）。"""

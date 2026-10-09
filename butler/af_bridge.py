@@ -31,7 +31,7 @@ from typing import Any
 
 import aiohttp
 
-from homesdk.adm.errors import ADM_ERR_INTERNAL
+from homesdk.adm.errors import ADM_ERR_AUTH_REQUIRED, ADM_ERR_INTERNAL, ADM_ERR_UPSTREAM_TIMEOUT
 
 logger = logging.getLogger("butler.af_bridge")
 
@@ -111,12 +111,17 @@ async def _poll_loop() -> None:
 async def _poll_once() -> None:
     global _consumed_total, _unconsumed_total
     now = time.time()
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{_base_url}/api/asks/pending", timeout=aiohttp.ClientTimeout(total=5)) as r:
-            if r.status >= 400:
-                body = (await r.text())[:200]
-                raise RuntimeError(f"GET asks/pending HTTP {r.status}: {body}")
-            data = await r.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{_base_url}/api/asks/pending", timeout=aiohttp.ClientTimeout(total=5)) as r:
+                if r.status >= 400:
+                    body = (await r.text())[:200]
+                    # 契约 v2.0 §7.2/§B：异常文本带码，⛔ 裸 "HTTP 403"（§八#4）
+                    code = ADM_ERR_AUTH_REQUIRED if r.status in (401, 403) else ADM_ERR_INTERNAL
+                    raise RuntimeError(f"{code} GET asks/pending HTTP {r.status}: {body}")
+                data = await r.json()
+    except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+        raise RuntimeError(f"{ADM_ERR_UPSTREAM_TIMEOUT} GET asks/pending unreachable: {e}") from e
 
     asks = data.get("asks", [])
     known_ids = set(_pending.keys())
@@ -246,8 +251,9 @@ async def on_user_reply(room: str, text: str) -> bool:
                 ) as r:
                     if r.status >= 400:
                         body_text = (await r.text())[:200]
-                        logger.error("af_bridge answer REJECTED HTTP %s (token=%s): %s",
-                                     r.status, "set" if _api_token else "MISSING", body_text)
+                        code = ADM_ERR_AUTH_REQUIRED if r.status in (401, 403) else ADM_ERR_INTERNAL
+                        logger.error("%s af_bridge answer REJECTED HTTP %s (token=%s): %s",
+                                     code, r.status, "set" if _api_token else "MISSING", body_text)
                         return False
                     resp = await r.json()
                     # 200 只代表 AF 把文件写进了 answer_inbox；⛔ 拿它当"答案已生效"（格13/I3）
@@ -271,8 +277,12 @@ async def on_user_reply(room: str, text: str) -> bool:
             logger.info("af_bridge: answer DELIVERED ask=%s inbox=%s（投递≠消费，AF 撤下才算）",
                         aid, info["inbox"])
             return True
+        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            # 契约 v2.0 §八#4：AF 不可达/超时＝对端超时类，ERROR 级带码，⛔ warning 吞声
+            logger.error("%s af_bridge answer failed: %s", ADM_ERR_UPSTREAM_TIMEOUT, e)
+            return False
         except Exception as e:
-            logger.warning("af_bridge answer failed: %s", e)
+            logger.error("%s af_bridge answer failed: %s", ADM_ERR_INTERNAL, e)
             return False
 
     return False
