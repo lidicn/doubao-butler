@@ -240,6 +240,8 @@ class TTSManager:
             text, member=member, voice=voice, backend=backend,
             speed=speed, nowvoice_voice=nowvoice_voice,
         )
+        logger.info("TTS_ENGINE via=%s trace=%s engine=%s device=%s",
+                    via, trace_id or "-", res.provider if res else "-", device_id or "-")
         if res is None:
             return None
         if device_id and self.ha is not None:
