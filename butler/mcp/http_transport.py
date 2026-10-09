@@ -17,6 +17,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from butler.api.deps import ok, err, guard
+from butler.core import singleton
 from butler.logging_setup import get_logger
 from butler.mcp.server import MCPServer
 
@@ -27,12 +28,12 @@ _mcp_server: MCPServer | None = None
 
 
 def get_mcp_server() -> MCPServer:
-    """获取全局 MCP Server 实例（延迟初始化）。"""
-    global _mcp_server
-    if _mcp_server is None:
-        _mcp_server = MCPServer()
-        logger.info("MCP server initialized (thin MCP, 6 tools + 3 resources)")
-    return _mcp_server
+    """获取全局 MCP Server 实例（懒单例收敛进 `butler.core.singleton`，同族：两套工具注册表并存）。"""
+    if _mcp_server is not None:
+        return _mcp_server
+    server = singleton.init(globals(), "_mcp_server", MCPServer)
+    logger.info("MCP server initialized (thin MCP, 6 tools + 3 resources)")
+    return server
 
 
 async def mcp_endpoint(request: Request):

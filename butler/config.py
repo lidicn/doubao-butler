@@ -45,6 +45,39 @@ def _env_bool(key: str, default: bool) -> bool:
     return default
 
 
+def _env_file_defaults() -> dict[str, str]:
+    """启动硬门槛键缺键时的盘上 `.env` 兜底（宿主／开发面）。
+
+    缺键报错的文案让操作员「set it in .env」，但真在解析 `.env` 的只有 docker-compose
+    （env_file 注入容器进程环境）。裸宿主（跑单测、本地起服）没人读 ⇒ 键写进 `.env` 也照样报
+    「缺键」。这里按键兜底：os.environ 永远赢，只有进程环境里真没有的键才来文件找；
+    容器面 env_file 已注入 ⇒ 兜底整段是 no-op，行为不变。
+    候选顺序：`DATA_DIR/.env` → 仓库根 `.env`（`butler/config.py` 的上一级）。
+    只收非空值：空值＝「没配」，与 WO-BUT-017／018／022「空＝缺键⇒拒启」同口径。
+    """
+    kv: dict[str, str] = {}
+    candidates: list[Path] = []
+    data_dir = _env("DATA_DIR")
+    if data_dir:
+        candidates.append(Path(data_dir) / ".env")
+    candidates.append(Path(__file__).resolve().parents[1] / ".env")
+    for p in candidates:
+        try:
+            text = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in text.splitlines():
+            s = line.strip()
+            if not s or s.startswith("#") or "=" not in s:
+                continue
+            k, _, v = s.partition("=")
+            k = k.removeprefix("export ").strip()
+            v = v.strip().strip('"').strip("'").strip()
+            if k and v and k not in kv:
+                kv[k] = v
+    return kv
+
+
 @dataclass
 class MemberConfig:
     """成员人格与称呼配置（与 memory-agent 成员名单对齐）。"""
@@ -306,6 +339,21 @@ class Settings:
             if sep and role and val.isdigit():
                 s.proactive_role_limits[role] = int(val)
         s._load_persona()
+        # 启动硬门槛绊线（WO-BUT-017／018／022）前先按文案兜底：报错让操作员「set it in .env」，
+        # 宿主／开发面没有 env_file 注入 ⇒ 进程环境缺键时读盘上 `.env`（os.environ 始终赢，
+        # 容器面＝no-op）。绊线本身一条不松：兜底后仍空＝真没配 ⇒ 照旧显式报错。
+        _fallback: dict[str, str] = {}
+        if not (s.doubao_api_key and s.deskpilot_api_token
+                and s.task_report_token and s.web_password):
+            _fallback = _env_file_defaults()
+        if not s.doubao_api_key:
+            s.doubao_api_key = _fallback.get("DOUBAO_API_KEY", "")
+        if not s.deskpilot_api_token:
+            s.deskpilot_api_token = _fallback.get("DESKPILOT_API_TOKEN", "")
+        if not s.task_report_token:
+            s.task_report_token = _fallback.get("TASK_REPORT_TOKEN", "")
+        if not s.web_password:
+            s.web_password = _fallback.get("BUTLER_WEB_PASSWORD", "")
         # WO-BUT-017: 必需密钥缺键显式报错，禁止静默回退到泄露口令
         if not s.doubao_api_key:
             raise RuntimeError(
@@ -413,10 +461,15 @@ _settings: Settings | None = None
 
 
 def get_settings() -> Settings:
-    global _settings
-    if _settings is None:
-        _settings = Settings.load()
-    return _settings
+    """懒单例：判定＋发布收敛进 `butler.core.singleton`（批75：11 枚里最热的一枚）。
+
+    旧码＝判定在锁外⇒并发首调各造一枚 Settings，被覆盖那枚的调用方拿到的配置与全局那枚不同。
+    已发布后走 helper 的无锁热路径。
+    """
+    if _settings is not None:
+        return _settings
+    from butler.core import singleton
+    return singleton.init(globals(), "_settings", Settings.load)
 
 
 def set_settings(s: Settings) -> None:

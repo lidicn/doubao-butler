@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from butler.config import get_settings
+from butler.core import singleton
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.user_location")
@@ -24,18 +25,29 @@ _conn: sqlite3.Connection | None = None
 
 
 def get_conn() -> sqlite3.Connection:
-    global _conn
-    if _conn is None:
-        s = get_settings()
-        Path(s.data_dir).mkdir(parents=True, exist_ok=True)
-        db_path = Path(s.data_dir) / "butler.db"
-        c = sqlite3.connect(str(db_path), check_same_thread=False)
-        c.execute("PRAGMA journal_mode=WAL")
-        c.row_factory = sqlite3.Row
-        _conn = c
-        _init(c)
-        logger.info("user_location store opened at %s", db_path)
-    return _conn
+    """懒初始化：建连＋建表全收进 `butler.core.singleton` 的双检锁，先跑完 `_init` 再发布 `_conn`。
+
+    同族坏码（D15）＝判定在锁外＋先发布再建表：并发首调各建一条、先建的那条被覆盖后⛔ 关。
+    """
+    if _conn is not None:
+        return _conn                    # 热路径无锁
+    return singleton.init(globals(), "_conn", _build_conn)
+
+
+def _build_conn() -> sqlite3.Connection:
+    s = get_settings()
+    Path(s.data_dir).mkdir(parents=True, exist_ok=True)
+    db_path = Path(s.data_dir) / "butler.db"
+    c = sqlite3.connect(str(db_path), check_same_thread=False)
+    c.execute("PRAGMA journal_mode=WAL")
+    c.row_factory = sqlite3.Row
+    try:
+        _init(c)                         # ★ 建表跑完之前这条连接不对外可见
+    except Exception:
+        c.close()                        # ★ 坏连接⛔ 留在全局上、也⛔ 漏句柄
+        raise
+    logger.info("user_location store opened at %s", db_path)
+    return c
 
 
 def _init(c: sqlite3.Connection) -> None:
