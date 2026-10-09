@@ -124,11 +124,11 @@ class EventStream:
 
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(ws_url, heartbeat=30) as ws:
-                # 认证
-                msg = await ws.receive_json()
+                # 认证（批48：握手帧读取加 wait_for 上界，HA 只回 ping 不回帧即超时重连）
+                msg = await asyncio.wait_for(ws.receive_json(), timeout=15)
                 if msg.get("type") == "auth_required":
                     await ws.send_json({"type": "auth", "access_token": s.ha_token})
-                    msg = await ws.receive_json()
+                    msg = await asyncio.wait_for(ws.receive_json(), timeout=15)
                     if msg.get("type") != "auth_ok":
                         raise RuntimeError(f"HA websocket auth failed: {msg}")
                     logger.info("event_stream HA auth ok")
@@ -141,7 +141,7 @@ class EventStream:
                 await ws.send_json({"id": 99, "type": "get_states"})
                 snapshot_done = False
                 while not snapshot_done:
-                    raw = await ws.receive()
+                    raw = await asyncio.wait_for(ws.receive(), timeout=15)
                     if raw.type != aiohttp.WSMsgType.TEXT:
                         break
                     try:
@@ -220,7 +220,6 @@ class EventStream:
             return
 
         attrs = new_state.get("attributes") or {}
-        ts = event.get("origin", {}).get("time_fired", "")
         try:
             ts_val = time.time()
         except Exception:

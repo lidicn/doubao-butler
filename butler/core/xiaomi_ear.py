@@ -70,10 +70,11 @@ class XiaomiEar:
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(ws_url, heartbeat=30) as ws:
                 # ---- HA websocket 认证 ----
-                msg = await ws.receive_json()
+                # 批48：握手帧读取加 wait_for 上界，HA 只回 ping 不回帧即超时重连
+                msg = await asyncio.wait_for(ws.receive_json(), timeout=15)
                 if msg.get("type") == "auth_required":
                     await ws.send_json({"type": "auth", "access_token": s.ha_token})
-                    msg = await ws.receive_json()
+                    msg = await asyncio.wait_for(ws.receive_json(), timeout=15)
                     if msg.get("type") != "auth_ok":
                         raise RuntimeError(f"HA websocket auth failed: {msg}")
                     logger.info("xiaomi_ear HA auth ok")

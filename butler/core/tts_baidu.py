@@ -31,7 +31,7 @@ class BaiduTTS:
             return self._token
         async with aiohttp.ClientSession() as session:
             url = f"{_TOKEN_URL}?grant_type=client_credentials&client_id={self._api_key}&client_secret={self._secret_key}"
-            async with session.get(url) as r:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
                 data = await r.json()
                 self._token = data["access_token"]
                 self._token_expire = now + data.get("expires_in", 2592000)
