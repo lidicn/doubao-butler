@@ -129,7 +129,7 @@ class XiaomiEar:
             logger.info("ear filtered system-prompt [%s] text=%s", dev.id, text[:60])
             return
 
-        # 回声抑制：该设备最近 6 秒内 butler 刚播报过，忽略（防止自己听自己）
+        # 回声抑制：该设备最近 15 秒内 butler 刚播报过，忽略（防止自己听自己；阈值见下一行的 15.0）
         last_speak = self._echo_cooldown.get(dev.id, 0)
         if time.time() - last_speak < 15.0:
             logger.info("ear echo-suppressed [%s] text=%s (%.1fs ago)", dev.id, text[:40], time.time()-last_speak)
