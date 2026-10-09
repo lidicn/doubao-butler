@@ -42,6 +42,7 @@ from butler.notify.router import NotifyRouter
 from butler.runtime import _RT
 from butler.skills.runner import SkillRunner
 from butler.tts.adapter import TTSManagerSpeaker
+from butler.tts.base import TTSResult
 from butler.tts.manager import TTSManager
 from butler.tts.queue import PRIORITY_ALERT, TTSItem
 
@@ -153,7 +154,9 @@ class TTSMouthGateTest(ModeRuntimeStub):
 
         async def _fake_synthesize(text, **kw):
             seen.append({"text": text, **kw})
-            return object()
+            # 替身守 base.TTSResult 契约：speak 的引擎腿读 res.provider（批149）
+            return TTSResult(filename="x.mp3", public_url="http://x/tts/x.mp3",
+                             provider="edge-tts", voice="v", duration_ms=0, cached=True)
 
         mgr.synthesize = _fake_synthesize  # ⛔ 真合成会打网络／落音频文件
         return mgr, seen
