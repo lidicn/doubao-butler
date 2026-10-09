@@ -1,6 +1,6 @@
 # 数据卷（运行时生成，不入库）
-data/
-tts/
+/data/
+/tts/
 *.db
 *.db-wal
 *.db-shm
