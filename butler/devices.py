@@ -11,13 +11,12 @@
 """
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from butler.config import Settings
-from butler.core.atomic_json import write_json_atomic
+from butler.core.atomic_json import read_json_object, write_json_atomic
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.devices")
@@ -78,6 +77,9 @@ class DeviceRegistry:
         self.s = settings
         self.path = Path(settings.data_dir) / "devices.json"
         self.devices: dict[str, Device] = {}
+        # 批71 D3：「读不出来」≠「没有数据」——坏档兜底出厂种子后这份内存态不完整，
+        # 写腿（save/upsert/delete）拿它整份覆盖＝用户自加的设备永久找不回。拒写并留痕。
+        self.unreadable = False
 
     # ---- 种子（首次启动播种默认设备，已存在则不覆盖用户编辑）----
 
@@ -154,29 +156,36 @@ class DeviceRegistry:
 
     def load(self) -> None:
         seed = self._seed()
-        if self.path.exists():
-            try:
-                raw = json.loads(self.path.read_text(encoding="utf-8"))
-                if isinstance(raw, dict):
-                    for did, d in raw.items():
-                        if isinstance(d, dict):
-                            dev = Device.from_dict({**d, "id": did})
-                            seed[did] = dev
-            except Exception as e:
-                logger.warning("devices.json parse failed, use seed: %s", e)
+        # 判定口径走批70b 收敛尺子 read_json_object（⛔ 第 6 份自家 try/except）：
+        # 缺档＝真没有（unreadable=False，首次播种照写）；存在但读不出＝现场还在盘上（拒写那半在 save()）。
+        raw, self.unreadable = read_json_object(self.path)
+        if self.unreadable:
+            # 读侧兜底出厂种子本身是对的（批17 口径：⛔ 抛穿成 500），本批⛔ 动那半
+            logger.warning("devices.json unreadable, falling back to seed devices: %s", self.path)
+        for did, d in raw.items():
+            if isinstance(d, dict):
+                dev = Device.from_dict({**d, "id": did})
+                seed[did] = dev
         self.devices = seed
-        # 首次播种后落盘，便于 WebUI 直接编辑
+        # 首次播种后落盘，便于 WebUI 直接编辑（缺档＝真没有，⛔ 一并拒掉，否则新装环境建不起表）
         if not self.path.exists():
             self.save()
 
-    def save(self) -> None:
+    def save(self) -> bool:
+        """整份落盘。坏档时拒绝对覆盖、盘上一个字节不动；返回是否真正保存（调用方据此如实回报）。"""
+        if self.unreadable:
+            logger.error("devices.json unreadable, refusing full overwrite that would replace "
+                         "the user's file with the seed/incomplete in-memory table: %s", self.path)
+            return False
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             data = {d.id: d.to_dict() for d in self.devices.values()}
             # 表行 45 P1-13：就地 write_text 崩在半路＝半截 devices.json，下次 load() 静默回退出厂种子
             write_json_atomic(self.path, data)
+            return True
         except Exception as e:
             logger.warning("save devices failed: %s", e)
+            return False
 
     # ---- 查询 ----
 

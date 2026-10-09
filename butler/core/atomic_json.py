@@ -18,6 +18,35 @@ import json
 import os
 from pathlib import Path
 
+from butler.logging_setup import get_logger
+
+logger = get_logger("butler.core.atomic_json")
+
+
+def read_json_object(path) -> tuple[dict, bool]:
+    """整份 JSON dict 的收敛读法：返回 (data, unreadable)。
+
+    判定口径（批70b D 族「读不出来被当成没有」的唯一尺子，各写手⛔ 再自己 try/except）：
+      - 文件不存在＝真没有 → `({}, False)`：允许调用方首次整份写入（新装环境播种）；
+      - 文件存在但读不出／解析失败／顶层不是 dict → `({}, True)`：现场还在盘上，
+        调用方必须把它当成「这份内存态不完整」，拒拿它做整份覆盖写；
+      - 正常对象 → `(data, False)`。
+    读侧兜底空 dict ⛔ 抛穿成 500（批17 口径），但兜底之后必须留痕，所以这里自己喊一声。
+    """
+    p = Path(path)
+    if not p.exists():
+        return {}, False
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.error("%s parse failed, treating as unreadable: %s", p, e)
+        return {}, True
+    if not isinstance(data, dict):
+        logger.error("%s top level is %s, not an object: treating as unreadable",
+                     p, type(data).__name__)
+        return {}, True
+    return data, False
+
 
 def write_json_atomic(path, data) -> None:
     """把 data 序列化成 JSON 并原子替换 path。序列化失败即抛出，目标与临时文件都不碰。"""

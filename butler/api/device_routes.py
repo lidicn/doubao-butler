@@ -30,6 +30,9 @@ async def upsert_device(request):
         dev = rt.devices.upsert(body)
     except ValueError as e:
         return err(str(e))
+    # 批71 D3：坏档时 upsert 的落盘被拒绝（内存编辑照常生效、盘上现场保住），⛔ 对 WebUI 报成功
+    if getattr(rt.devices, "unreadable", False):
+        return err("devices.json unreadable, save refused to avoid clobbering it", 500)
     return ok({"device": dev.to_dict()})
 
 
@@ -39,9 +42,12 @@ async def delete_device(request):
         return g
     did = request.path_params.get("id", "")
     rt = get_runtime()
-    if rt.devices.delete(did):
-        return ok({"deleted": did})
-    return err("device not found", 404)
+    if not rt.devices.delete(did):
+        return err("device not found", 404)
+    if getattr(rt.devices, "unreadable", False):
+        # 同上：内存里删掉了，但整份覆盖被拒——如实回报，⛔ 谎称删除已持久化
+        return err("devices.json unreadable, delete not persisted", 500)
+    return ok({"deleted": did})
 
 
 def routes():

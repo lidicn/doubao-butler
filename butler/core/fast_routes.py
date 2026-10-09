@@ -29,6 +29,8 @@ ROUTES_FILE = Path("/app/data/fast_routes.json")
 class FastRouteStore:
     def __init__(self):
         self.routes: list[dict] = []
+        # 批70b D6：构造期兜底内置是对的一半；另一半是「下一次命中不许拿内置整份盖坏档」
+        self.unreadable = False
         self._load()
 
     def _load(self):
@@ -39,19 +41,29 @@ class FastRouteStore:
                 if not isinstance(data, list):
                     raise ValueError("fast_routes.json 顶层不是数组")
                 self.routes = data
+                self.unreadable = False
             except Exception as e:
                 # 表行 94 T-04：回退空列表＝快速路由永久静默失效 ⇒ 兜底成内置规则。
                 # ⛔ 在这里 _save()：盖回去＝抹掉现场，人工无从判断丢了哪些用户自加规则。
                 logger.error("fast_routes.json unreadable, fallback to builtin rules: %s", e)
                 self.routes = self._builtin()
+                # 上一行注释只堵住了构造期；match() 命中加 hits 后照样 _save() ⇒ D6 漏的是下一次命中。
+                self.unreadable = True
         else:
             self.routes = self._builtin()
+            self.unreadable = False
             self._save()
 
-    def _save(self):
+    def _save(self) -> bool:
+        if self.unreadable:
+            # 写侧拒绝要自己留痕：命中计数被拒＝现场保住了，但这次「保存」没成
+            logger.error("fast_routes.json unreadable, refusing to overwrite the scene with "
+                         "builtin/incomplete rules: %s", ROUTES_FILE)
+            return False
         ROUTES_FILE.parent.mkdir(parents=True, exist_ok=True)
         # 表行 127 T-06 的损坏半：就地截断写崩在中途＝整个规则文件只剩半截（性能半另议，见台账 §18 ⛔清单）
         write_json_atomic(ROUTES_FILE, self.routes)
+        return True
 
     def _builtin(self) -> list[dict]:
         return [

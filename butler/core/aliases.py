@@ -1,12 +1,12 @@
 """设备别名学习：记录用户原话 → entity_id 映射，下次快速命中。"""
 from __future__ import annotations
 
-import json
-import os
 import re
 from pathlib import Path
 from threading import Lock
 
+from butler.core import singleton
+from butler.core.atomic_json import read_json_object, write_json_atomic
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.core.aliases")
@@ -18,23 +18,28 @@ _lock = Lock()
 class AliasStore:
     def __init__(self):
         self.aliases: dict[str, dict] = {}  # alias_text -> {entity_id, domain, count, last_used}
+        # 批70b D4：「读不出来」≠「没有别名」——坏档兜底空后 _save 拿它整份 dump＝整库清零
+        self.unreadable = False
         self._load()
 
     def _load(self):
-        if ALIAS_FILE.exists():
-            try:
-                self.aliases = json.loads(ALIAS_FILE.read_text(encoding="utf-8"))
-                logger.info("Loaded %d device aliases", len(self.aliases))
-            except Exception as e:
-                logger.warning("Failed to load aliases: %s", e)
-                self.aliases = {}
+        # 判定口径走收敛尺子 read_json_object（批70b），⛔ 第 N 份自家 try/except
+        data, unreadable = read_json_object(ALIAS_FILE)
+        self.unreadable = unreadable
+        self.aliases = data
+        if not unreadable and data:
+            logger.info("Loaded %d device aliases", len(self.aliases))
 
-    def _save(self):
+    def _save(self) -> bool:
+        if self.unreadable:
+            # 写侧拒绝必须自己喊：learn/delete 的「成功」都建立在整份覆盖上
+            logger.error("device_aliases.json unreadable, refusing full overwrite that would "
+                         "clear the whole alias store: %s", ALIAS_FILE)
+            return False
         ALIAS_FILE.parent.mkdir(parents=True, exist_ok=True)
         # 写 tmp 再 os.replace：就地截断写＝崩溃留半个 JSON，下次 _load 静默把别名库清零（同款正解见 api/deps.py:56-59）。
-        tmp = ALIAS_FILE.with_name(ALIAS_FILE.name + ".tmp")
-        tmp.write_text(json.dumps(self.aliases, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp, ALIAS_FILE)
+        write_json_atomic(ALIAS_FILE, self.aliases)
+        return True
 
     def learn(self, user_text: str, entity_id: str, domain: str, service: str):
         """学习一条别名：用户说的话 → 实际操作的 entity_id"""
@@ -116,7 +121,11 @@ _alias_store: AliasStore | None = None
 
 
 def get_alias_store() -> AliasStore:
-    global _alias_store
-    if _alias_store is None:
-        _alias_store = AliasStore()
-    return _alias_store
+    """懒单例：判定＋发布收敛进 `butler.core.singleton`（D14）。
+
+    旧码＝`if _alias_store is None: _alias_store = AliasStore()` 判定在锁外⇒并发首调各造一枚，
+    先造的那枚被覆盖后没人持有，别名写入照样丢。热路径（已发布）仍无锁直返。
+    """
+    if _alias_store is not None:
+        return _alias_store
+    return singleton.init(globals(), "_alias_store", AliasStore)
