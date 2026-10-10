@@ -218,18 +218,22 @@ class ModeEngine:
                 ha = self.rt.ha
                 for action in actions:
                     try:
+                        # HA REST 把 entity_id 放在 JSON body 里（ha.py:233 的签名没有这个形参）
+                        body = dict(action.get("data") or {})
+                        entity_id = action.get("entity_id")
+                        if entity_id:
+                            body["entity_id"] = entity_id
                         await ha.call_service(
                             domain=action["domain"],
                             service=action["service"],
-                            entity_id=action.get("entity_id"),
-                            data=action.get("data"),
+                            data=body,
                         )
                         logger.info("mode action executed: %s.%s -> %s",
                                     action["domain"], action["service"],
                                     action.get("entity_id", "all"))
                     except Exception as e:
-                        logger.debug("mode action %s.%s failed: %s",
-                                     action["domain"], action["service"], e)
+                        logger.warning("mode action %s.%s failed: %s",
+                                       action["domain"], action["service"], e)
             except Exception as e:
                 logger.warning("mode actions execution failed: %s", e)
 
