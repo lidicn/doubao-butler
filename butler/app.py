@@ -16,6 +16,8 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from pathlib import Path as _Path
 
+from homesdk.time import house_tz_name
+
 from butler.api import (
     agent_routes,
     audiobook_routes,
@@ -595,7 +597,7 @@ def _build_app() -> Starlette:
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-            sched = AsyncIOScheduler(timezone="Asia/Shanghai")
+            sched = AsyncIOScheduler(timezone=house_tz_name())
             _tts_cleanup_job = reg.wrap_scheduler_job("sched:tts_cleanup", lambda: asyncio.run_coroutine_threadsafe(tts.cleanup_old(7), _main_loop))
             reg.register("sched:tts_cleanup", "scheduler", "TTS 旧音频清理", expected_interval_sec=86400, description="每天 04:10 清理 7 天前的 TTS 缓存")
             safe_add_job(sched, scheduler_job_failures, _tts_cleanup_job, "cron", hour=4, minute=10, id="tts_cleanup")
@@ -738,7 +740,7 @@ def _build_app() -> Starlette:
                 await push_briefing(rt, "evening")
             safe_add_job(sched, scheduler_job_failures, _morning_briefing, "cron", hour=7, minute=10, id="morning_briefing", max_instances=1)
             safe_add_job(sched, scheduler_job_failures, _evening_briefing, "cron", hour=22, minute=0, id="evening_briefing", max_instances=1)
-            logger.info("LLM briefing scheduled: 7:10 morning, 22:00 evening (Asia/Shanghai)")
+            logger.info(f"LLM briefing scheduled: 7:10 morning, 22:00 evening ({house_tz_name()})")
 
             # v1.7 感知自进化：凌晨 4:00 分析事件流发现行为模式
             async def _perception_learn_job():

@@ -10,8 +10,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from homesdk.time import house_tz_name
 
 from butler.core.tools import TOOL_SCHEMAS
 from butler.logging_setup import get_logger
@@ -80,7 +79,7 @@ async def mock_test(skill: dict, rt, scenarios: list[dict],
 
         system = _render(system_tpl)
         prompt = _render(prompt_tpl)
-        system += f"\n\n【当前时间】2026年09月19日 周一 {now_str}（Asia/Shanghai）。"
+        system += f"\n\n【当前时间】2026年09月19日 周一 {now_str}（{house_tz_name()}）。"
 
         async def mock_executor(name, args, _wl=whitelist, _tc=tools_called, _bl=blocked, _mock=mock):
             if name not in _wl:
