@@ -78,6 +78,13 @@ def _conversation_to_role(conversation_id: str) -> str | None:
     return None
 
 
+def _role_system(role) -> str:
+    """角色缺席时返回空串 ⇒ `agent.py:85` 的 `system_override or persona.system` 会退回默认人格。
+    改前这里直接点属性：角色没播种就是 None，AttributeError 被同一层
+    `except Exception` 吞成一条 warning ⇒ 这条 LLM 兜底腿对那个角色从来没通过。"""
+    return getattr(role, "system", "") or ""
+
+
 # 设备名 → HA entity_id 映射
 DEVICE_MAP = {
     "显示器挂灯": "light.yeelink_cn_555003624_lamp22_s_2",  # 米家智能显示器挂灯1S
@@ -786,7 +793,7 @@ async def handle_webhook(payload: dict) -> dict:
                                 llm_question = llm_match.group(1)
                                 logger.info("fallback to LLM: %s", llm_question[:50])
                                 try:
-                                    reply = await rt.dialog.agent.run(llm_question, member, history, system_override=role.system)
+                                    reply = await rt.dialog.agent.run(llm_question, member, history, system_override=_role_system(role))
                                     await rt.notifier.push(role_id, scene="请回复用户", direct_text=reply)
                                 except Exception as e:
                                     logger.warning("LLM fallback failed: %s", e)

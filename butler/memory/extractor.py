@@ -18,6 +18,7 @@ import time
 from datetime import datetime
 
 from butler.logging_setup import get_logger
+from butler.roles.store import ALL_ROLE_IDS
 
 logger = get_logger("butler.memory.extractor")
 
@@ -268,7 +269,7 @@ class MemoryExtractor:
                     conf = 0.5
                 conf = max(0.0, min(1.0, conf))
                 target_role = str(item.get("target_role") or "butler").strip()
-                if target_role not in ("butler", "jarvis", "caesar", "luna", "gu_anheng", "xiaoyue"):
+                if target_role not in ALL_ROLE_IDS:
                     target_role = "butler"
                 candidates.append({
                     "fact_type": ftype,

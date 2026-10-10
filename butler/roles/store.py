@@ -116,7 +116,23 @@ DEFAULT_ROLES: list[dict] = [
         "skills": [], "enabled": True, "fallback": "bark",
         "wake_words": ["露娜"], "bound_rooms": ["Emily房间"], "scope": "private", "member": "Emily",
     },
+    {
+        # 豆包 APP 里的文字对话角色（doc/06-场景设计/顾安恒专属对话.md）：
+        # 链路是 webhook 取帧→视觉分析→推回对话，⛔ 电视输出设备与唤醒词——
+        # 多一个唤醒词就等于在家里凭空多出一个会应答的名字。
+        "id": "gu_anheng", "name": "顾安恒", "gender": "男", "is_primary": False,
+        "voice": "zh-CN-YunjianNeural", "tts_backend": "nowvoice",
+        "presence_rooms": [], "output_devices": [],
+        "system": "你是家庭安防专员「顾安恒」，冷静、可靠、观察力敏锐，"
+                  "回答简短，涉及摄像头画面时先说明正在调取哪个房间。",
+        "skills": ["monitor-camera"], "enabled": True, "fallback": "bark",
+        "wake_words": [], "bound_rooms": [], "scope": "private", "member": "lidicn",
+    },
 ]
+
+# 角色名册的唯一真源：⛔ 在任何引用面再抄一遍字面量（P1-10 的洞就是抄出来的——
+# 投喂面抄成 6 枚、真源只播 5 枚，两边都不报错，缺的那个角色默默走不通）。
+ALL_ROLE_IDS: tuple[str, ...] = tuple(d["id"] for d in DEFAULT_ROLES)
 
 
 class RoleRegistry:

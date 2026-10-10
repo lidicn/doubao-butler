@@ -54,9 +54,11 @@ SITES = [
     #   （CronTaskExecutor.register_api/unregister_api 仍是同步体 ⇒ 判定不变）。
     ("api/cron_task_routes.py", 66, "register_api"),
     ("api/cron_task_routes.py", 80, "unregister_api"),
-    # 批164 re-anchor 794→802：D5 分叉收编在 role_state_file() 上方净插 8 行，调用点本体一字未动
-    # （sqlite3 Connection.execute 仍是 EXTERNAL_SYNC 那条腿）。
-    ("api/doubao_webhook.py", 802, "execute"),
+    # 1011-b181-REANCHOR 802→809（本节口径覆盖批164 的落点登记）：批181 在
+    #   `_conversation_to_role()` 与 `DEVICE_MAP` 之间净插 7 行 `_role_system()`（P1-10 角色缺席兜底），
+    #   `conn.execute(...)` 那条腿本体一字未动 ⇒ 仍是 EXTERNAL_SYNC。
+    # （上一注：批164 re-anchor 794→802，D5 分叉收编在 role_state_file() 上方净插 8 行。）
+    ("api/doubao_webhook.py", 809, "execute"),
     # 1009-b6-REANCHOR (2026-10-10): app.py 生命周期 9 枚随批135/homesdk0.3.2 接线漂移，已重钉。
     # run 槽＝已裁退役（PM 裁 1009）：原 `subprocess.run`（EXTERNAL 族）已被重构进
     #   `await ensure_wake_ding`（startup_assets），app.py 再无未 await 的外部 run；名册 30→29，

@@ -17,11 +17,12 @@ import time
 from butler.core.atomic_json import write_json_atomic
 from butler.logging_setup import get_logger
 from butler.roles.state import merge_and_bind, read_role_state
+from butler.roles.store import ALL_ROLE_IDS
 
 logger = get_logger("butler.memory.feeder")
 
-# 参与投喂的 6 个角色（xiaoai/xiaotiancai 是壳角色不投）
-FEEDABLE_ROLES = ["butler", "jarvis", "caesar", "luna", "gu_anheng", "xiaoyue"]
+# 参与投喂的角色＝真源名册（xiaoai/xiaotiancai 是壳角色，本来就不在 DEFAULT_ROLES 里）
+FEEDABLE_ROLES = list(ALL_ROLE_IDS)
 
 ROLE_NAMES = {
     "butler": "豆包管家",
