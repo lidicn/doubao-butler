@@ -140,7 +140,8 @@ class CronTaskExecutor:
     def register_api(self, api_id: str, url: str, headers: dict | None = None,
                      timeout: int = 10, secret: str = "", secret_name: str = "token",
                      method: str = "GET", body: str = ""):
-        """注册 API。URL 中可用 {secret:xxx} 占位符引用密钥。"""
+        """注册 API。密钥优先放 headers（`{secret:xxx}` 在 header 值里也会被替换）；
+        URL 里的 `{secret:xxx}` 占位符只在 https 下允许——明文 URL 会进对方服务器的访问日志。"""
         # 如果传了 secret，存入 Vault
         if secret:
             self._secrets[secret_name] = secret

@@ -55,6 +55,14 @@ async def register_api(request: Request):
     if not api_id or not url:
         return err("api_id and url are required")
 
+    # 批179（裁定 20261011 合并版 §一.2）：护栏接在写入之前——被拒即当场不写。
+    # `cron_task.register_api` 是唯一落盘处，拦在它前面就不会留下半成品。
+    # 域名解析是阻塞调用 ⇒ 走 to_thread，⛔ 把事件循环卡在 DNS 上。
+    valid, reason = await asyncio.to_thread(cron_validator.validate_api_url, url)
+    if not valid:
+        logger.warning("cron_task api %s rejected by URL guard: %s", api_id, reason)
+        return err(f"URL 校验未通过：{reason}")
+
     executor.register_api(api_id, url, headers, timeout, secret, secret_name, method, req_body)
     return ok({"id": api_id, "url": "(registered)"})
 

@@ -24,19 +24,43 @@ _COMPARATORS = {"exists", "gt", "lt", "eq", "contains"}
 # 允许的输出类型
 _OUTPUT_TYPES = {"xiaomi_speak", "bark", "tv_notify"}
 
-# 内网 IP 网段（SSRF 防护）
-# fc00::/7（ULA）故意不进来：它是 RFC1918 的 IPv6 对应物，家里可能正经用它给设备配址；
-# 判据按「这个地址在家里有没有任务用途」，不按「缺了就补」。
-_PRIVATE_NETS = [
+# URL 里的密钥占位符（`{secret:名字}`）
+_SECRET_PLACEHOLDER = re.compile(r"\{secret:[^}]+\}")
+
+# ---- SSRF 判据拆成两组（裁定 20261011 合并版 §一.1，「先拆再接」）----
+#
+# 硬拒集＝在家里没有正经任务用途的形态，永远拒。
+_HARD_REJECT_NETS = [
     ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("169.254.0.0/16"),
     ipaddress.ip_network("0.0.0.0/8"),
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("fe80::/10"),
 ]
+
+# 放行集＝家里确有用途的私有段（RFC1918 三段 + 它的 IPv6 对应物 ULA）。
+# 判定按「落进硬拒集才拒」走，这张名册本身是**钉住方向的判据**：⛔ 有人把这几段
+# 当"名单缺了就补"补进硬拒集——那会把裁定的甲执行成被驳回的乙（家用 HA／电视／人脸
+# 服务全部注册失败）。批179 的门有一格专门咬这件事。
+_ALLOWED_INTERNAL_NETS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+
+def _resolve_ips(host: str) -> list[str]:
+    """域名 → IP 集合（v4+v6 都要）。解析不出＝返回空列表，由调用方按 fail-closed 处理。
+
+    单独一道缝是为了可测：判据门⛔ 依赖真 DNS（离线或解析器换答案会让门自己变红＝没有闸）。
+    """
+    import socket
+    try:
+        infos = socket.getaddrinfo(host, None, socket.AF_UNSPEC)
+    except (OSError, UnicodeError, ValueError):
+        return []
+    return sorted({info[4][0] for info in infos})
 
 
 class CronTaskValidator:
@@ -133,30 +157,55 @@ class CronTaskValidator:
         return len(errors) == 0, errors
     
     def validate_api_url(self, url: str) -> tuple[bool, str]:
-        """校验 API URL（SSRF 防护）。"""
+        """校验 API URL（SSRF 防护 + 密钥外插门）。
+
+        两段独立判据：
+          1. URL 里带 `{secret:...}` ⇒ 必须 https（明文 URL 会进对方服务器的访问日志）；
+             密钥改放 headers 不受这一条约束。
+          2. 主机落进 `_HARD_REJECT_NETS`（含 `localhost` 名形式）⇒ 拒；
+             域名先解析再按同一份名单判，解析不出来一律拒（fail-closed）。
+        """
         try:
             parsed = urlparse(url)
         except Exception as e:
             return False, f"URL 解析失败: {e}"
-        
+
         # 只允许 http/https
         if parsed.scheme not in ("http", "https"):
             return False, f"URL scheme 必须是 http/https，当前是 {parsed.scheme}"
-        
-        # 检查内网 IP
-        if not self.allow_internal_ips:
-            hostname = parsed.hostname or ""
-            if hostname == "localhost" or hostname.endswith(".localhost"):
-                return False, f"不允许访问回环域名: {hostname}"
+
+        if _SECRET_PLACEHOLDER.search(url) and parsed.scheme != "https":
+            return False, ("URL 里带 {secret:...} 占位符时必须用 https："
+                           "明文请求里密钥会落在对方服务器的访问日志。"
+                           "建议把密钥移到 headers（注册文档 §四.3）")
+
+        # allow_internal_ips＝整段地址判据关掉（仅调试面用），生产走默认 False
+        if self.allow_internal_ips:
+            return True, ""
+
+        hostname = parsed.hostname or ""
+        if not hostname:
+            return False, "URL 缺少主机名"
+        if hostname == "localhost" or hostname.endswith(".localhost"):
+            return False, f"不允许访问回环域名: {hostname}"
+
+        try:
+            ips: list[str] = [str(ipaddress.ip_address(hostname))]
+        except ValueError:
+            # 不是字面 IP：⛔ 就此跳过——域名必须先解析再判（裁定 §二，历史洞就在这里）
+            ips = _resolve_ips(hostname)
+            if not ips:
+                return False, f"域名解析失败，按 fail-closed 拒绝: {hostname}"
+
+        for candidate in ips:
             try:
-                ip = ipaddress.ip_address(hostname)
-                for net in _PRIVATE_NETS:
-                    if ip in net:
-                        return False, f"不允许访问内网地址: {hostname}"
+                addr = ipaddress.ip_address(candidate)
             except ValueError:
-                # 不是 IP 地址，是域名，跳过检查
-                pass
-        
+                return False, f"解析结果不是 IP 地址，拒绝放行: {hostname} -> {candidate}"
+            for net in _HARD_REJECT_NETS:
+                if addr in net:
+                    return False, f"不允许访问该地址: {hostname} -> {candidate}（{net}）"
+
         return True, ""
     
     def _validate_cron(self, cron_expr: str) -> str:

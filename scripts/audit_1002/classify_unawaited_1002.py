@@ -49,8 +49,11 @@ PKG = "butler"
 # 批5 之后普查在册的 30 枚（原样抄自台账 §6；行号漂了我自己报 DRIFT，⛔ 手改名单）
 SITES = [
     ("api/agent_routes.py", 159, "delete_alias"),
-    ("api/cron_task_routes.py", 58, "register_api"),
-    ("api/cron_task_routes.py", 72, "unregister_api"),
+    # 1010-b179-REANCHOR 58→66 / 72→80：批179（DCD 合并裁定 §一.2 接线）在 register_api 的
+    #   `executor.register_api(...)` 上方净插 8 行 URL 判据，两条调用点本体一字未动
+    #   （CronTaskExecutor.register_api/unregister_api 仍是同步体 ⇒ 判定不变）。
+    ("api/cron_task_routes.py", 66, "register_api"),
+    ("api/cron_task_routes.py", 80, "unregister_api"),
     # 批164 re-anchor 794→802：D5 分叉收编在 role_state_file() 上方净插 8 行，调用点本体一字未动
     # （sqlite3 Connection.execute 仍是 EXTERNAL_SYNC 那条腿）。
     ("api/doubao_webhook.py", 802, "execute"),
@@ -73,9 +76,14 @@ SITES = [
     ("app.py", 794, "start"),
     ("app.py", 809, "start"),
     ("app.py", 817, "start"),
-    ("app.py", 847, "stop"),
-    ("app.py", 850, "stop"),
-    ("app.py", 854, "shutdown"),
+    # 1010-b179-REANCHOR 847→865 / 850→868 / 854→872：**本节口径覆盖批177 的落点登记**——
+    #   漂移源＝批177（《缺陷汇总》合并行 #11「关停不收尾」三条腿）在 mqtt.stop() 上方净插 18 行
+    #   af_bridge/ilink_bridge/tts.queue 三段收尾。接收者逐枚现读（⛔ 靠行号顺序猜）：
+    #   865=mqtt.stop()、868=rt.xiaomi_ear.stop()、872=rt._sched.shutdown(False)
+    #   ⇒ 前两枚 SYNC_OK、末枚 APScheduler 外部同步 EXTERNAL_SYNC，判定与重钉前一致。
+    ("app.py", 865, "stop"),
+    ("app.py", 868, "stop"),
+    ("app.py", 872, "shutdown"),
     ("core/dialog.py", 513, "notify"),
     # 批165 re-anchor 245→260 / 253→268：形状分支在它们上方净插 15 行，调用点本体一字未动
     # （sqlite3 Connection.execute 与 write_failures.record 仍是原那两条腿）。
