@@ -49,6 +49,15 @@ def get_conn() -> sqlite3.Connection:
     return singleton.init(globals(), "_conn", _build_conn)
 
 
+def close_conn() -> None:
+    """释放进程级缓存连接（批186·P1-11）：关停／换 DATA_DIR／测试临时目录里的句柄要收得回来。
+
+    真身在 `butler.core.singleton.release`——与 `get_conn` 共用同一条（模块, 全局名）锁，
+    站点⛔ 各写一遍关锁＋置 None。释放后 `get_conn()` 会重建（懒单例语义不变）。
+    """
+    singleton.release(globals(), "_conn")
+
+
 def _build_conn() -> sqlite3.Connection:
     s = get_settings()
     Path(s.data_dir).mkdir(parents=True, exist_ok=True)

@@ -28,6 +28,11 @@ D15 记为「批19 修的是 `store/db.py`，同族其余站点未逐枚点开�
 好码里只有 1 枚进得来、等满时限。运行时腿＝真临时 sqlite（`config._settings` 钉 tmp＋站点 `_conn = None`），
 ⛔ 碰现网库、⛔ mock 掉我要验的那一层。
 命名纪律：全部 `unittest.TestCase` 方法（⛔ 模块级 `test_*`，discover 不 import pytest 时会静默收下）。
+
+批186 追加（本节口径覆盖上文「legs 9-11」的分母）：`SingletonHelperTest` 末尾两腿
+`test_release_*`＝helper 的对面那半条腿（`init` 有建、`release` 有拆）。HEAD 现读
+`butler/core/singleton.py` 只有 `init` ⇒ 这两腿红因＝`AttributeError: module has no attribute 'release'`，
+同样⛔ 当「bug 成立」的证据，只当「新能力缺席」的证据。
 """
 from __future__ import annotations
 
@@ -436,6 +441,31 @@ class SingletonHelperTest(unittest.TestCase):
         self.assertIsNone(gl["_thing"], "工厂抛错后全局上留了东西＝坏对象被永久缓存")
         ok = helper.init(gl, "_thing", lambda: "good")
         self.assertEqual(ok, "good", "抛错后第二次调用没能重建")
+
+    def test_release_closes_and_clears_the_global(self):
+        """批186 新能力腿：`init` 有对面那半条腿＝`release`（HEAD 上它不存在＝AttributeError）。"""
+        helper = self._helper()
+        closed = []
+
+        class Closable:
+            def close(self):
+                closed.append(1)
+
+        gl = {"__name__": "b75_fake_module", "_thing": None}
+        helper.init(gl, "_thing", Closable)
+        self.assertTrue(helper.release(gl, "_thing"), "有缓存却报没释放")
+        self.assertIsNone(gl["_thing"], "release 后全局仍挂着对象＝句柄没交出去")
+        self.assertEqual(len(closed), 1, f"close 腿被跑了 {len(closed)} 次")
+
+    def test_release_is_idempotent_and_tolerates_unclosable_value(self):
+        """空缓存⛔ 抛；值没有 `close()`（Settings／纯对象站点）也必须能清掉。"""
+        helper = self._helper()
+        gl = {"__name__": "b75_fake_module", "_thing": None}
+        self.assertFalse(helper.release(gl, "_thing"), "本来就没缓存却报释放成功")
+        gl["_thing"] = object()
+        self.assertTrue(helper.release(gl, "_thing"), "没有 close 腿的值就清不掉")
+        self.assertIsNone(gl["_thing"])
+        self.assertFalse(helper.release(gl, "_thing"), "第二次 release 必须 False（幂等）")
 
 
 if __name__ == "__main__":

@@ -875,6 +875,21 @@ def _build_app() -> Starlette:
             from butler.store.db import close
 
             close()
+            # 批186·P1-11：关停此前只关 `store.db` 一枚，另外八枚进程级缓存连接（各自一条
+            # `sqlite3.connect`，同一把 `singleton` 锁）没人收，只能等进程退出由 OS 回收——
+            # 换 DATA_DIR／重建时旧句柄占着 WAL 与 db 文件。释放腿真身在 `core/singleton.release`。
+            from butler.core import decision_store, notification_store, pwa_chat_store, user_location
+            from butler.ha_tools import whitelist
+            from butler.proactive import engine as proactive_engine
+            from butler.store import task_store
+            from butler.timeseries import store as timeseries_store
+
+            for _m in (decision_store, notification_store, pwa_chat_store, user_location,
+                       whitelist, proactive_engine, task_store, timeseries_store):
+                try:
+                    _m.close_conn()
+                except Exception as e:
+                    logger.warning("store conn release failed: %s %s", _m.__name__, e)
 
     app = Starlette(
         routes=routes,

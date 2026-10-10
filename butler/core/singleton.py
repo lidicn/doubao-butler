@@ -62,3 +62,28 @@ def init(gl: dict, var: str, factory: Callable[[], Any]) -> Any:
         value = factory()      # 抛错⇒不发布，全局保持 None
         gl[var] = value
         return value
+
+
+def release(gl: dict, var: str) -> bool:
+    """`init` 的对面那半条腿：把已发布的全局单例关掉并从全局上摘下来。
+
+    站点⛔ 各写一遍（批186·P1-11）：8 枚 sqlite 缓存连接此前只有 `init` 有、`release` 没，
+    于是关停／换 DATA_DIR／测试在临时目录里造完连接都收不回来，只能等 GC（Windows 上
+    `unlink` 直接 `WinError 32`，WAL 文件被占着）。
+
+    与 `init` 共用同一条（模块, 全局名）锁：⛔ 另起一把，否则「A 线程刚过 `if _conn is not None`
+    热路径取值」与「B 线程 close」能同时发生。先置 None 再 close：close 抛错时全局也绝不
+    残留一条半死缓存，下一次 `init` 照样能重建。值没有 `close()`（`Settings`／纯对象站点）
+    只摘不关。返回 True＝确实摘掉了一枚；False＝本来就没缓存（幂等，⛔ 抛）。
+    """
+    if gl.get(var) is None:
+        return False
+    with _lock_for(lock_key(gl, var)):
+        value = gl.get(var)
+        if value is None:                # 等锁期间可能已被别处释放
+            return False
+        gl[var] = None
+        close = getattr(value, "close", None)
+        if callable(close):
+            close()
+    return True

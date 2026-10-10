@@ -106,8 +106,15 @@ SITES = [
     ("notify/router.py", 327, "notify"),
     # 批167 re-anchor 301→315 / 364→378：D15 收尾把 get_conn 改成双检锁工厂，净插 14 行，
     # `c.execute(` 两条腿本体一字未动。
-    ("proactive/engine.py", 315, "execute"),
-    ("proactive/engine.py", 378, "execute"),
+    # 1010-b186-REANCHOR 315→324 / 378→387：**本节口径覆盖批167 的落点登记**——漂移源＝批186
+    #   （P1-11 释放腿）在 `def _build_conn` 上方净插 9 行（`:52-60 close_conn` 委托
+    #   `singleton.release`），def 本体一字未动。接收者逐枚点开（⛔ 靠 +9 算术）：
+    #   :324＝`c = get_conn():323` 之后的 INSERT INTO proactive_inquiries 腿（包围函数
+    #   `async def create_inquiry`），:387＝同函数族里的 UPDATE … WHERE id=? 腿
+    #   （`:376 row = c.execute` 取到 row 后由 :387 改写）。两枚接收者仍是
+    #   `sqlite3.Connection` ⇒ 判定照旧 EXTERNAL_SYNC。
+    ("proactive/engine.py", 324, "execute"),
+    ("proactive/engine.py", 387, "execute"),
     # 411→424：批10（裁②）在 run() 里加模式闸门 +13 行，_push_tv 内的 rt.tv.notify 随之推移。
     # 1009-b6-REANCHOR: _push_tv 内 rt.tv.notify 424→429（批75/批135 推移）。
     # 1010-b169-REANCHOR: 429→435（批169 在 run() 的当日额度腿净插 6 行，_push_tv 本体一字未动；

@@ -13,6 +13,7 @@ import types
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import butler.store.db as db_mod  # noqa: E402  批186·P1-11：tearDown 收进程级缓存连接
 
 
 class FakeLLM:
@@ -82,6 +83,13 @@ class FakeLocator:
 
 class TestDecisionEngine(unittest.TestCase):
     """决策引擎全流程回归：9 个断言顺序执行（与原脚本 main() 同构）。"""
+
+    def tearDown(self):
+        # 批186·P1-11：`_conn` 挂在模块全局上长期持有，不收 ⇒ `TemporaryDirectory` 退出时
+        # Windows unlink 报 `PermissionError [WinError 32]` ＋ `ResourceWarning: unclosed database`
+        # （21:36:32Z 现读）。放在 tearDown 而⛔ with 块末尾：断言中途红也必须把腿收回来，
+        # 否则 WinError 32 盖在真红灯上。
+        db_mod.close()
 
     def test_decision_engine_full_flow(self):
         with tempfile.TemporaryDirectory(prefix="butler_decision_test_") as tmp:
@@ -169,6 +177,10 @@ class TestDecisionEngine(unittest.TestCase):
             self.assertIn("speak", actions)
             self.assertIn("notify", actions)
             self.assertIn("error", actions)
+
+            # 批186·P1-11：with 退出＝TemporaryDirectory 立刻 unlink，句柄必须在它之前收；
+            # `repo.get_conn` 是 `store.db.get_conn` 的按名引用，收的就是同一条 `_conn`。
+            db_mod.close()
 
         # J6: with 块退出后 TemporaryDirectory 自动清理
         self.assertFalse(os.path.exists(tmp),
