@@ -6,12 +6,17 @@ from pathlib import Path
 from threading import Lock
 
 from butler.core import singleton
+from butler.core import data_paths
 from butler.core.atomic_json import read_json_object, write_json_atomic
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.core.aliases")
 
-ALIAS_FILE = Path("/app/data/device_aliases.json")
+def alias_file() -> Path:
+    """批164 D5：惰性现取（模块级死值＝写方跟 DATA_DIR、读方跟 /app/data 的那条分叉腿）。"""
+    return data_paths.data_file("device_aliases.json")
+
+
 _lock = Lock()
 
 
@@ -24,7 +29,7 @@ class AliasStore:
 
     def _load(self):
         # 判定口径走收敛尺子 read_json_object（批70b），⛔ 第 N 份自家 try/except
-        data, unreadable = read_json_object(ALIAS_FILE)
+        data, unreadable = read_json_object(alias_file())
         self.unreadable = unreadable
         self.aliases = data
         if not unreadable and data:
@@ -34,11 +39,12 @@ class AliasStore:
         if self.unreadable:
             # 写侧拒绝必须自己喊：learn/delete 的「成功」都建立在整份覆盖上
             logger.error("device_aliases.json unreadable, refusing full overwrite that would "
-                         "clear the whole alias store: %s", ALIAS_FILE)
+                         "clear the whole alias store: %s", alias_file())
             return False
-        ALIAS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        target = alias_file()
+        target.parent.mkdir(parents=True, exist_ok=True)
         # 写 tmp 再 os.replace：就地截断写＝崩溃留半个 JSON，下次 _load 静默把别名库清零（同款正解见 api/deps.py:56-59）。
-        write_json_atomic(ALIAS_FILE, self.aliases)
+        write_json_atomic(target, self.aliases)
         return True
 
     def learn(self, user_text: str, entity_id: str, domain: str, service: str):

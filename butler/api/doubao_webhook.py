@@ -47,6 +47,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 from starlette.responses import JSONResponse
 
+from butler.core import data_paths
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
 from butler.store import repo
@@ -55,9 +56,16 @@ from butler.notifier.app import is_self_push
 logger = get_logger("butler.doubao_webhook")
 
 
+def role_state_file() -> Path:
+    """批164 D5（本仓最重的一枚分叉）：这张档由 `roles/state.py` 与 `memory/feeder.py` 按
+    `settings.data_dir` 写，读侧⛔ 再烤死 `/app/data`——两份物理文件 ⇒ 反向查角色恒为 None
+    ⇒ 手机端消息被静默丢弃（不崩溃，只是不见了）。"""
+    return data_paths.data_file("role_state.json")
+
+
 def _conversation_to_role(conversation_id: str) -> str | None:
     """根据 conversation_id 反向查找角色 ID（读 role_state.json）。"""
-    state_path = Path("/app/data/role_state.json")
+    state_path = role_state_file()
     if not state_path.exists():
         return None
     try:

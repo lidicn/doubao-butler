@@ -18,12 +18,16 @@ import json
 import time
 from pathlib import Path
 
+from butler.core import data_paths
 from butler.core.atomic_json import write_json_atomic
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.core.fast_routes")
 
-ROUTES_FILE = Path("/app/data/fast_routes.json")
+
+def routes_file() -> Path:
+    """批164 D5：惰性现取，⛔ 模块级死值。"""
+    return data_paths.data_file("fast_routes.json")
 
 
 class FastRouteStore:
@@ -34,9 +38,10 @@ class FastRouteStore:
         self._load()
 
     def _load(self):
-        if ROUTES_FILE.exists():
+        target = routes_file()
+        if target.exists():
             try:
-                with open(ROUTES_FILE, encoding="utf-8") as f:
+                with open(target, encoding="utf-8") as f:
                     data = json.load(f)
                 if not isinstance(data, list):
                     raise ValueError("fast_routes.json 顶层不是数组")
@@ -58,11 +63,12 @@ class FastRouteStore:
         if self.unreadable:
             # 写侧拒绝要自己留痕：命中计数被拒＝现场保住了，但这次「保存」没成
             logger.error("fast_routes.json unreadable, refusing to overwrite the scene with "
-                         "builtin/incomplete rules: %s", ROUTES_FILE)
+                         "builtin/incomplete rules: %s", routes_file())
             return False
-        ROUTES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        target = routes_file()
+        target.parent.mkdir(parents=True, exist_ok=True)
         # 表行 127 T-06 的损坏半：就地截断写崩在中途＝整个规则文件只剩半截（性能半另议，见台账 §18 ⛔清单）
-        write_json_atomic(ROUTES_FILE, self.routes)
+        write_json_atomic(target, self.routes)
         return True
 
     def _builtin(self) -> list[dict]:

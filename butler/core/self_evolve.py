@@ -10,10 +10,15 @@ import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from butler.core import data_paths
 from butler.logging_setup import get_logger, warn_throttled
 
-DB_PATH = Path("/app/data/butler.db")
 logger = get_logger("butler.core.self_evolve")
+
+
+def db_path() -> Path:
+    """批164 D5：butler.db 路径惰性现取（⛔ 模块级 `/app/data` 死值）。"""
+    return data_paths.data_file("butler.db")
 
 
 def analyze_llm_traces(min_count: int = 3) -> list[dict]:
@@ -31,7 +36,7 @@ def analyze_llm_traces(min_count: int = 3) -> list[dict]:
       }
     ]
     """
-    db = sqlite3.connect(str(DB_PATH))
+    db = sqlite3.connect(str(db_path()))
     rows = db.execute(
         "SELECT user_text, tool_calls, steps_json FROM agent_traces "
         "WHERE llm_calls > 0 AND status = 'ok' AND source != 'webui' "

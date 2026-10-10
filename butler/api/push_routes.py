@@ -8,13 +8,17 @@ from pathlib import Path
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.core import data_paths
 from butler.core.atomic_json import write_json_atomic
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
 
 logger = get_logger("butler.api.push")
 
-SKILL_DIR = Path("/app/data/skills/user")
+
+def skill_dir() -> Path:
+    """批164 D5：用户技能目录惰性现取（⛔ 模块级 `/app/data` 死值）。"""
+    return data_paths.data_file("skills", "user")
 
 
 async def push_channels(request):
@@ -67,8 +71,9 @@ async def push_skills(request):
         return g
 
     skills = []
-    if SKILL_DIR.exists():
-        for f in sorted(SKILL_DIR.glob("*.json")):
+    target = skill_dir()
+    if target.exists():
+        for f in sorted(target.glob("*.json")):
             try:
                 with open(f, "r", encoding="utf-8") as fp:
                     d = json.load(fp)
@@ -114,7 +119,7 @@ async def push_skill_update(request):
         return g
 
     skill_id = request.path_params.get("skill_id", "")
-    skill_file = SKILL_DIR / f"{skill_id}.json"
+    skill_file = skill_dir() / f"{skill_id}.json"
 
     if not skill_file.exists():
         return err(f"skill not found: {skill_id}", 404)
