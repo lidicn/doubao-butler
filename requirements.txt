@@ -13,7 +13,7 @@ pycryptodome==3.20.0
 cryptography==43.0.0
 aiohttp==3.9.5
 
-# D20 备注（2026-10-09 现读核实）：
+# D20 备注（2026-10-09 现读核实；fastapi 那条 2026-10-10 批171 复核后重写）：
 # - aiohttp==3.9.5 = 活容器 pip freeze 现读值，6 个 butler/ 模块直接 import（af_bridge/briefing/event_stream/tts_baidu/xiaomi_ear/autoflow_propose）
 # - requests：仅 scripts/xiaomi_token_refresh.py（宿主机手工工具）使用；活容器实测无此包且不跑该脚本 ⇒ ⛔ 进镜像，用法见脚本 docstring
-# - fastapi：唯一 import 者是 butler/api/people_routes.py（全仓 0 挂载点/0 前端调用）⇒ 处置归 DCD 裁定（见 doc/决策申请/），裁定前不为其加依赖
+# - fastapi：唯一 import 者是 scripts/contrib/people_routes.py——DCD 20261008「DB 孤儿资产处置」裁乙已把它挪出 butler/（执行 commit cfa55a6），该文件头注自标「未接线半成品」；2026-10-10 现读 butler/ 内 0 枚 fastapi 进口者 ⇒ 裁已下、仍⛔ 为其加依赖，动这条前先跑 tests/test_audit_1010_batch171_requirements_notes.py
