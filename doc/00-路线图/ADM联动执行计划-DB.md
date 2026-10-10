@@ -146,7 +146,7 @@ DB 是**交互中枢**：用户/设备经 DB 进入生态，DB 编排"感知→�
 
 **homesdk 落地（PR-A/B 已完成，PR-C1/C2 部分）**：
 - PR-A URL 寻址收敛：✅ 5 处硬编码 → `homesdk.http.ma_url()+join_url()`，grep 归零
-- PR-B 时区收敛：✅ 7 处 `ZoneInfo("Asia/Shanghai")`/`timedelta(hours=8)` → `homesdk.time.house_now()/house_tz()`，grep 归零
+- PR-B 时区收敛：✅ 7 处 `ZoneInfo("Asia/Shanghai")`/`timedelta(hours=8)` → `homesdk.time.house_now()/house_tz()`，grep 归零；收尾（批152）把剩下的 6 处裸 `Asia/Shanghai` 字面量（`app.py` 调度器 `timezone=` 与简报日志标签、`core/agent.py` 提示词标签＋注释、`llm_decide/engine.py`、`llm_decide/mock.py` 提示词标签）改为现取 `homesdk.time.house_tz_name()`，`grep -rn "Asia/Shanghai" butler/ --include=*.py` 归零（默认值仍是北京，未配置时行为不变）；门 `tests/test_audit_1010_batch152_tz_label_convergence.py`
 - PR-C1 token 收敛配置：✅ svc_ 令牌已切换（config 层字段名暂保留 butler/app 两键，值同一 svc_ 令牌）
 - PR-C2 鉴权头收编 homesdk.auth：⏳ 依赖 homesdk 0.3.2 给 `require_auth_headers` 加 `token_key=` 覆盖参数
 
@@ -323,7 +323,7 @@ DB 是**交互中枢**：用户/设备经 DB 进入生态，DB 编排"感知→�
   5. `triggers/engine.py:16` `_CST = timezone(timedelta(hours=8))` → 删，改用 `house_tz()`
   6. `cron_task.py:509` `now_local = dt.datetime.now() + tz_offset` → `house_now()`
 - **加 import**：`from homesdk.time import house_now, house_tz`（各文件头）；删只为这一处存在的 `from zoneinfo import ZoneInfo` / `timedelta`
-- **验收命令**：`grep -rn "ZoneInfo(\"Asia/Shanghai\")" butler/` → **0**；`grep -rn "timedelta(hours=8)" butler/` → **0**；`grep -rn "house_now" butler/` → ≥6
+- **验收命令**：`grep -rn "ZoneInfo(\"Asia/Shanghai\")" butler/` → **0**；`grep -rn "timedelta(hours=8)" butler/` → **0**；`grep -rn "Asia/Shanghai" butler/ --include=*.py` → **0**（批152 收尾后新增这条，裸标签也算未收敛）；`grep -rn "house_now" butler/` → ≥6
 - 若某处 `now` 是"纯展示、不进任何跨仓/时间轴判定"且想留本地时间，须在注释**显式登记理由**（禁止静默留硬编码）。
 
 #### PR-C1：token 收敛（butler+app → 单一 svc_ 令牌）——纯 DB 配置，无 homesdk
