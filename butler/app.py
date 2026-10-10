@@ -844,6 +844,24 @@ def _build_app() -> Starlette:
                     await asyncio.wait_for(_pt, timeout=2.0)
                 except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
                     _pt.cancel()          # 超时没收回＝再钉一次取消标志，⛔ 让收尾卡在这里
+            # 归档《缺陷汇总》合并行 #11「关停不收尾」的三条腿（批177）：
+            # 三条都排在 mqtt.stop() 与 close() 之前——晚一步就是往已关的通道里写。
+            # 每条各自吞异常并记 WARNING：关停腿⛔ 因为一个收尾失败而卡死后面的收尾。
+            try:
+                from butler import af_bridge  # 关停腿自带导入：⛔ 依赖启动腿那一次是否走到
+                await asyncio.wait_for(af_bridge.stop(), timeout=2.0)
+            except Exception as e:
+                logger.warning("af_bridge stop failed: %s", e)
+            try:
+                if getattr(rt, "ilink_bridge", None) is not None:
+                    rt.ilink_bridge.stop()
+            except Exception as e:
+                logger.warning("ilink bridge stop failed: %s", e)
+            try:
+                if getattr(rt, "tts", None) is not None:
+                    await asyncio.wait_for(rt.tts.queue.shutdown(), timeout=2.0)
+            except Exception as e:
+                logger.warning("playback queue shutdown failed: %s", e)
             mqtt.stop()
             try:
                 if hasattr(rt, "xiaomi_ear"):

@@ -96,6 +96,10 @@ async def stop() -> None:
     _running = False
     if _loop_task:
         _loop_task.cancel()
+        try:
+            await _loop_task
+        except asyncio.CancelledError:
+            pass
     logger.info("af_bridge stopped")
 
 
