@@ -12,7 +12,13 @@ brain 配置：
   ignore_domains: 忽略的域列表（默认 ["automation", "script", "scene", "zone", "person", "sun", "weather"]）
   ignore_entities: 忽略的实体 ID 列表（支持前缀匹配）
 
-输出：巡检报告文本，由 runner 按角色 output_devices 分发（小爱 TTS 播报）。
+输出：巡检报告文本，由 runner 按角色 output_devices 分发（小爱 TTS 播报）；
+定时腿（`app.py:_scheduled_device_inspection`）走 Bark。批168 起报告⛔ 再说四种谎：
+  · 电量 0%（＝彻底没电）单列一档（旧谓词 `0 < level` 把它整档吞掉）；
+  · 电量传感器读不出数当场计数（`sensor` 域在 ignore 名单里，不在这里出声就全屋无人知晓）；
+  · 掉线按**设备**归并（一台音箱的多个虚拟开关⛔ 各占一行、占满前 5 个名额）；
+  · 房间归属拿不到时写「判断不了」，⛔ 把一个从没跑成的检测算进「正常」。
+  文案面向出资人：⛔ 出现「实体／域／occupancy／404／数据面」这类术语。
 """
 from __future__ import annotations
 
@@ -68,8 +74,12 @@ class HAInspectionEngine:
             return SkillResult(ok=False, error=f"HA 连接失败: {e}")
 
         if not states:
-            return SkillResult(ok=True, text="HA 无设备数据，巡检完成。",
-                               meta={"engine": "ha_inspection", "total": 0})
+            return SkillResult(
+                ok=True,
+                text="设备巡检跑不成：HA 一个设备状态都没回，是数据源出了问题，"
+                     "不代表家里一切正常。",
+                meta={"engine": "ha_inspection", "total": 0, "data_plane_empty": True},
+            )
 
         # 按域分组
         by_domain: dict[str, list[dict]] = {}
@@ -86,24 +96,38 @@ class HAInspectionEngine:
         issues: list[str] = []
         details: dict = {"total_entities": len(states), "checked_domains": list(by_domain.keys())}
 
-        # 1. 设备掉线检测（只检查实际设备域）
+        # 1. 设备掉线检测（只检查实际设备域；按设备归并成一行）
         if "offline" in checks:
-            offline = []
+            offline_groups: dict[str, int] = {}
+            offline_entities = 0
             for domain, entities in by_domain.items():
-                if domain in _OFFLINE_CHECK_DOMAINS:
-                    for st in entities:
-                        state = (st.get("state") or "").lower()
-                        if state in ("unavailable", "unknown"):
-                            name = (st.get("attributes") or {}).get("friendly_name") or st["entity_id"]
-                            offline.append(name)
-            if offline:
-                issues.append(f"发现 {len(offline)} 个设备掉线：{('、'.join(offline[:5]))}{'等' if len(offline) > 5 else ''}")
-                details["offline_count"] = len(offline)
-                details["offline_devices"] = offline[:10]
+                if domain not in _OFFLINE_CHECK_DOMAINS:
+                    continue
+                for st in entities:
+                    state = (st.get("state") or "").lower()
+                    if state not in ("unavailable", "unknown"):
+                        continue
+                    name = (st.get("attributes") or {}).get("friendly_name") or st["entity_id"]
+                    offline_entities += 1
+                    # 米家形制＝「设备名␣␣部件名」：一台音箱的多个虚拟开关算同一台设备
+                    key = name.split("  ")[0].strip() if "  " in name else name
+                    offline_groups[key] = offline_groups.get(key, 0) + 1
+            if offline_entities:
+                shown = ["%s×%d" % (k, n) if n > 1 else k
+                         for k, n in sorted(offline_groups.items(),
+                                            key=lambda x: (-x[1], x[0]))]
+                issues.append("发现 %d 台设备掉线（合计 %d 处没信号）：%s%s" % (
+                    len(offline_groups), offline_entities,
+                    "、".join(shown[:5]), "等" if len(shown) > 5 else ""))
+                details["offline_count"] = offline_entities
+                details["offline_device_groups"] = len(offline_groups)
+                details["offline_devices"] = shown[:10]
 
-        # 2. 低电量检测（直接从所有 states 查 sensor 域）
+        # 2. 电量检测（直接从所有 states 查 sensor 域；0%、低电量、取不到读数各一档）
         if "low_battery" in checks:
-            low_bat = []
+            dead_bat: list[str] = []
+            low_bat: list[str] = []
+            unreadable_bat = 0
             for st in states:
                 eid = st.get("entity_id", "")
                 if not eid.startswith("sensor."):
@@ -112,24 +136,50 @@ class HAInspectionEngine:
                 # 电池传感器：device_class=battery 或 entity_id 含 battery
                 is_battery = (attrs.get("device_class") == "battery" or
                               "battery" in eid.lower())
-                if is_battery:
-                    try:
-                        level = float(st.get("state") or 0)
-                        if 0 < level < battery_threshold:
-                            name = attrs.get("friendly_name") or eid
-                            low_bat.append(f"{name}({level:.0f}%)")
-                    except (ValueError, TypeError):
-                        pass
+                if not is_battery:
+                    continue
+                raw = (st.get("state") or "").strip()
+                if raw == "" or raw.lower() in ("unavailable", "unknown"):
+                    # 「读不出来」≠「没有」：这批设备在掉线清单里也是隐身的（sensor 被 ignore）
+                    unreadable_bat += 1
+                    continue
+                try:
+                    level = float(raw)
+                except (ValueError, TypeError):
+                    continue
+                name = attrs.get("friendly_name") or eid
+                if level <= 0:
+                    dead_bat.append("%s(0%%)" % name)
+                elif level < battery_threshold:
+                    low_bat.append("%s(%.0f%%)" % (name, level))
+            if dead_bat:
+                issues.append("发现 %d 个设备电量已耗尽（0%%）：%s%s" % (
+                    len(dead_bat), "、".join(dead_bat[:5]), "等" if len(dead_bat) > 5 else ""))
+                details["dead_battery_count"] = len(dead_bat)
+                details["dead_battery_devices"] = dead_bat[:10]
             if low_bat:
-                issues.append(f"发现 {len(low_bat)} 个设备低电量：{('、'.join(low_bat[:5]))}{'等' if len(low_bat) > 5 else ''}")
+                issues.append("发现 %d 个设备低电量：%s%s" % (
+                    len(low_bat), "、".join(low_bat[:5]), "等" if len(low_bat) > 5 else ""))
                 details["low_battery_count"] = len(low_bat)
                 details["low_battery_devices"] = low_bat[:10]
+            if unreadable_bat:
+                issues.append("另有 %d 个设备的电量读不出来（传感器没上数，不是没电）"
+                              % unreadable_bat)
+                details["battery_no_reading_count"] = unreadable_bat
 
-        # 3. 无人房间开灯检测
+        # 3. 无人房间开灯检测（配不上房间的灯＝「无法判定」，⛔ 计入正常）
         if "empty_room_light" in checks:
             empty_lights = []
-            # 获取所有 occupancy 传感器（直接从所有 states 查）
-            occupancy: dict[str, str] = {}  # room -> state
+            unattributed = 0
+            # 房间候选：占用传感器名多为「<设备/房间名>[␣部件名]」，两段都留作键
+            occupancy: dict[str, str] = {}
+
+            def _remember(room: str, state: str) -> None:
+                if not room:
+                    return
+                if occupancy.get(room) != "on":   # 任一来源说「有人」就算有人
+                    occupancy[room] = state
+
             for st in states:
                 eid = st.get("entity_id", "")
                 if not eid.startswith("binary_sensor."):
@@ -137,9 +187,9 @@ class HAInspectionEngine:
                 attrs = st.get("attributes") or {}
                 if attrs.get("device_class") == "occupancy":
                     name = attrs.get("friendly_name") or eid
-                    # 从名称提取房间（如 "客厅 人体传感器" -> "客厅"）
-                    room = name.split()[0] if name else eid
-                    occupancy[room] = (st.get("state") or "").lower()
+                    state = (st.get("state") or "").lower()
+                    _remember(name.split()[0] if name.split() else "", state)
+                    _remember(name, state)
 
             # 检查灯（排除传感器指示灯等非照明设备）
             for st in by_domain.get("light", []):
@@ -152,22 +202,31 @@ class HAInspectionEngine:
                 # 排除指示灯等非照明设备
                 if any(kw in name_lower for kw in _LIGHT_EXCLUDE_KEYWORDS):
                     continue
-                # 从灯名称提取房间
-                room = name.split()[0] if name else ""
-                # 如果该房间有 occupancy 传感器且无人
-                if room in occupancy and occupancy[room] in ("off", "unavailable"):
+                hit = None
+                for room, room_state in occupancy.items():
+                    if room in name and (hit is None or len(room) > len(hit[0])):
+                        hit = (room, room_state)
+                if hit is None:
+                    unattributed += 1
+                elif hit[1] in ("off", "unavailable"):
                     empty_lights.append(name)
 
             if empty_lights:
-                issues.append(f"发现 {len(empty_lights)} 个无人房间开灯：{('、'.join(empty_lights[:5]))}{'等' if len(empty_lights) > 5 else ''}")
+                issues.append("发现 %d 个无人房间开灯：%s%s" % (
+                    len(empty_lights), "、".join(empty_lights[:5]),
+                    "等" if len(empty_lights) > 5 else ""))
                 details["empty_room_light_count"] = len(empty_lights)
                 details["empty_room_lights"] = empty_lights[:10]
+            if unattributed:
+                issues.append("另有 %d 盏开着的灯判断不了房间有没有人"
+                              "（传感器名字里没有房间，这条检测在本家跑不成）" % unattributed)
+                details["light_room_indeterminate"] = unattributed
 
         # 生成报告文本
         if issues:
             text = "设备巡检发现异常：" + "；".join(issues) + "。请及时处理。"
         else:
-            text = "设备巡检完成，所有设备正常，无异常。"
+            text = "设备巡检未发现异常。"
 
         details["issues_count"] = len(issues)
         details["engine"] = "ha_inspection"
