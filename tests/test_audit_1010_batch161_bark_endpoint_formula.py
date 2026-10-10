@@ -1,4 +1,4 @@
-"""批156 验收（先红）：Bark 明文腿的 endpoint 公式——⛔ 把 "push" 当路径段送出去。
+"""批161 验收（先红）：Bark 明文腿的 endpoint 公式——⛔ 把 "push" 当路径段送出去。
 
 现证（2026-10-10 08:0xZ，权威树容器现读，非推断）：
 - `bark.py` 明文腿过去写的是 `push_url = _push_url if _push_url.endswith("/push") else _push_url + "/push"`；
@@ -24,7 +24,7 @@ import types
 import unittest
 from unittest import mock
 
-_TMP = tempfile.mkdtemp(prefix="butler_test_batch156_")
+_TMP = tempfile.mkdtemp(prefix="butler_test_batch161_")
 os.environ.setdefault("DATA_DIR", _TMP)
 os.environ.setdefault("TTS_DIR", _TMP)
 

@@ -157,11 +157,11 @@ class BarkFlushMerged16(unittest.TestCase):
         self.assertIn("ciphertext", rec.calls[0]["data"] or {}, rec.calls[0])
 
     def test_plain_leg_posts_to_device_endpoint(self):
-        """②笼头（批156 改口径）：明文腿打 `{base}/{device_key}`，⛔ 再补 `/push`。
+        """②笼头（批161 改口径）：明文腿打 `{base}/{device_key}`，⛔ 再补 `/push`。
 
         本节口径覆盖批16 原文"明文腿本来就补了 /push"：服务端把第二段当正文，
         补出来的是一条内容为 "push" 的空推送（现证见
-        `tests/test_audit_1010_batch156_bark_endpoint_formula.py` 文档头）。
+        `tests/test_audit_1010_batch161_bark_endpoint_formula.py` 文档头）。
         """
         bark = SpyBark(_BarkSettings(encrypt=False))
         bark.seed("客厅灯关了", "客厅")
