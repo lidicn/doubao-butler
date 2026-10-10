@@ -16,6 +16,7 @@ import time
 
 from butler.core.atomic_json import write_json_atomic
 from butler.logging_setup import get_logger
+from butler.roles.state import merge_and_bind, read_role_state
 
 logger = get_logger("butler.memory.feeder")
 
@@ -42,16 +43,10 @@ class MemoryFeeder:
         return os.path.join(self.rt.settings.data_dir, "role_state.json")
 
     def _read_role_state(self) -> dict:
-        path = self._role_state_path()
-        try:
-            with open(path, encoding="utf-8") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            return {}
-        except Exception as e:
-            # 表行 109 M-09：只捕 FileNotFoundError，半截 JSON 会把异常抛穿成投喂接口全线 500
-            logger.error("role_state.json unreadable, treat as empty: %s", e)
-            return {}
+        # 批162 D2-feeder：收敛到 roles/state.py 的那把尺子（缺档＝空、坏档＝「读不出来」并喊一声）。
+        # 读侧口径与 批70b 一致：兜底空 dict ⛔ 抛穿成投喂接口 500，但坏档时这份内存态不完整，
+        # 整份覆盖由 bind_conversation 走 merge_and_bind 的拒写闸拦住。
+        return read_role_state(self._role_state_path())
 
     def _write_role_state(self, state: dict) -> None:
         # 表行 109 M-09：open(path,"w") + json.dump 先把文件截空再逐块写，崩在中途＝半截 JSON 落在盘上
@@ -64,15 +59,10 @@ class MemoryFeeder:
         return cid if cid else None
 
     def bind_conversation(self, role_id: str, conversation_id: str) -> None:
-        """重新绑定某角色的对话 ID。"""
+        """重新绑定某角色的对话 ID。批162：锁内重读＋并一条＋坏档拒写，⛔ 自己读整份再整份盖。"""
         if not role_id or not conversation_id:
             raise ValueError("role_id and conversation_id required")
-        st = self._read_role_state()
-        st[role_id] = {
-            "conversation_id": conversation_id,
-            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        }
-        self._write_role_state(st)
+        merge_and_bind(self._role_state_path(), role_id, conversation_id)
         logger.info("rebound role %s -> conversation %s", role_id, conversation_id)
 
     # ---------- 投喂 ----------

@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import secrets
 import time
 import uuid
@@ -23,6 +22,7 @@ from typing import Any, Optional
 
 import httpx
 
+from butler.core.atomic_json import read_json_object, write_json_atomic
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.ilink.client")
@@ -46,28 +46,32 @@ class ILinkClient:
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.session_file = self.session_dir / "session.json"
         self._session: dict = {}
+        # 批162 D7：坏档＝「读不出来」，⛔ 当成「没登录过」。本类的写入点都是完整的显式落档
+        # （再登录 / errcode -14 过期 / logout），所以这里只留痕、⛔ 套拒写闸——那份档本来就要整体换掉。
+        self._session_unreadable = False
         self._load_session()
         self._http = httpx.AsyncClient(timeout=40.0)
         # context_token 缓存（按用户）
         self._context_tokens: dict[str, str] = {}
 
     def _load_session(self) -> None:
-        if self.session_file.exists():
-            try:
-                self._session = json.loads(self.session_file.read_text(encoding="utf-8"))
-                logger.info("ilink session loaded: bot_id=%s", self._session.get("ilink_bot_id", "unknown"))
-            except Exception as e:
-                logger.warning("ilink session load failed: %s", e)
-                self._session = {}
+        data, self._session_unreadable = read_json_object(self.session_file)
+        if self._session_unreadable:
+            logger.error("ilink session.json unreadable: treating this process as not logged in "
+                         "while leaving the on-disk bytes untouched: %s", self.session_file)
+            return
+        self._session = data
+        if data:
+            logger.info("ilink session loaded: bot_id=%s", self._session.get("ilink_bot_id", "unknown"))
 
     def _save_session(self) -> None:
         try:
-            self.session_file.write_text(
-                json.dumps(self._session, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            write_json_atomic(self.session_file, self._session)
         except Exception as e:
             logger.warning("ilink session save failed: %s", e)
+            return
+        # 主动落档＝内存态就是一份完整的新档，坏档标记到此为止
+        self._session_unreadable = False
 
     @property
     def base_url(self) -> str:

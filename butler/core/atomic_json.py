@@ -59,3 +59,20 @@ def write_json_atomic(path, data) -> None:
     except Exception:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def write_lines_atomic(path, lines) -> None:
+    """JSONL 那一族的原子写：逐行 + 行尾换行，先写固定名兄弟件再 rename 顶上。
+
+    `write_json_atomic` 吃的是"一个对象"，执行日志（`cron_task/execution_logs.jsonl`）是"一本行"，
+    拿它整本塞进一个 JSON 数组会改文件格式；这里只补"⛔ 就地 `open(path,'w')` 截断"那一条腿。
+    """
+    target = Path(path)
+    tmp = target.with_name(target.name + ".tmp")
+    payload = "".join(str(line).rstrip("\n") + "\n" for line in lines)
+    try:
+        tmp.write_text(payload, encoding="utf-8")
+        os.replace(tmp, target)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise

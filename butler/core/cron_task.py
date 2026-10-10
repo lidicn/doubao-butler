@@ -21,6 +21,8 @@ from homesdk.time import house_now
 
 import httpx
 
+from butler.core.atomic_json import (read_json_object, write_json_atomic,
+                                     write_lines_atomic)
 from butler.logging_setup import get_logger, warn_throttled
 
 logger = get_logger("butler.cron_task")
@@ -51,28 +53,38 @@ class CronTaskExecutor:
         self._apis_file = self._data_dir / "apis.json"
         self._secrets_file = self._data_dir / "secrets.json"
         self._log_file = self._data_dir / "execution_logs.jsonl"
+        # 批162（审计 D 族第一类）：这三枚标记的是「盘上有档、但这档我读不出来」——
+        # 内存态因此不完整，⛔ 再拿它做整份覆盖；缺档＝真没有，首次落盘照旧。
+        self._apis_unreadable = False
+        self._secrets_unreadable = False
+        self._logs_unreadable = False
         self._load_apis()
         self._load_secrets()
         self._load_logs()
     
     def _load_apis(self):
-        """从磁盘加载 API 注册信息。"""
-        try:
-            self._data_dir.mkdir(parents=True, exist_ok=True)
-            if self._apis_file.exists():
-                data = json.loads(self._apis_file.read_text(encoding="utf-8"))
-                self._api_registry = data.get("apis", {})
-                logger.info("cron_task APIs loaded: %d", len(self._api_registry))
-        except Exception as e:
-            logger.warning("failed to load cron_task APIs: %s", e)
-            self._api_registry = {}
-    
+        """从磁盘加载 API 注册信息。批162：坏档要标成「读不出来」，⛔ 当成「一条注册都没有」。"""
+        self._data_dir.mkdir(parents=True, exist_ok=True)
+        data, self._apis_unreadable = read_json_object(self._apis_file)
+        if self._apis_unreadable:
+            logger.error("cron_task apis.json unreadable: registry kept empty and every full "
+                         "overwrite will be refused to preserve the on-disk state: %s",
+                         self._apis_file)
+            return
+        if data:
+            self._api_registry = data.get("apis", {}) or {}
+            logger.info("cron_task APIs loaded: %d", len(self._api_registry))
+
     def _save_apis(self):
-        """保存 API 注册信息到磁盘。"""
+        """保存 API 注册信息到磁盘。读不出的那一档⛔ 整份覆盖（新注册会把旧注册表顶掉）。"""
+        if self._apis_unreadable:
+            logger.error("cron_task apis.json unreadable, refusing full overwrite from "
+                         "incomplete in-memory registry: %s", self._apis_file)
+            return
         try:
             self._data_dir.mkdir(parents=True, exist_ok=True)
             data = {"apis": self._api_registry, "updated_at": datetime.now().isoformat()}
-            self._apis_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            write_json_atomic(self._apis_file, data)
         except Exception as e:
             logger.warning("failed to save cron_task APIs: %s", e)
 
@@ -92,8 +104,12 @@ class CronTaskExecutor:
                             continue
                 logger.info("cron_task execution logs loaded: %d", len(self._execution_log))
         except Exception as e:
-            logger.warning("failed to load cron_task logs: %s", e)
+            # 批162 D9：整本读不出来≠「一条执行日志都没有」。内存态因此不完整，
+            # 超限那次 _rewrite_logs() 若拿它整份覆盖＝把盘上历史截掉。
+            logger.error("cron_task execution logs unreadable, append-only preserved and "
+                         "whole-file rewrite will be refused: %s", e)
             self._execution_log = []
+            self._logs_unreadable = True
 
     def _append_log(self, entry: dict):
         """追加一条日志到磁盘（JSONL）。"""
@@ -109,11 +125,15 @@ class CronTaskExecutor:
             logger.warning("failed to append cron_task log: %s", e)
 
     def _rewrite_logs(self):
-        """重写日志文件（裁剪后）。"""
+        """重写日志文件（裁剪后）。批162 D9：读不出来那一档⛔ 整本覆盖，且截断写成原子写。"""
+        if self._logs_unreadable:
+            logger.error("cron_task execution logs unreadable, refusing whole-file rewrite "
+                         "from incomplete in-memory cache: %s", self._log_file)
+            return
         try:
-            with open(self._log_file, "w", encoding="utf-8") as f:
-                for entry in self._execution_log:
-                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            write_lines_atomic(self._log_file,
+                               [json.dumps(entry, ensure_ascii=False)
+                                for entry in self._execution_log])
         except Exception as e:
             logger.warning("failed to rewrite cron_task logs: %s", e)
     
@@ -143,24 +163,27 @@ class CronTaskExecutor:
             logger.info("API unregistered: %s", api_id)
 
     def _load_secrets(self):
-        """从磁盘加载 Secret Vault。"""
-        try:
-            self._data_dir.mkdir(parents=True, exist_ok=True)
-            if self._secrets_file.exists():
-                self._secrets = json.loads(self._secrets_file.read_text(encoding="utf-8"))
-                logger.info("cron_task secrets loaded: %d keys", len(self._secrets))
-        except Exception as e:
-            logger.warning("failed to load secrets: %s", e)
-            self._secrets = {}
+        """从磁盘加载 Secret Vault。批162 D8：坏档＝「读不出来」，⛔ 当成「vault 是空的」。"""
+        self._data_dir.mkdir(parents=True, exist_ok=True)
+        data, self._secrets_unreadable = read_json_object(self._secrets_file)
+        if self._secrets_unreadable:
+            logger.error("cron_task secrets.json unreadable: vault kept empty and every full "
+                         "overwrite will be refused to preserve the on-disk vault: %s",
+                         self._secrets_file)
+            return
+        if data:
+            self._secrets = data
+            logger.info("cron_task secrets loaded: %d keys", len(self._secrets))
 
     def _save_secrets(self):
-        """保存 Secret Vault 到磁盘。"""
+        """保存 Secret Vault 到磁盘。读不出那一档⛔ 整份覆盖（会把旧凭据全顶掉）。"""
+        if self._secrets_unreadable:
+            logger.error("cron_task secrets.json unreadable, refusing full overwrite from "
+                         "incomplete in-memory vault: %s", self._secrets_file)
+            return
         try:
             self._data_dir.mkdir(parents=True, exist_ok=True)
-            self._secrets_file.write_text(
-                json.dumps(self._secrets, ensure_ascii=False, indent=2),
-                encoding="utf-8"
-            )
+            write_json_atomic(self._secrets_file, self._secrets)
         except Exception as e:
             logger.warning("failed to save secrets: %s", e)
 
