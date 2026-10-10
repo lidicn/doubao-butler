@@ -44,7 +44,7 @@ services:
       # MEMORY_AGENT_URL / MEMORY_AGENT_MCP_URL / MEMORY_AGENT_TOKEN / MEMORY_AGENT_BUTLER_TOKEN
       # HA_URL / HA_TOKEN
       # XIAOMI_SERVICE_TOKEN / XIAOMI_USER_ID / XIAOMI_SSECURITY
-      # BARK_URL / BARK_KEY
+      # BARK_URL / BARK_KEY / BARK_ENCRYPT_KEY / BARK_ENCRYPT_IV
     volumes:
       - ./butler:/app/butler
       - /vol1/1000/docker/doubao-butler/data:/app/data

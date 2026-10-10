@@ -217,6 +217,36 @@ class DocCoverageLeg(unittest.TestCase):
         self.assertEqual(quiet, [], "以下硬门槛键在样例里没有注释说明：%s" % ", ".join(quiet))
 
 
+class FullRosterCoverageLeg(unittest.TestCase):
+    """批184：样例文件的真正用途是「全部可配键的地图」，⛔ 只画四把硬门槛。
+
+    P0-D 那格钉的是「缺了就起不来」的四枚；起得来但静默走默认值的键同样会丢——
+    下一次照样例重建环境的人看不见它们，就永远不会去配（`PRIMARY_MEMBER`、
+    `BARK_ENCRYPT_KEY`／`_IV`、`TVPILOT_HTTP_URL` 都是这么漏的）。
+    量出来的当天：`config.py` 经 `_env*` 读 81 枚，样例只记 45 枚。
+    """
+
+    def test_t13_every_env_read_key_is_documented(self):
+        domain = _env_read_calls(SRC)
+        kv = _documented_keys(ENV_SRC)
+        missing = sorted(domain - set(kv))
+        print("FULLFACE|read=%d|documented=%d|missing=%d" % (len(domain), len(kv), len(missing)))
+        if missing:
+            print("FULLFACE|missing=%s" % ",".join(missing))
+        self.assertEqual(missing, [], ".env.example 未记载代码在读的键：%s" % ", ".join(missing))
+
+    def test_t14_coverage_ruler_calibrated_both_ways(self):
+        """形状尺校准：应放行（记全了⇒0 缺）与应咬（缺的那一枚必须被点名）都要出读数。"""
+        cfg = "s = X(a=_env(\"AAA_KEY\"), b=_env_int(\"BBB_PORT\", 1), c=_env(\"CCC_TOKEN\"))\n"
+        domain = _env_read_calls(cfg)
+        self.assertEqual(domain, {"AAA_KEY", "BBB_PORT", "CCC_TOKEN"})
+        full = _documented_keys("AAA_KEY=1\n# 注释\nBBB_PORT=\nCCC_TOKEN=\n")
+        self.assertEqual(sorted(domain - set(full)), [])
+        partial = _documented_keys("AAA_KEY=1\nBBB_PORT=\n")
+        self.assertEqual(sorted(domain - set(partial)), ["CCC_TOKEN"])
+        self.assertNotIn("ZZZ_KEY", domain, "负控：没被 `_env` 读的键不许进取值域")
+
+
 class ValueShapeLeg(unittest.TestCase):
     """.env.example 是进 git 的样例文件：凭据形状键的值只能是空或占位符。"""
 

@@ -15,7 +15,14 @@ logger = logging.getLogger("butler.config")
 
 
 def _env(key: str, default: str = "") -> str:
-    return os.environ.get(key, default).strip()
+    """读环境变量：空值＝没配 ⇒ 回默认。
+
+    批184 前这里是 `os.environ.get(key, default).strip()`，键写了但值留空就返回空串，
+    默认值形同虚设——而同一个文件里 `_env_int`／`_env_float`（`int("")` 抛异常回默认）、
+    `_env_bool`（空串不在真假词表里，回默认）、`_env_file_defaults`（文档串原文
+    「只收非空值：空值＝没配」）早就按这个口径办事，只有 `_env` 是例外。
+    """
+    return os.environ.get(key, "").strip() or default
 
 
 def _env_int(key: str, default: int) -> int:
