@@ -64,6 +64,18 @@ class HAClient:
         self._xiaomi_token_refresh_task = asyncio.create_task(self._xiaomi_token_refresh_loop())
         logger.info("xiaomi token auto-refresh started (interval=2h)")
 
+    def stop_xiaomi_token_refresh(self) -> None:
+        """批189·P1-11：换票循环（`_xiaomi_token_refresh_loop` 的 `while True`）的停止腿。
+
+        取消后把引用复位：留着那枚 done 任务，下一次 `start_xiaomi_token_refresh` 的
+        「还在跑就跳过」判据会被它骗过去，从此再不刷新。
+        """
+        task = self._xiaomi_token_refresh_task
+        if task is not None and not task.done():
+            task.cancel()
+        self._xiaomi_token_refresh_task = None
+        logger.info("xiaomi token auto-refresh stopped")
+
     async def _xiaomi_token_refresh_loop(self) -> None:
         """后台循环：每 2 小时刷新一次 service_token；失败每 60 秒重试（最多 6 次）。
 

@@ -862,6 +862,21 @@ def _build_app() -> Starlette:
                     await asyncio.wait_for(rt.tts.queue.shutdown(), timeout=2.0)
             except Exception as e:
                 logger.warning("playback queue shutdown failed: %s", e)
+            # 批189·P1-11：起了后台循环却没人停的两条腿。`rt.event_stream`（`app.py:817` 起，
+            # 释放腿 `core/event_stream.py:104` 早就在、此前全仓 0 调用者）与小米换票循环
+            # （`integrations/ha.py:64` 起 `while True` 每 2h 一次，此前连停止 API 都没有）。
+            # 两条都排在 mqtt.stop() 与 close() 之前——event_stream 的持久化腿往 `store.db`
+            # 写 `home_events`、失败还落 `write_failures` 台账，而那两枚正是本函数最后收的连接。
+            try:
+                if getattr(rt, "event_stream", None) is not None:
+                    rt.event_stream.stop()
+            except Exception as e:
+                logger.warning("event_stream stop failed: %s", e)
+            try:
+                if getattr(rt, "ha", None) is not None:
+                    rt.ha.stop_xiaomi_token_refresh()
+            except Exception as e:
+                logger.warning("xiaomi token refresh stop failed: %s", e)
             mqtt.stop()
             try:
                 if hasattr(rt, "xiaomi_ear"):
