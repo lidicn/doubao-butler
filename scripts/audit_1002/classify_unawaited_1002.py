@@ -71,8 +71,10 @@ SITES = [
     ("app.py", 848, "stop"),
     ("app.py", 852, "shutdown"),
     ("core/dialog.py", 513, "notify"),
-    ("core/event_stream.py", 245, "execute"),
-    ("core/event_stream.py", 253, "record"),
+    # 批165 re-anchor 245→260 / 253→268：形状分支在它们上方净插 15 行，调用点本体一字未动
+    # （sqlite3 Connection.execute 与 write_failures.record 仍是原那两条腿）。
+    ("core/event_stream.py", 260, "execute"),
+    ("core/event_stream.py", 268, "record"),
     ("core/perception_learn.py", 192, "execute"),
     ("core/perception_learn.py", 198, "execute"),
     ("core/perception_learn.py", 213, "execute"),

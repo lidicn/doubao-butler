@@ -3,7 +3,8 @@
 职责：
 1. 连接 HA websocket，订阅 state_changed 事件
 2. 过滤出各小爱音箱的 conversation 传感器（device.ha_sensor）
-3. 匹配唤醒词 → 路由到对应角色；没说唤醒词时仅私人助理房间按房间默认角色响应
+3. 匹配唤醒词＝点名才答：命中唤醒词才路由到角色；没说唤醒词的整句⛔ 交给对话引擎
+   （DCD 2026-10-10 件五 乙。角色模式是用户自己「打开某角色」起的续话，属已点名。）
 4. 调用 dialog.on_wakeup 完成对话+播报
 
 与 NR 的关系：NR 不再需要 function 节点做唤醒词匹配，也不需要转发——butler 自己订阅。
@@ -205,10 +206,11 @@ class XiaomiEar:
             await self.rt.dialog.on_wakeup(role.id, room, cleaned, source_device=dev.id, source="xiaoai")
             return
 
-        # 2. 没说唤醒词：仅私人助理房间按房间默认角色响应
+        # 2. 没说唤醒词＝没点名：⛔ 接话（DCD 2026-10-10 件五 乙）。
+        #    dr 仍取＝只把「本来会被答」的那些记下来，⛔ 扩大留痕分母。
         dr = self.rt.dialog.match_role_by_room(room)
         if dr and getattr(dr, "scope", "") == "private":
-            await self.rt.dialog.on_wakeup(dr.id, room, text, source="xiaoai")
+            logger.info("ear mention-suppressed [%s|%s] text=%s", dev.id, room, text[:40])
 
     def _match_open_role(self, text: str):
         """匹配'打开贾维斯'/'打开凯撒'/'打开露娜'等指令，返回对应角色。"""
