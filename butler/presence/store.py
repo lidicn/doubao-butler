@@ -30,6 +30,12 @@ class PresenceStore:
             self._init()
         return self._conn
 
+    def close_conn(self) -> None:
+        """批188·P1-11：实例级缓存连接的释放腿（关停钩子调用；⛔ 只关不清引用，否则重建腿拿不回）。"""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
     def _init(self) -> None:
         c = self._get_conn()
         c.execute("""

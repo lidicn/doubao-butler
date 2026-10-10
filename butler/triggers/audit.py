@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import time
@@ -63,15 +64,26 @@ class TriggerAuditor:
     def _init_db(self) -> None:
         """初始化数据库表。"""
         try:
-            with sqlite3.connect(self.db_path, timeout=10) as conn:
+            # 批188·P1-11：`with sqlite3.connect(...) as conn:` 只提交，⛔ 关连接 ⇒ 收进 closing()
+            with contextlib.closing(sqlite3.connect(self.db_path, timeout=10)) as conn:
                 conn.executescript(_DDL)
                 conn.commit()
             logger.info("trigger_audit table ready at %s", self.db_path)
         except Exception as e:
             logger.warning("trigger_audit init failed: %s", e)
 
-    def _get_conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path, timeout=10)
+    @contextlib.contextmanager
+    def _get_conn(self):
+        """批188·P1-11：本类每次调用都新开一条连接（⛔ 缓存），旧形退出 `with` 后没人关它——
+        `record()` 由 registry 在每次触发执行时调用，定时腿每轮一行，漏的是热路径。
+        内层 `with conn:` 保留调用点的提交／回滚语义（部分读点自带 `commit()`，互不冲突）。
+        """
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def record(self, source_id: str, source_type: str, name: str = "",
                result: str = "success", duration_ms: int = 0,

@@ -891,6 +891,21 @@ def _build_app() -> Starlette:
                 except Exception as e:
                     logger.warning("store conn release failed: %s %s", _m.__name__, e)
 
+            # 批188·P1-11：上面八枚是模块级 `_conn`。另有三条腿收在同一个形制下——
+            # 台账连接 `store/write_failures.py`（模块级，释放腿早就有 `_reset_conn` 却没接进关停）
+            # 与两枚进程级单例 `rt.presence_store`／`rt.inbox` 的实例级 `self._conn`。
+            from butler.store import write_failures
+
+            _rest = [write_failures] + [getattr(rt, _n, None) for _n in ("presence_store", "inbox")]
+            for _m in _rest:
+                if _m is None:
+                    continue          # 启动未到那一行就被关停：没建过的单例⛔ 当成失败
+                try:
+                    _m.close_conn()
+                except Exception as e:
+                    logger.warning("store conn release failed: %s %s",
+                                   getattr(_m, "__name__", type(_m).__name__), e)
+
     app = Starlette(
         routes=routes,
         lifespan=lifespan,

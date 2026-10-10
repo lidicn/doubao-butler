@@ -64,6 +64,12 @@ def _reset_conn() -> None:
     _conn_path = ""
 
 
+def close_conn() -> None:
+    """批188·P1-11：关停钩子的释放腿。`_reset_conn` 本来就在关旧句柄，只是从没接到关停里。"""
+    with _lock:
+        _reset_conn()
+
+
 def _get_conn() -> sqlite3.Connection:
     global _conn, _conn_path
     path = str(db_path())

@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -37,10 +38,18 @@ class NewApiClient:
         self.db_path = db_path
         self.backup_dir = backup_dir or os.path.dirname(db_path)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextlib.contextmanager
+    def _connect(self):
+        """批188·P1-11：`sqlite3.Connection` 的 `with` 只提交／回滚，⛔ 关连接——
+        内层 `with conn:` 保留调用点原来自带的提交语义，外层 `finally` 补上关闭腿。
+        """
         conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _backup(self) -> str:
         """写操作前备份数据库。返回备份文件路径。"""

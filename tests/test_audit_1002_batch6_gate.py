@@ -16,7 +16,7 @@ B. **现网点开的调用点名单**：`gate(butler/, SITES)` 必须 0 枚 ASYN
    且 SYNC_OK=20 / EXTERNAL_SYNC=9（**1009-b6 重钉后口径覆盖 10-02 原读数**：名册 29＝原 30
    减一枚 `subprocess.run` 槽——该调用已重构进 `await ensure_wake_ding`，PM 裁退役；
    sched 两枚因尺子 None-遮蔽盲区修复转 EXTERNAL_SYNC。⛔ 靠"全对"两字过关）。
-   名册里的**行号**是活物：批164／165／166／167／170／179／180／186 各挪过若干枚的落点，
+   名册里的**行号**是活物：批164／165／166／167／170／179／180／186／188 各挪过若干枚的落点，
    每次重钉都在 `SITES` 旁留一行「本节口径覆盖批X 的落点登记」＋接收者现读点开。
    分布 20/9 自 1009-b6 起未动过——动了它必须改本判据与台账，⛔ 顺手把判据改成新读数。
 C. **锚点**：判定所依赖的 12 处 `def` 仍是**同步体**且仍在登记的行号上
@@ -154,7 +154,7 @@ ANCHORS = [
     ("core/aliases.py", "AliasStore", "delete_alias", 99),  # 批164 re-anchor 93→99（D5：别名路径改成惰性 alias_file()）
     ("core/cron_task.py", "CronTaskExecutor", "register_api", 143),  # 批180 re-anchor 140→143（顶部导入 url_guard 净插 3 行，def 本体一字未动）
     ("core/cron_task.py", "CronTaskExecutor", "unregister_api", 162),  # 批180 re-anchor 159→162（同上；批179 那次是 docstring 变两行）
-    ("store/write_failures.py", "", "record", 87),
+    ("store/write_failures.py", "", "record", 93),  # 批188 re-anchor 87→93（新增 `close_conn` 释放腿 6 行；def 本体一字未动，`def_at` 现读 kind=sync）
 ]
 
 
