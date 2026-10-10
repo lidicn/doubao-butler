@@ -23,6 +23,9 @@ import httpx
 
 from butler.core.atomic_json import (read_json_object, write_json_atomic,
                                      write_lines_atomic)
+# 批180（裁定 20261011 合并版 §二-3）：发送前复核用的判据。起名 url_guard 是为了让判据门
+# 能把它桩成确定性读数——⛔ 拿真 DNS 当执行腿的门，门自己会因网络抖动变红。
+from butler.core.cron_validator import validator as url_guard
 from butler.logging_setup import get_logger, warn_throttled
 
 logger = get_logger("butler.cron_task")
@@ -196,6 +199,33 @@ class CronTaskExecutor:
             return self._secrets.get(name, m.group(0))
         return re.sub(r"\{secret:([^}]+)\}", replacer, url)
 
+    def _resolve_headers(self, headers: dict | None) -> dict:
+        """header 值里的 {secret:xxx} 同样替换（裁定 §4.2：不扩这一条，「密钥改走 headers」就是空话）。
+
+        返回**新** dict：⛔ 就地改注册表——那会把明文密钥写进 apis.json，等于换一条通道
+        再造一次泄露。未入库的名字照旧原样发出（由批180 的门钉住）。
+        """
+        resolved = {}
+        for key, value in (headers or {}).items():
+            resolved[key] = self._resolve_url(value) if isinstance(value, str) else value
+        return resolved
+
+    async def _recheck_url(self, api_config: dict) -> str:
+        """发送前复核一次（裁定 §二-3）：注册时点的校验挡不住 DNS 事后改指（rebinding）。
+
+        返回空串＝放行，否则为拒因，调用方落 `failed` 并记原因、⛔ 发出请求。
+        复核吃的是**注册模板**：⛔ 把替换后的成品喂进 DNS 查询与错误文本。
+        """
+        try:
+            valid, reason = await asyncio.to_thread(
+                url_guard.validate_api_url, api_config.get("url") or "")
+        except Exception as e:
+            # 复核器自己炸＝"没判出来"，⛔ 当成"判了放行"（fail-closed 口径与接线那腿一致）
+            return f"发送前复核异常，按 fail-closed 拒绝: {e}"
+        if not valid:
+            return f"发送前复核未通过：{reason}"
+        return ""
+
     def test_api(self, api_id: str) -> dict:
         """直接测试 API 连通性（不经过条件/动作）。同步方法：事件循环内的调用方须自行
         to_thread 包裹（唯一调用方 cron_task_routes 已这么做），否则 asyncio.run 当场报错，
@@ -207,6 +237,10 @@ class CronTaskExecutor:
         api_config = self._api_registry.get(api_id)
         if not api_config:
             return {"ok": False, "error": f"API {api_id} 未注册"}
+        denied = await self._recheck_url(api_config)
+        if denied:
+            logger.warning("cron_task test %s blocked before send: %s", api_id, denied)
+            return {"ok": False, "error": denied}
         try:
             resolved_url = self._resolve_url(api_config["url"])
             method = (api_config.get("method") or "GET").upper()
@@ -214,14 +248,14 @@ class CronTaskExecutor:
             if isinstance(body_raw, dict):
                 body_raw = json.dumps(body_raw)
             resolved_body = self._resolve_url(body_raw) if body_raw else None
+            req_headers = self._resolve_headers(api_config["headers"])
             async with httpx.AsyncClient(timeout=api_config["timeout"]) as client:
                 if method == "POST":
-                    req_headers = dict(api_config["headers"])
                     if resolved_body and "content-type" not in {k.lower() for k in req_headers}:
                         req_headers["Content-Type"] = "application/json"
                     resp = await client.post(resolved_url, headers=req_headers, content=resolved_body)
                 else:
-                    resp = await client.get(resolved_url, headers=api_config["headers"])
+                    resp = await client.get(resolved_url, headers=req_headers)
             return {
                 "ok": resp.status_code == 200,
                 "http_status": resp.status_code,
@@ -341,6 +375,16 @@ class CronTaskExecutor:
             result["reason"] = f"API {api_id} 未注册"
             self._log_execution(skill_id, result)
             return result
+
+        # 发送前复核（裁定 §二-3）：这一腿挡的是「注册之后 DNS 改指」，注册时点那道门管不到。
+        denied = await self._recheck_url(api_config)
+        if denied:
+            result["ok"] = False
+            result["status"] = "failed"
+            result["reason"] = denied
+            logger.warning("cron task %s blocked before send: %s", skill_id, denied)
+            self._log_execution(skill_id, result)
+            return result
         
         # 执行 HTTP 请求（单次，无重试，重试由上层调度器控制）
         # API 节流：同一 api_id 10s 内最多 1 次
@@ -358,6 +402,7 @@ class CronTaskExecutor:
             resolved_url = self._resolve_url(api_config["url"])
             method = (api_config.get("method") or "GET").upper()
             body_template = api_config.get("body", "")
+            req_headers = self._resolve_headers(api_config["headers"])
             async with httpx.AsyncClient(timeout=api_config["timeout"]) as client:
                 if method == "POST":
                     body_raw = api_config.get("body", "")
@@ -365,13 +410,12 @@ class CronTaskExecutor:
                         body_raw = json.dumps(body_raw)
                     resolved_body = self._resolve_url(body_raw) if body_raw else None
                     # 自动补 Content-Type（如果用户没设）
-                    req_headers = dict(api_config["headers"])
                     if resolved_body and "content-type" not in {k.lower() for k in req_headers}:
                         req_headers["Content-Type"] = "application/json"
                     resp = await client.post(resolved_url, headers=req_headers,
                                             content=resolved_body)
                 else:
-                    resp = await client.get(resolved_url, headers=api_config["headers"])
+                    resp = await client.get(resolved_url, headers=req_headers)
                 result["http_status"] = resp.status_code
                 if resp.status_code != 200:
                     result["ok"] = False

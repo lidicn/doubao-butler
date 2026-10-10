@@ -149,8 +149,8 @@ ANCHORS = [
     ("core/xiaomi_ear.py", "XiaomiEar", "start", 30),   # 批166 re-anchor 29→30（件五乙：头注「点名才答」占两行）
     ("core/xiaomi_ear.py", "XiaomiEar", "stop", 37),    # 批166 re-anchor 36→37（同上）
     ("core/aliases.py", "AliasStore", "delete_alias", 99),  # 批164 re-anchor 93→99（D5：别名路径改成惰性 alias_file()）
-    ("core/cron_task.py", "CronTaskExecutor", "register_api", 140),  # 批162 re-anchor 120→140（D 族收编在它们上面加了读侧／拒写闸两条腿）
-    ("core/cron_task.py", "CronTaskExecutor", "unregister_api", 159),  # 批179 re-anchor 158→159（register_api docstring 按裁定 §4.3 改成两行）
+    ("core/cron_task.py", "CronTaskExecutor", "register_api", 143),  # 批180 re-anchor 140→143（顶部导入 url_guard 净插 3 行，def 本体一字未动）
+    ("core/cron_task.py", "CronTaskExecutor", "unregister_api", 162),  # 批180 re-anchor 159→162（同上；批179 那次是 docstring 变两行）
     ("store/write_failures.py", "", "record", 87),
 ]
 

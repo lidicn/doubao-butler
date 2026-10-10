@@ -337,7 +337,10 @@ class MutationControlTests(unittest.TestCase):
         return mod
 
     def _cut(self, source, old, new=""):
-        self.assertIn(old, source, "变异锚点在源码里找不到——源码已变形，本门需要 re-anchor")
+        # ⛔ 用 assertIn：失败时会把整份源码打进读数里。锚点没找到只报锚点。
+        if old not in source:
+            raise self.failureException(
+                f"变异锚点在源码里找不到——源码已变形，本门需要 re-anchor: {old[:70]!r}")
         return source.replace(old, new, 1)
 
     def _assert_matrix(self, name, source, kills, survivors):
