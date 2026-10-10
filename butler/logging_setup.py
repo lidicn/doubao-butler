@@ -4,6 +4,10 @@
 
 WO-DB-102 修复：脱敏从 Filter.filter()（改格式化前的模板串，会吃掉 %s 占位符导致整行丢失）
 改为自定义 Formatter.format()（格式化之后再遮返回值，不碰 record.msg / record.args）。
+
+WO-ME-224-R10 装机（批185）：三形语义——JSON 带空格 `"k": "v"`／紧凑 `"k":"v"`、带引号键名
+`'k': 'v'`、`:` 分隔符原样回填。键侧引号＝`kq`，分隔符＝`sep` 原样写回，值侧引号随 `val`
+整段捕获后成对写回。
 """
 from __future__ import annotations
 
@@ -13,17 +17,41 @@ import sys
 import time
 
 _SENSITIVE_KEYS = (
-    "password", "passwd", "token", "secret", "cookie", "authorization",
+    "password", "passwd", "_pass", "ssecurity", "token", "secret", "cookie", "authorization",
     "api_key", "apikey", "key", "mqtt_password", "ha_token", "web_password",
 )
-_SENSITIVE_RE = re.compile(r"(" + "|".join(_SENSITIVE_KEYS) + r")\s*[:=]\s*['\"]?[^\s'\"]+", re.IGNORECASE)
+# 三处旧洞（WO-ME-224 R10 台账）：
+#   ① 键名后先跟引号的形状（`"api_key": "…"` / `'ha_token': '…'`）旧正则对不上；
+#   ② 替换写成 `\1=***`，把 `key: v` 掩成 `key=***`，掩码后形状变了；
+#   ③ `authorization: Bearer <值>` 只遮到 "Bearer" 这个词，真值留在行里。
+# 值支持 "双引号" / '单引号' / 裸值三种；分隔符原样回填。
+_SENSITIVE_RE = re.compile(
+    r"(?P<key>" + "|".join(_SENSITIVE_KEYS) + r")"
+    r"(?P<kq>[\"']?)"
+    r"(?P<sep>\s*[:=]\s*)"
+    r"(?P<auth>(?:bearer|basic)\s+)?"
+    r"(?P<val>\"[^\"\n]*\"|'[^'\n]*'|[^\s,'\"}\]]+)",
+    re.IGNORECASE,
+)
+
+
+def _mask_match(m) -> str:
+    val = m.group("val")
+    q = val[0] if val[:1] in ("'", '"') else ""
+    masked = f"{q}***{q}" if q else "***"
+    return f"{m.group('key')}{m.group('kq')}{m.group('sep')}{m.group('auth') or ''}{masked}"
+
+
+def _is_sensitive_key(name: str) -> bool:
+    low = name.lower()
+    return any(k in low for k in _SENSITIVE_KEYS)
 
 
 class MaskingFilter(logging.Filter):
     """仅处理 dict 形式的 args（遮值不遮模板）。字符串模板的脱敏移到 MaskingFormatter。"""
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, dict):
-            record.args = {k: ("***" if k.lower() in _SENSITIVE_KEYS else v) for k, v in record.args.items()}
+            record.args = {k: ("***" if _is_sensitive_key(k) else v) for k, v in record.args.items()}
         return True
 
 
@@ -44,7 +72,7 @@ class MaskingFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         text = super().format(record)
         if _SENSITIVE_RE.search(text):
-            text = _SENSITIVE_RE.sub(r"\1=***", text)
+            text = _SENSITIVE_RE.sub(_mask_match, text)
         # v2.6#2：反查"这句话是谁触发播的"靠行尾这一个 id，不靠每个调用点自觉
         trace = _active_trace_id()
         return f"{text} trace={trace}" if trace else text

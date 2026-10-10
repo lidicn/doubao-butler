@@ -3,8 +3,10 @@
 DEV1 那份 test_log_masking_shapes.py 只造了 17 字符一档（"SENTINEL-"+hex[:8]），
 8/12 两个更短的档位没有被量过——本文件补上，且第一格先自证测的是盘上真身。
 
-⛔ 本文件只 import 盘上现座已有的 `MaskingFilter` / `setup_logging`；
-WO-ME-224 候选码里的 `MaskingFormatter` 尚未装机，出现任何对它的引用都是测错树。
+批185 对账（本节口径覆盖本文件 09-21 版 §「尚未装机」段与 test_01 的冒号断言）：
+WO-ME-224-R10 已装机，`MaskingFormatter` 就是盘上现座——本文件的 `_capture` 因此必须挂它
+（原先只挂 Filter、Formatter 用裸 `logging.Formatter` ⇒ Formatter 侧脱敏物理不可见＝假门，
+09-21 版 docstring 自己预告了这次翻面）。冒号形状按 R10 判据断言为保留 `:`。
 同步用例（已知 harness 收不到 async def test）。
 """
 from __future__ import annotations
@@ -16,14 +18,13 @@ import unittest
 import uuid
 
 import butler.logging_setup as logging_setup
-from butler.logging_setup import MaskingFilter
+from butler.logging_setup import MaskingFilter, MaskingFormatter
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REAL_MODULE = os.path.realpath(os.path.join(REPO_ROOT, "butler", "logging_setup.py"))
 
-# 掩码约定取自 butler/logging_setup.py 的 `_SENSITIVE_RE.sub(r"\1=***", ...)`：
-# 恰好 3 个星号；`k: v` 与 `k=v` 都被归一为 `k=***`（盘上现座行为，DEV1 候选码改成
-# 保留 `:`——那是未装机的差异，本文件按盘上自身的约定断言）。
+# 掩码约定取自 butler/logging_setup.py 的 `_SENSITIVE_RE.sub(_mask_match, ...)`：
+# 恰好 3 个星号；`k=v` 掩成 `k=***`、`k: v` 掩成 `k: ***`（分隔符原样回填＝R10 判据）。
 STAR_COUNT = 3
 STARS = "*" * STAR_COUNT
 
@@ -35,11 +36,11 @@ def _sentinel(length: int) -> str:
 
 
 def _capture(msg: str, *args) -> str:
-    """复刻 setup_logging 的管道（同一 Formatter fmt + 盘上的 MaskingFilter），单 logger 隔离。"""
+    """复刻 setup_logging 的管道（同一 Formatter fmt + 盘上的 MaskingFormatter/Filter），单 logger 隔离。"""
     buf = io.StringIO()
     h = logging.StreamHandler(buf)
     h.setFormatter(
-        logging.Formatter(
+        MaskingFormatter(
             fmt="%(asctime)s %(levelname)s [%(name)s] %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
@@ -64,9 +65,9 @@ class TestMaskingShortShapes(unittest.TestCase):
         tmp_dir = os.path.normcase(os.path.realpath(os.path.join(REPO_ROOT, "tmp"))) + os.sep
         self.assertNotIn(tmp_dir, os.path.normcase(mod_file) + os.sep, "脱敏实现不得来自 tmp 树")
         self.assertTrue(hasattr(logging_setup, "MaskingFilter"), "盘上入口 MaskingFilter 缺失")
-        self.assertFalse(
+        self.assertTrue(
             hasattr(logging_setup, "MaskingFormatter"),
-            "MaskingFormatter 属 WO-ME-224 候选码；若它出现在盘上说明测试树已换，需重新对账",
+            "批185 起 MaskingFormatter 已在盘上（WO-ME-224-R10 装机）；它消失＝盘上树回退，本门失去被测对象",
         )
 
     def _assert_tier(self, length: int) -> None:
@@ -79,7 +80,7 @@ class TestMaskingShortShapes(unittest.TestCase):
 
         out = _capture(f"token: {v}")
         self.assertNotIn(v, out, f"{length} 字符冒号形状泄漏：{out}")
-        self.assertIn(f"token={STARS}", out, f"{length} 字符冒号形状未按盘上约定归一为 `=`：{out}")
+        self.assertIn(f"token: {STARS}", out, f"{length} 字符冒号形状未按 R10 保形（须留 `:`）：{out}")
         self.assertEqual(out.count("*"), STAR_COUNT, f"{length} 字符冒号形状星号个数不符：{out}")
 
         out = _capture("cfg %s", {"api_key": v})
