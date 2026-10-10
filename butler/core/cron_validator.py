@@ -25,12 +25,17 @@ _COMPARATORS = {"exists", "gt", "lt", "eq", "contains"}
 _OUTPUT_TYPES = {"xiaomi_speak", "bark", "tv_notify"}
 
 # 内网 IP 网段（SSRF 防护）
+# fc00::/7（ULA）故意不进来：它是 RFC1918 的 IPv6 对应物，家里可能正经用它给设备配址；
+# 判据按「这个地址在家里有没有任务用途」，不按「缺了就补」。
 _PRIVATE_NETS = [
     ipaddress.ip_network("127.0.0.0/8"),
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),
     ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fe80::/10"),
 ]
 
 
@@ -141,6 +146,8 @@ class CronTaskValidator:
         # 检查内网 IP
         if not self.allow_internal_ips:
             hostname = parsed.hostname or ""
+            if hostname == "localhost" or hostname.endswith(".localhost"):
+                return False, f"不允许访问回环域名: {hostname}"
             try:
                 ip = ipaddress.ip_address(hostname)
                 for net in _PRIVATE_NETS:
