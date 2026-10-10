@@ -7,7 +7,9 @@
 4. 解析返回，去重后写入 memory_facts（status=pending，等待用户审核）
 
 设计原则：
-- 低置信度不丢弃，全部存为 pending，由 WebUI 审核决定
+- 过门槛（confidence ≥ 0.6）的不丢弃，全部存为 pending，由 WebUI 审核决定
+  （门槛之下那批**此刻是静默忽略**；要不要也塞进待审队列，是未决口径，见
+  `_dedupe_and_save` 文档串——本文件原先在此处写着「低置信度不丢弃」，与代码相反）
 - 去重只做同类型 content 完全匹配 / 包含匹配，不做语义去重（避免误删）
 - MA 数据拉取失败不阻塞，只用对话数据也能跑
 """
@@ -66,11 +68,15 @@ class MemoryExtractor:
         self.rt = rt
 
     async def run(self, days: int = 7, max_turns: int = 300) -> dict:
-        """执行一次提取。返回 {extracted, skipped_dup, facts, error?}。"""
+        """执行一次提取。
+
+        返回 {extracted, skipped_dup, ignored_low_conf, facts, error?}——
+        `skipped_dup` 只数**重复**，低置信度被门槛拦下的另记 `ignored_low_conf`。
+        """
         dialogs = self._fetch_recent_dialogs(days, max_turns)
         if not dialogs:
             logger.info("memory extract: no dialogs in last %d days", days)
-            return {"extracted": 0, "skipped_dup": 0, "facts": []}
+            return {"extracted": 0, "skipped_dup": 0, "ignored_low_conf": 0, "facts": []}
 
         schedules = await self._fetch_ma_schedules()
         user_prompt = self._build_prompt(dialogs, schedules)
@@ -85,17 +91,21 @@ class MemoryExtractor:
             )
         except Exception as e:
             logger.error("memory extract LLM call failed: %s", e)
-            return {"extracted": 0, "skipped_dup": 0, "facts": [], "error": str(e)}
+            return {"extracted": 0, "skipped_dup": 0, "ignored_low_conf": 0,
+                    "facts": [], "error": str(e)}
 
         facts_raw = self._parse_llm_json(text)
         if not facts_raw:
             logger.warning("memory extract: LLM unparseable, raw=%s", text[:300])
-            return {"extracted": 0, "skipped_dup": 0, "facts": [], "error": "unparseable_json"}
+            return {"extracted": 0, "skipped_dup": 0, "ignored_low_conf": 0,
+                    "facts": [], "error": "unparseable_json"}
 
-        inserted, skipped = self._dedupe_and_save(facts_raw, days)
-        logger.info("memory extract done: %d inserted, %d dup-skipped (from %d dialogs)",
-                    inserted, skipped, len(dialogs))
-        return {"extracted": inserted, "skipped_dup": skipped, "facts": facts_raw}
+        inserted, dup_skipped, low_conf = self._dedupe_and_save(facts_raw, days)
+        logger.info("memory extract done: %d inserted, %d dup-skipped, "
+                    "%d low-conf-ignored (from %d dialogs)",
+                    inserted, dup_skipped, low_conf, len(dialogs))
+        return {"extracted": inserted, "skipped_dup": dup_skipped,
+                "ignored_low_conf": low_conf, "facts": facts_raw}
 
     # ---------- 数据拉取 ----------
 
@@ -242,8 +252,14 @@ class MemoryExtractor:
         except Exception:
             return {}
 
-    def _dedupe_and_save(self, facts_raw: dict, days: int) -> tuple[int, int]:
-        """去重后写入 memory_facts。返回 (inserted, skipped)。"""
+    def _dedupe_and_save(self, facts_raw: dict, days: int) -> tuple[int, int, int]:
+        """去重后写入 memory_facts。返回 (inserted, dup_skipped, low_conf_ignored)。
+
+        批182：原先两条腿共用一个 `skipped`，于是 `run()` 的 `skipped_dup` 把
+        「低置信度被门槛拦下」也报成「重复」——调用方与 WebUI 据此判断"这条已经存过了"，
+        而它其实从未入库，下一轮还会再被 LLM 提一遍。这里只把**计数**分开，
+        ⛔ 不改「低置信要不要进待审队列」的口径（那是主人的决定）。
+        """
         from butler.store.db import get_conn
 
         type_map = {
@@ -283,7 +299,7 @@ class MemoryExtractor:
                 })
 
         if not candidates:
-            return 0, 0
+            return 0, 0, 0
 
         # 去重：查最近 30 天未拒绝的同类 fact
         conn = get_conn()
@@ -295,13 +311,14 @@ class MemoryExtractor:
         existing_set = {(r["fact_type"], (r["content"] or "").strip()) for r in existing}
 
         inserted = 0
-        skipped = 0
+        dup_skipped = 0
+        low_conf_ignored = 0
         for cand in candidates:
             ftype = cand["fact_type"]
             content = cand["content"]
             exact_key = (ftype, content)
             if exact_key in existing_set:
-                skipped += 1
+                dup_skipped += 1
                 continue
             # 包含式去重：同类已有 fact 完全包含新内容，或新内容包含已有 fact
             duplicate = False
@@ -310,15 +327,15 @@ class MemoryExtractor:
                     duplicate = True
                     break
             if duplicate:
-                skipped += 1
+                dup_skipped += 1
                 continue
 
-            # M5: 全部走 pending 待审核，不自动批准
+            # M5: 通过门槛的一律走 pending 待审核，不自动批准
             # （用户要求人工审核后再投喂，避免重复/不需要的事实直接进对话）
             conf = cand["confidence"]
             if conf < 0.6:
-                skipped += 1
-                continue  # 低置信度，忽略
+                low_conf_ignored += 1
+                continue  # 低置信度，本轮忽略（口径未定，见本函数文档串）
             status = "pending"  # 全部待审核
 
             conn.execute(
@@ -332,4 +349,4 @@ class MemoryExtractor:
             inserted += 1
 
         conn.commit()
-        return inserted, skipped
+        return inserted, dup_skipped, low_conf_ignored

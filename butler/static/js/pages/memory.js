@@ -69,7 +69,7 @@ document.addEventListener("alpine:init", () => {
       const r = await API.memoryExtractRun(7);
       if (r && r.ok) {
         const d = r.data || {};
-        this.showToast(`提取完成：新增 ${d.extracted || 0} 条，去重 ${d.skipped_dup || 0} 条`);
+        this.showToast(`提取完成：新增 ${d.extracted || 0} 条，重复 ${d.skipped_dup || 0} 条，低置信忽略 ${d.ignored_low_conf || 0} 条`);
         this.loadFacts(); this.loadFeedOverview();
       } else {
         this.showToast((r && r.error) || "提取失败");
