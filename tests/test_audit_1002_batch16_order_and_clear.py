@@ -288,7 +288,7 @@ class AliasSaveAtomic16(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="b16_alias_")
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.target = Path(self.tmp) / "device_aliases.json"
-        starter = mock.patch.object(aliases_mod, "ALIAS_FILE", self.target)
+        starter = mock.patch.object(aliases_mod, "alias_file", lambda: self.target)
         starter.start()
         self.addCleanup(starter.stop)
         self.store = AliasStore()

@@ -148,7 +148,7 @@ ANCHORS = [
     ("core/event_stream.py", "EventStream", "start", 96),
     ("core/xiaomi_ear.py", "XiaomiEar", "start", 29),
     ("core/xiaomi_ear.py", "XiaomiEar", "stop", 36),
-    ("core/aliases.py", "AliasStore", "delete_alias", 93),
+    ("core/aliases.py", "AliasStore", "delete_alias", 99),  # 批164 re-anchor 93→99（D5：别名路径改成惰性 alias_file()）
     ("core/cron_task.py", "CronTaskExecutor", "register_api", 140),  # 批162 re-anchor 120→140（D 族收编在它们上面加了读侧／拒写闸两条腿）
     ("core/cron_task.py", "CronTaskExecutor", "unregister_api", 158),  # 批162 re-anchor 138→158
     ("store/write_failures.py", "", "record", 87),

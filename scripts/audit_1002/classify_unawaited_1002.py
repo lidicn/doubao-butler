@@ -51,7 +51,9 @@ SITES = [
     ("api/agent_routes.py", 159, "delete_alias"),
     ("api/cron_task_routes.py", 58, "register_api"),
     ("api/cron_task_routes.py", 72, "unregister_api"),
-    ("api/doubao_webhook.py", 794, "execute"),
+    # 批164 re-anchor 794→802：D5 分叉收编在 role_state_file() 上方净插 8 行，调用点本体一字未动
+    # （sqlite3 Connection.execute 仍是 EXTERNAL_SYNC 那条腿）。
+    ("api/doubao_webhook.py", 802, "execute"),
     # 1009-b6-REANCHOR (2026-10-10): app.py 生命周期 9 枚随批135/homesdk0.3.2 接线漂移，已重钉。
     # run 槽＝已裁退役（PM 裁 1009）：原 `subprocess.run`（EXTERNAL 族）已被重构进
     #   `await ensure_wake_ding`（startup_assets），app.py 再无未 await 的外部 run；名册 30→29，

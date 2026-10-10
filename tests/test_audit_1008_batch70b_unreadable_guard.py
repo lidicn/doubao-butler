@@ -261,7 +261,7 @@ class TestRoleState(_TmpDirCase):
 
 class TestAliasStore(_TmpDirCase):
     def _point(self, path: Path):
-        p = mock.patch.object(aliases_mod, "ALIAS_FILE", path)
+        p = mock.patch.object(aliases_mod, "alias_file", lambda: path)
         p.start()
         self.addCleanup(p.stop)
 
@@ -301,7 +301,7 @@ class TestAliasStore(_TmpDirCase):
 
 class TestFastRoutes(_TmpDirCase):
     def _point(self, path: Path):
-        p = mock.patch.object(fast_routes_mod, "ROUTES_FILE", path)
+        p = mock.patch.object(fast_routes_mod, "routes_file", lambda: path)
         p.start()
         self.addCleanup(p.stop)
 

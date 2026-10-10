@@ -345,7 +345,7 @@ class Batch17AtomicJsonWrites(unittest.TestCase):
     # ---------- 辅助 ----------
 
     def _fast_store(self, route_file: Path) -> FastRouteStore:
-        patcher = mock.patch.object(fast_routes_mod, "ROUTES_FILE", route_file)
+        patcher = mock.patch.object(fast_routes_mod, "routes_file", lambda: route_file)
         patcher.start()
         self.addCleanup(patcher.stop)
         return FastRouteStore()
