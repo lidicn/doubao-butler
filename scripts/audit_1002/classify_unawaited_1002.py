@@ -85,8 +85,10 @@ SITES = [
     # 批10（裁②，同日）给 _to_bark 加 bark 闸门又推 11 行。两次锚腿都当场判 UNKNOWN/DRIFT
     # 逼重看，重看点开结果仍是 sync 的 TVClient.notify（判定不变）。
     ("notify/router.py", 320, "notify"),
-    ("proactive/engine.py", 301, "execute"),
-    ("proactive/engine.py", 364, "execute"),
+    # 批167 re-anchor 301→315 / 364→378：D15 收尾把 get_conn 改成双检锁工厂，净插 14 行，
+    # `c.execute(` 两条腿本体一字未动。
+    ("proactive/engine.py", 315, "execute"),
+    ("proactive/engine.py", 378, "execute"),
     # 411→424：批10（裁②）在 run() 里加模式闸门 +13 行，_push_tv 内的 rt.tv.notify 随之推移。
     # 1009-b6-REANCHOR: _push_tv 内 rt.tv.notify 424→429（批75/批135 推移）。
     ("skills/runner.py", 429, "notify"),
