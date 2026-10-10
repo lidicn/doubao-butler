@@ -156,15 +156,31 @@ class BarkFlushMerged16(unittest.TestCase):
         self.assertTrue(rec.calls[0]["url"].endswith(ENCRYPT_PATH), rec.calls[0]["url"])
         self.assertIn("ciphertext", rec.calls[0]["data"] or {}, rec.calls[0])
 
-    def test_plain_leg_posts_to_push_endpoint(self):
-        """②笼头：明文腿本来就补了 `/push`（:183），这条绿码上也绿。"""
+    def test_plain_leg_posts_to_device_endpoint(self):
+        """②笼头（批156 改口径）：明文腿打 `{base}/{device_key}`，⛔ 再补 `/push`。
+
+        本节口径覆盖批16 原文"明文腿本来就补了 /push"：服务端把第二段当正文，
+        补出来的是一条内容为 "push" 的空推送（现证见
+        `tests/test_audit_1010_batch156_bark_endpoint_formula.py` 文档头）。
+        """
         bark = SpyBark(_BarkSettings(encrypt=False))
         bark.seed("客厅灯关了", "客厅")
         rec = _Recorder(status_code=200)
         sent = self._flush(bark, rec)
         self.assertEqual(sent, 1, sent)
-        self.assertTrue(rec.calls[0]["url"].endswith("/push"), rec.calls[0]["url"])
+        self.assertEqual(rec.calls[0]["url"], "http://bark.test:18273/DEVICEKEY", rec.calls[0]["url"])
+        self.assertFalse(rec.calls[0]["url"].endswith("/push"), rec.calls[0]["url"])
         self.assertIsInstance(rec.calls[0]["json"], dict, rec.calls[0])
+
+    def test_plain_leg_without_key_sends_nothing(self):
+        """②笼头补格：无设备钥匙 ⇒ 一条 HTTP 都不发（过去会 POST /push 收 400）。"""
+        bark = SpyBark(_BarkSettings(encrypt=False, key=""))
+        bark.seed("客厅灯关了", "客厅")
+        rec = _Recorder(status_code=200)
+        sent = self._flush(bark, rec)
+        self.assertEqual(sent, 0, sent)
+        self.assertEqual(rec.calls, [], rec.calls)
+        self.assertEqual(bark.get_merge_cache_size(), 1, "没发出去就该留着下轮重试")
 
     def test_http_error_keeps_cache_for_retry(self):
         """①：HTTP 非 200 ⇒ sent=0，合并缓存⛔ 被清空（每 5 分钟那轮 job 要能重试）。"""

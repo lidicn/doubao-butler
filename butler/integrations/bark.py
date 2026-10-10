@@ -39,6 +39,18 @@ class Bark:
         return f"{base}/push"
 
     @property
+    def _plain_endpoint(self) -> str:
+        """明文腿的唯一 URL 公式：有设备钥匙＝`{base}/{key}`，JSON 载荷直接 POST 过去。
+
+        空钥匙返回空串——⛔ 退化成 `{base}/push`：服务端把第二段当正文，
+        收件人只看到一条内容为 "push" 的空推送（v2.4 路线图「Bark 乱推送」那条症状）。
+        """
+        key = (self.s.bark_key or "").strip()
+        if not key:
+            return ""
+        return self.s.bark_url.rstrip("/") + "/" + key
+
+    @property
     def _encrypt_url(self) -> str:
         """加密推送的唯一 URL 公式：push() 与 flush_merged() 共用（两处各拼一遍＝有一处会漏，这次漏的是合并腿）。"""
         return self._push_url + "/推送加密"
@@ -133,9 +145,12 @@ class Bark:
                         "iv": self.s.bark_encrypt_iv,
                     })
                 else:
-                    # 明文模式：JSON POST 到 /push
-                    push_url = self._push_url if self._push_url.endswith("/push") else self._push_url + "/push"
-                    r = await c.post(push_url, json=payload)
+                    # 明文模式：JSON POST 到 /{device_key}
+                    endpoint = self._plain_endpoint
+                    if not endpoint:
+                        logger.warning("bark push skipped: 未配置设备钥匙，明文腿发出去只会 400")
+                        return False
+                    r = await c.post(endpoint, json=payload)
                 if r.status_code != 200:
                     logger.warning("bark push http %s: %s", r.status_code, r.text[:120])
                 return r.status_code == 200
@@ -186,11 +201,14 @@ class Bark:
                             ok = True
                 else:
                     payload = {"title": summary_title, "body": summary_body, "group": f"merged_{group_name}"}
-                    push_url = self._push_url if self._push_url.endswith("/push") else self._push_url + "/push"
-                    async with httpx.AsyncClient(timeout=5) as c:
-                        r = await c.post(push_url, json=payload)
-                        if r.status_code == 200:
-                            ok = True
+                    endpoint = self._plain_endpoint
+                    if endpoint:
+                        async with httpx.AsyncClient(timeout=5) as c:
+                            r = await c.post(endpoint, json=payload)
+                            if r.status_code == 200:
+                                ok = True
+                    else:
+                        logger.warning("bark merged flush skipped: 未配置设备钥匙（%d 条留待下轮）", count)
                 if ok:
                     sent_count += 1
                     flushed_groups.append(group_name)
