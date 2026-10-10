@@ -5,8 +5,10 @@ v1.6 P0-2：基于定位引擎自动判断模式，带防抖延时。
 规则：
   - 所有人离家（置信度≥0.6 都不在家）持续 10 分钟 → 离家模式
   - 有人回家（之前是离家模式，现在有人在家）→ 日常模式
-  - lidicn 在客厅 + TV 开启 持续 5 分钟 → 观影模式
-  - 主卧静止 6 小时（lidicn 在主卧且无活动）→ 睡眠模式
+  - 主成员在客厅 + TV 开启 持续 5 分钟 → 观影模式
+  - 主卧静止 6 小时（主成员在主卧且无活动）→ 睡眠模式
+
+「主成员」＝ `Settings.primary_member`（批178／P1-42）：这三条判定原来把成员名钉死在代码里。
 
 防抖：连续 N 次检查满足条件才切换，避免误切换。
 """
@@ -15,6 +17,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
+from butler.config import get_settings
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.modes.auto_switch")
@@ -67,10 +70,11 @@ class ModeAutoSwitcher:
         )
         all_away = not anyone_home
 
-        # lidicn 位置
-        lidicn = users.get("lidicn", {})
-        lidicn_room = lidicn.get("room", "")
-        lidicn_conf = lidicn.get("confidence", 0)
+        # 主成员位置（名字来自配置，⛔ 钉死在代码里）
+        member = get_settings().primary_member
+        member_loc = users.get(member, {})
+        member_room = member_loc.get("room", "")
+        member_conf = member_loc.get("confidence", 0)
 
         # ---- 规则 1：所有人离家 → 离家模式 ----
         if current != "away" and all_away:
@@ -98,10 +102,10 @@ class ModeAutoSwitcher:
                 logger.info("auto switch to daily (someone home)")
                 return result
 
-        # ---- 规则 3：lidicn 在客厅 + TV 开启 → 观影模式 ----
+        # ---- 规则 3：主成员在客厅 + TV 开启 → 观影模式 ----
         if current not in ("away", "sleep", "movie"):
             tv_on = await self._is_tv_on()
-            if "客厅" in lidicn_room and lidicn_conf >= 0.6 and tv_on:
+            if "客厅" in member_room and member_conf >= 0.6 and tv_on:
                 count = self._bump("movie", reset_on_false=True)
                 result.debounce_count = count
                 if count >= THRESHOLD_MOVIE:
@@ -109,13 +113,13 @@ class ModeAutoSwitcher:
                     result.switched = True
                     result.from_mode = current
                     result.to_mode = "movie"
-                    result.reason = "lidicn 在客厅且 TV 开启"
+                    result.reason = f"{member} 在客厅且 TV 开启"
                     logger.info("auto switch to movie (living room + TV on)")
                     return result
 
-        # ---- 规则 4：lidicn 在主卧静止 → 睡眠模式 ----
+        # ---- 规则 4：主成员在主卧静止 → 睡眠模式 ----
         if current not in ("away", "sleep"):
-            if "主卧" in lidicn_room and lidicn_conf >= 0.7:
+            if "主卧" in member_room and member_conf >= 0.7:
                 count = self._bump("sleep", reset_on_false=True)
                 result.debounce_count = count
                 if count >= THRESHOLD_SLEEP:
@@ -123,12 +127,12 @@ class ModeAutoSwitcher:
                     result.switched = True
                     result.from_mode = current
                     result.to_mode = "sleep"
-                    result.reason = "lidicn 在主卧长时间静止"
+                    result.reason = f"{member} 在主卧长时间静止"
                     logger.info("auto switch to sleep (bedroom still, debounce=%d)", count)
                     return result
 
         # 不满足任何切换条件，重置对应防抖
-        self._reset_if_needed(current, all_away, anyone_home, lidicn_room, lidicn_conf)
+        self._reset_if_needed(current, all_away, anyone_home, member_room, member_conf)
         return result
 
     def _get_presence_snapshot(self) -> dict:
@@ -169,13 +173,13 @@ class ModeAutoSwitcher:
             del _debounce[key]
 
     def _reset_if_needed(self, current: str, all_away: bool, anyone_home: bool,
-                          lidicn_room: str, lidicn_conf: float) -> None:
+                          member_room: str, member_conf: float) -> None:
         """根据当前状态重置不满足条件的防抖计数。"""
         if not all_away:
             self._reset("away")
         if current != "away" or not anyone_home:
             self._reset("home")
-        if not ("客厅" in lidicn_room and lidicn_conf >= 0.6):
+        if not ("客厅" in member_room and member_conf >= 0.6):
             self._reset("movie")
-        if not ("主卧" in lidicn_room and lidicn_conf >= 0.7):
+        if not ("主卧" in member_room and member_conf >= 0.7):
             self._reset("sleep")

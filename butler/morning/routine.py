@@ -23,6 +23,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from butler.config import get_settings
 from butler.logging_setup import get_logger
 from butler.timeseries import store as ts
 
@@ -35,7 +36,6 @@ _morning_reported_date: str = ""
 @dataclass
 class MorningContext:
     """晨起播报上下文。"""
-    user: str = "lidicn"
     sleep_duration_hours: float = 0.0
     sleep_quality: str = "良好"
     indoor_temp: float | None = None
@@ -91,10 +91,11 @@ class MorningRoutine:
         if self.rt and hasattr(self.rt, "presence_engine"):
             try:
                 snapshot = self.rt.presence_engine.snapshot()
-                lidicn_loc = snapshot.get("users", {}).get("lidicn", {})
-                room = lidicn_loc.get("room", "")
-                confidence = lidicn_loc.get("confidence", 0)
-                # 如果 lidicn 仍在主卧且置信度高，可能还没起床
+                member = get_settings().primary_member
+                loc = snapshot.get("users", {}).get(member, {})
+                room = loc.get("room", "")
+                confidence = loc.get("confidence", 0)
+                # 如果主成员仍在主卧且置信度高，可能还没起床
                 if "主卧" in room and confidence >= 0.7:
                     user_left_bedroom = False
             except Exception as e:

@@ -239,6 +239,10 @@ class Settings:
 
     persona: PersonaConfig = field(default_factory=PersonaConfig)
 
+    # 批178（P1-42）：定位/睡眠/无活动三条判定原来把成员名钉死在代码里，
+    # 换人住主卧就要改三个文件。默认值＝原来那个名字 ⇒ 不配就是现行为。
+    primary_member: str = "lidicn"
+
     @classmethod
     def load(cls) -> "Settings":
         s = cls(
@@ -319,6 +323,7 @@ class Settings:
             proactive_inquiry_timeout_sec=_env_int("PROACTIVE_INQUIRY_TIMEOUT_SEC", PROACTIVE_INQUIRY_TIMEOUT_DEFAULT),
             data_dir=_env("DATA_DIR", "/app/data"),
             tts_dir=_env("TTS_DIR", "/app/tts"),
+            primary_member=_env("PRIMARY_MEMBER", "lidicn"),
         )
         dnd = _env("DND_WINDOWS")
         if dnd:
