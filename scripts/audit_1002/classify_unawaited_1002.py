@@ -62,14 +62,20 @@ SITES = [
     #   scope_assigns 的 setdefault 遮蔽 `sched = AsyncIOScheduler(...)` 那枚绑定⇒两枚判 UNKNOWN。
     #   现规则：None 初始化不遮蔽后续构造绑定；非 None 先到先得语义不变。宿主
     #   `inspect.iscoroutinefunction(AsyncIOScheduler.start/shutdown)` 现读双 False⇒EXTERNAL_SYNC。
-    ("app.py", 502, "start"),
-    ("app.py", 579, "start"),
-    ("app.py", 792, "start"),
-    ("app.py", 807, "start"),
-    ("app.py", 815, "start"),
-    ("app.py", 845, "stop"),
-    ("app.py", 848, "stop"),
-    ("app.py", 852, "shutdown"),
+    # 1010-b170-REANCHOR（八枚统一 +2，逐枚按「接收者＋包围函数」点开，⛔ 靠行号顺序猜）：
+    #   漂移源＝批152（`4c5b958` 调度器 tz 现取 house_tz_name）在 lifespan 上方净插 2 行；
+    #   全部 8 枚都在 `async def lifespan:293-859` 里，接收者逐枚现读为
+    #   rt.ilink_bridge / mqtt / sched / rt.xiaomi_ear / rt.event_stream / mqtt / rt.xiaomi_ear / rt._sched，
+    #   同文件另有 2 枚同名调用未在册（L539 `await af_bridge.start()`＝WRAPPED、
+    #   L1029 `t.start()`＝`def _start_evolution_scheduler` 里的 threading.Thread），判定不变。
+    ("app.py", 504, "start"),
+    ("app.py", 581, "start"),
+    ("app.py", 794, "start"),
+    ("app.py", 809, "start"),
+    ("app.py", 817, "start"),
+    ("app.py", 847, "stop"),
+    ("app.py", 850, "stop"),
+    ("app.py", 854, "shutdown"),
     ("core/dialog.py", 513, "notify"),
     # 批165 re-anchor 245→260 / 253→268：形状分支在它们上方净插 15 行，调用点本体一字未动
     # （sqlite3 Connection.execute 与 write_failures.record 仍是原那两条腿）。
@@ -84,7 +90,10 @@ SITES = [
     # 302→309→320：批7（2026-10-02）给 TVPopupPort 补 notify 声明把这段推移了 7 行；
     # 批10（裁②，同日）给 _to_bark 加 bark 闸门又推 11 行。两次锚腿都当场判 UNKNOWN/DRIFT
     # 逼重看，重看点开结果仍是 sync 的 TVClient.notify（判定不变）。
-    ("notify/router.py", 320, "notify"),
+    # 1010-b170-REANCHOR 320→327：批150（`45f0b7c` 链外推送生号）在 _to_tv 上方净插 7 行；
+    #   现读该文件 344 行，`self.tv.notify(note.tv_payload)` 恰 1 枚命中、仍在
+    #   `async def _to_tv:321-334` 里⇒同一枚调用，接收者判定不变。
+    ("notify/router.py", 327, "notify"),
     # 批167 re-anchor 301→315 / 364→378：D15 收尾把 get_conn 改成双检锁工厂，净插 14 行，
     # `c.execute(` 两条腿本体一字未动。
     ("proactive/engine.py", 315, "execute"),
@@ -98,8 +107,11 @@ SITES = [
     ("tools/schedule.py", 105, "notify"),
     # 1009-b6-REANCHOR: triggers 两枚 write_failures.record（async def _record_evaluation / _fire
     #   里的 census 腿）175→217、434→483；同文件另有 3 枚同名 record 在同步冷却写路径，未在册。
-    ("triggers/engine.py", 217, "record"),
-    ("triggers/engine.py", 483, "record"),
+    # 1010-b170-REANCHOR: 217→223、483→490（批151 `92ede7a` 在 handle_event 之前净插 6 行，
+    #   两枚 record 本体一字未动；现读包围函数 `async def _record_evaluation:209-225`、
+    #   `async def _fire:365-493`，同步冷却写路径那 3 枚仍在 72/106/128，照旧未在册）。
+    ("triggers/engine.py", 223, "record"),
+    ("triggers/engine.py", 490, "record"),
 ]
 
 WRAPPERS = ("create_task", "ensure_future", "run_coroutine_threadsafe",
