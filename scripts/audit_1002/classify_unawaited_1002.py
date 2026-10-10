@@ -91,7 +91,9 @@ SITES = [
     ("proactive/engine.py", 378, "execute"),
     # 411→424：批10（裁②）在 run() 里加模式闸门 +13 行，_push_tv 内的 rt.tv.notify 随之推移。
     # 1009-b6-REANCHOR: _push_tv 内 rt.tv.notify 424→429（批75/批135 推移）。
-    ("skills/runner.py", 429, "notify"),
+    # 1010-b169-REANCHOR: 429→435（批169 在 run() 的当日额度腿净插 6 行，_push_tv 本体一字未动；
+    #   全文件现读 489 行、`rt.tv.notify` 恰 1 枚命中，点开确认仍是同一枚调用）。
+    ("skills/runner.py", 435, "notify"),
     ("tools/registry.py", 1074, "notify"),
     ("tools/schedule.py", 105, "notify"),
     # 1009-b6-REANCHOR: triggers 两枚 write_failures.record（async def _record_evaluation / _fire

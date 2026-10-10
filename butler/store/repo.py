@@ -404,7 +404,8 @@ def count_skill_runs_today(skill_id: str, ok_only: bool = True) -> int:
     midnight = time.mktime(time.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d"))
     sql = "SELECT COUNT(*) FROM skill_runs WHERE skill_id=? AND ts>=?"
     if ok_only:
-        sql += " AND status NOT IN ('breaker','daily_limit','disabled','not_found','engine_missing')"
+        # 'dry'＝面板试运行（runner.py 以 status="dry" 落同一张表）：它没对外发声，⛔ 吃真实当日额度
+        sql += " AND status NOT IN ('breaker','daily_limit','disabled','not_found','engine_missing','dry')"
     row = c.execute(sql, (skill_id, midnight)).fetchone()
     return int(row[0] or 0)
 

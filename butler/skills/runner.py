@@ -3,7 +3,7 @@
 安全阀（编排层出问题时保护管家）：
 - 滑动窗口熔断：同技能 60s 内 >5 次触发 → 429 + 冷却（300s 起指数退避）
 - 全局并发 1：VLM 类技能串行（asyncio.Semaphore）
-- 每技能每日硬上限（skill_runs 当日计数）
+- 每技能每日硬上限（skill_runs 当日计数；试运行与被拦下的行不算用量，计数读不出来时放行并在结果与入库行留 `daily_cap_unknown`）
 - 输出互斥：播报中按 on_busy 入队（最多 1 个）或丢弃
 - 内容去重：brain.dedup=true 时接现有 bigram DedupChecker
 """
@@ -192,6 +192,7 @@ class SkillRunner:
             return res
 
         per_day = (skill.get("limits") or {}).get("per_day", 0)
+        daily_cap_unknown = False
         if per_day and not dry_run:
             try:
                 today = repo.count_skill_runs_today(skill_id, ok_only=True)
@@ -201,7 +202,10 @@ class SkillRunner:
                     self._persist_run(skill_id, source, "daily_limit", 0, "", res["error"], {})
                     return res
             except Exception as e:
+                # 计数读不出来＝这次上限没算成（本家有慢性间歇锁库）：放行按既有 fail-open 政策，
+                # 但必须留记号——无声放行＝用户只看到「技能今天怎么又跑了」，查不到门当时是瞎的。
                 logger.warning("daily count failed: %s", e)
+                daily_cap_unknown = True
 
         engine = self.registry.get((skill.get("brain") or {}).get("engine", ""))
         if engine is None:
@@ -242,6 +246,8 @@ class SkillRunner:
 
         meta = dict(result.meta or {})
         meta["duration_ms"] = duration_ms
+        if daily_cap_unknown:
+            meta["daily_cap_unknown"] = True
 
         # 输出：试跑/失败/引擎声明跳过 → 不推送
         if dry_run:
