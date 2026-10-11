@@ -105,7 +105,6 @@ class DockerClient:
         if rc != 0:
             return {"ok": False, "tool": "docker_restart", "error": "internal_error", "message": err or out}
         # 验证容器状态
-        time.sleep(2) if False else None  # 不 sleep，让调用方观察
         rc2, out2, _ = await self._run(["inspect", "-f", "{{.State.Status}}", container_name], timeout=10)
         status = out2 if rc2 == 0 else "unknown"
         return {"ok": True, "tool": "docker_restart", "result": {"container": container_name, "status": status}}
