@@ -395,7 +395,7 @@ class DialogManager:
             if action.get("action") in ("call_service", "ask_device"):
                 # 小爱音箱来源：设备控制由小爱同学原生处理，butler 不重复 TTS（防双重播报胡言乱语）
                 if source == "xiaoai":
-                    logger.info("simple device control from xiaoai, skip TTS (handled natively): %s", message[:30])
+                    logger.warning("simple device control from xiaoai, skip TTS (handled natively): %s", message[:30])
                     self.state.set_state(DialogState.WAITING)
                     self._spawn_idle()
                     return {"ok": True, "role": role.id, "reply": "", "spoken": [], "simple_rule": True, "silent": True}
