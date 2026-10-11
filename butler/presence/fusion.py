@@ -44,13 +44,13 @@ class FusionEngine:
             # 从未收到 MA 消息，视为降级
             elapsed = float("inf")
         else:
-            elapsed = time.time() - last_ts
+            elapsed = time.monotonic() - last_ts
 
         should_degrade = elapsed > self.DEGRADE_THRESHOLD_SECONDS
 
         # 状态切换时打日志（限流：每 30 秒最多一次）
         if should_degrade != self._degraded:
-            now = time.time()
+            now = time.monotonic()
             if now - self._last_degrade_log > 30:
                 if should_degrade:
                     logger.warning("MA presence signal lost (%.0fs), degraded to HA-only mode", elapsed)
@@ -98,7 +98,7 @@ class FusionEngine:
             # 1. 外部信号（ArcFace/ESP32/手表定位）
             for sig in external_signals:
                 # 只考虑最近 5 分钟的信号
-                if time.time() - sig.get("ts", 0) > 300:
+                if time.monotonic() - sig.get("ts", 0) > 300:
                     continue
                 if sig.get("user") != user_id:
                     continue
@@ -215,7 +215,7 @@ class FusionEngine:
         sources = []
         external_signals = self.engine._external_signals
         for sig in external_signals:
-            if time.time() - sig.get("ts", 0) > 300:
+            if time.monotonic() - sig.get("ts", 0) > 300:
                 continue
             if sig.get("user") == user_id and sig.get("room") == room:
                 stype = sig.get("type", "external")

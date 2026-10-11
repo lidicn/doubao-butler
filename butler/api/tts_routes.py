@@ -61,35 +61,13 @@ ROLE_TO_USER = {
 # 房间级 TTS 路由：定位置信度阈值
 PRESENCE_CONFIDENCE_THRESHOLD = 0.6
 
-# 批196（DCD 裁定 20261011-DB-TTS角色音色表与成员名分叉：丙＋观测）：
-# 查表 miss 只留痕——⛔ 改返回值、⛔ 改判定、⛔ 折叠大小写、⛔ 动这三张表的键面。
-# 窗口取数：`docker logs --since <窗口> doubao-butler | grep tts_role_lookup_miss`
-_VOICE_MISS: dict[str, int] = {}
-
-
-def _note_voice_miss(table: str, role: str, site: str) -> None:
-    if not role:
-        return                      # 空串＝调用方本就没指定角色，不是「拼法不在册」，计入会灌满读数
-    key = "%s|%s|%s" % (table, site, role)
-    _VOICE_MISS[key] = _VOICE_MISS.get(key, 0) + 1
-    logger.info("tts_role_lookup_miss: table=%s site=%s role=%s count=%d",
-                table, site, role, _VOICE_MISS[key])
-
-
-def voice_miss_counts() -> dict[str, int]:
-    """miss 分布快照（`表|调用点|拼法` → 次数）。给副本，⛔ 把内部引用交出去。"""
-    return dict(_VOICE_MISS)
-
 
 def _resolve_voice(role: str = "", voice: str | None = None) -> str | None:
     """根据角色/显式音色确定最终音色。优先级：voice > role > None。"""
     if voice:
         return voice
     if role:
-        hit = ROLE_VOICES.get(role)
-        if hit is None:
-            _note_voice_miss("ROLE_VOICES", role, "_resolve_voice")
-        return hit
+        return ROLE_VOICES.get(role)
     return None
 
 
@@ -112,7 +90,6 @@ def _resolve_room_by_presence(rt, role: str) -> str | None:
     """
     user_id = ROLE_TO_USER.get(role)
     if not user_id:
-        _note_voice_miss("ROLE_TO_USER", role, "_resolve_room_by_presence")
         return None
     engine = getattr(rt, "presence_engine", None)
     if engine is None:
@@ -410,20 +387,30 @@ async def engines(request):
 
 async def queue_status(request):
     """v2.5: TTS 队列状态查询"""
+    # DB73b: 加鉴权
+    g = guard(request)
+    if g:
+        return g
     from butler.tts.singleton import get_queue
     q = get_queue()
     if q is None:
-        return err(503, "TTS queue not initialized")
+        # DB73c: err 参数顺序修正
+        return err("TTS queue not initialized", 503)
     return ok(q.status())
 
 
 
 async def queue_enqueue(request):
     """v2.5: 往 TTS 队列塞一条测试消息"""
+    # DB73b: 加鉴权
+    g = guard(request)
+    if g:
+        return g
     from butler.tts.singleton import get_queue
     q = get_queue()
     if q is None:
-        return err(503, "TTS queue not initialized")
+        # DB73c: err 参数顺序修正
+        return err("TTS queue not initialized", 503)
     body = await request.json()
     text = body.get("text", "队列测试")
     priority = body.get("priority", 3)
@@ -431,8 +418,10 @@ async def queue_enqueue(request):
     room = body.get("room", "")
     backend = body.get("backend")
     voice = body.get("voice")
+    # DB73b: override_quiet 由调用方显式声明，默认 False
+    override_quiet = bool(body.get("override_quiet", False))
     r = q.enqueue(text, priority=priority, device_id=device_id, room=room,
-                  backend=backend, voice=voice, override_quiet=True)
+                  backend=backend, voice=voice, override_quiet=override_quiet)
     return ok({"accepted": r.accepted, "reason": r.reason, "size": q.status()["size"]})
 
 def routes():

@@ -13,7 +13,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from butler.config import get_settings
-from butler.core import data_paths
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
 
@@ -32,6 +31,7 @@ logger = get_logger("butler.auth")
 # 改后：token 由 CSPRNG 生成；盘上只落 sha256(token) -> 过期时间（读到文件也拿不到可用会话）；
 #      写入即清扫、条目有上限；Bearer 失败按来源计数刹车。
 _SESSION_TTL = 7 * 24 * 3600  # 7 天过期
+_SESSIONS_FILE = Path("/app/data/sessions.json")
 _SESSIONS_MAX = 200
 _active_sessions: dict[str, float] = {}  # sha256(token) -> 过期时间戳
 
@@ -45,11 +45,6 @@ def _session_hash(tok: str) -> str:
     return hashlib.sha256(tok.encode("utf-8")).hexdigest()
 
 
-def sessions_file() -> Path:
-    """批164 D5：会话档路径惰性现取（⛔ 模块级 `/app/data` 死值＝两个物理文件的那条腿）。"""
-    return data_paths.data_file("sessions.json")
-
-
 def _sessions_sweep(now: float) -> None:
     for k in [k for k, exp in _active_sessions.items() if exp <= now]:
         _active_sessions.pop(k, None)
@@ -57,19 +52,18 @@ def _sessions_sweep(now: float) -> None:
 
 def _sessions_save() -> None:
     try:
-        target = sessions_file()
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name("sessions.json.tmp")
+        _SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _SESSIONS_FILE.with_name("sessions.json.tmp")
         tmp.write_text(json.dumps(_active_sessions), encoding="utf-8")
         os.chmod(tmp, 0o600)
-        os.replace(tmp, target)
+        os.replace(tmp, _SESSIONS_FILE)
     except OSError as exc:  # 卷不可写时退回纯内存：行为等于改前，不会放行失败
         logger.warning("WO-ME-207 会话落盘失败，本轮退回内存会话：%s", type(exc).__name__)
 
 
 def _sessions_load() -> None:
     try:
-        raw = json.loads(sessions_file().read_text(encoding="utf-8"))
+        raw = json.loads(_SESSIONS_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return  # 没有 / 坏损 = 没有活会话：只会要求重新登录，绝不会放行
     now = time.time()
@@ -117,7 +111,7 @@ def revoke_session(tok: str) -> bool:
 def bearer_locked(request: Request) -> bool:
     """该来源是否已被 Bearer 失败次数刷进临时拒绝。命中时顺便记账并清旧账。"""
     ip, _, _ = _req_shape(request)
-    now = time.time()
+    now = time.monotonic()  # DB60: 进程内窗口用单调钟
     fails = [t for t in _bearer_failures.get(ip, []) if now - t < _BEARER_WINDOW]
     if fails:
         _bearer_failures[ip] = fails
@@ -133,10 +127,10 @@ def bearer_locked(request: Request) -> bool:
 def note_bearer_failure(request: Request) -> None:
     ip, _, _ = _req_shape(request)
     if len(_bearer_failures) > _AUDIT_CAP:  # 这张表也不许变成第二个"永不清理"
-        now = time.time()
+        now = time.monotonic()
         for stale in [k for k, ts in _bearer_failures.items() if now - max(ts) >= _BEARER_WINDOW]:
             _bearer_failures.pop(stale, None)
-    _bearer_failures.setdefault(ip, []).append(time.time())
+    _bearer_failures.setdefault(ip, []).append(time.monotonic())  # DB60
 
 
 _sessions_load()
@@ -170,7 +164,7 @@ _audit_seen: dict[str, float] = {}
 
 
 def _audit_should_log(key: str) -> bool:
-    now = time.time()
+    now = time.monotonic()  # DB60: 日志节流窗口用单调钟
     if len(_audit_seen) > _AUDIT_CAP:  # 不让这张表变成第二个"永不清理"的会话表
         for stale in [k for k, t in _audit_seen.items() if now - t >= _AUDIT_TTL]:
             _audit_seen.pop(stale, None)
@@ -280,8 +274,7 @@ def check_auth(request: Request) -> bool:
 
 def is_login_locked(client_ip: str) -> bool:
     """WO-BUT-022 R-36：检查该 IP 是否在登录锁定中（5 次失败后 15 分钟）。"""
-    import time
-    now = time.time()
+    now = time.monotonic()  # DB60
     fails = _login_failures.get(client_ip, [])
     fails = [t for t in fails if now - t < _LOGIN_LOCK_SECONDS]
     return len(fails) >= _LOGIN_MAX_FAIL
@@ -290,9 +283,8 @@ def is_login_locked(client_ip: str) -> bool:
 def login(user: str, password: str, client_ip: str = "unknown") -> str | None:
     """登录验证，带 WO-BUT-022 R-36 限流：5 次失败锁定 15 分钟。
     锁定时仍返回 None（由调用方先用 is_login_locked 判断返回 429）。"""
-    import time
     s = get_settings()
-    now = time.time()
+    now = time.monotonic()  # DB60
     fails = _login_failures.get(client_ip, [])
     fails = [t for t in fails if now - t < _LOGIN_LOCK_SECONDS]
     if len(fails) >= _LOGIN_MAX_FAIL:
@@ -333,7 +325,7 @@ _REPORT_WINDOW = 300.0
 def report_locked(request) -> bool:
     """该来源在 _REPORT_WINDOW 内失败次数已达 _REPORT_MAX_FAIL。顺带清过期账。"""
     ip, _, _ = _req_shape(request)
-    now = time.time()
+    now = time.monotonic()  # DB60
     fails = [t for t in _report_failures.get(ip, []) if now - t < _REPORT_WINDOW]
     if fails:
         _report_failures[ip] = fails
@@ -346,10 +338,10 @@ def note_report_failure(request) -> None:
     """记一次失败并落一行留痕（同来源 300s 内最多一行，防刷日志）。不记钥匙本身。"""
     ip, path, _ = _req_shape(request)
     if len(_report_failures) > _AUDIT_CAP:
-        now = time.time()
+        now = time.monotonic()
         for stale in [k for k, ts in _report_failures.items() if now - max(ts) >= _REPORT_WINDOW]:
             _report_failures.pop(stale, None)
-    _report_failures.setdefault(ip, []).append(time.time())
+    _report_failures.setdefault(ip, []).append(time.monotonic())  # DB60
     if _audit_should_log(f"rf|{ip}|{path}"):
         logger.warning("WO-ME-215 上报钥匙校验失败：来源=%s 接口=%s 窗口内累计=%d/%d 次",
                        ip, path, len(_report_failures.get(ip, [])), _REPORT_MAX_FAIL)

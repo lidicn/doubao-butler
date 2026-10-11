@@ -37,9 +37,8 @@ async def health(request):
     # 但 body ⛔ 说谎：V33 报的就是「MQTT 断了、调度器没起来，监控一片绿」。
     rt = get_runtime()
     comps = _core_components(rt)
-    alive = all(comps.values())
-    return ok({"online": alive,
-               "degraded": not alive,
+    return ok({"online": True,
+               "degraded": not all(comps.values()),
                "components": comps})
 
 

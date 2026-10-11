@@ -8,7 +8,6 @@ from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
 from butler.logging_setup import get_logger
-from butler.roles.store import ALL_ROLE_IDS
 from butler.runtime import get_runtime
 from butler.store import repo
 
@@ -189,6 +188,9 @@ async def facts_bulk_approve(request):
     except Exception:
         body = {}
     min_conf = float(body.get("min_conf", 0.7))
+    # DB59: 阈值必须在 [0, 1] 范围内，越界值会翻转全部待审核事实
+    if not (0.0 <= min_conf <= 1.0):
+        return err("min_conf must be within [0, 1]", 400)
 
     from butler.store.db import get_conn
     conn = get_conn()
@@ -210,6 +212,9 @@ async def facts_bulk_reject(request):
     except Exception:
         body = {}
     max_conf = float(body.get("max_conf", 0.6))
+    # DB59: 阈值必须在 [0, 1] 范围内
+    if not (0.0 <= max_conf <= 1.0):
+        return err("max_conf must be within [0, 1]", 400)
 
     from butler.store.db import get_conn
     conn = get_conn()
@@ -327,7 +332,7 @@ async def fact_set_role(request):
     except Exception:
         return err("invalid json")
     role = str(body.get("target_role", "")).strip()
-    if role not in ALL_ROLE_IDS:
+    if role not in ("butler", "jarvis", "caesar", "luna", "gu_anheng", "xiaoyue"):
         return err("invalid target_role")
     from butler.store.db import get_conn
     c = get_conn()

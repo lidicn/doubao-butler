@@ -38,8 +38,8 @@ class PresenceEngine:
                             len(self.config.get("sensor_room_map", {})),
                             len(self.config.get("user_device_map", {})))
             except Exception as e:
-                logger.warning("presence config parse failed: %s", e)
-                self.config = {}
+                # DB65b: 解析失败不静默归零——保留旧配置，记录错误
+                logger.error("presence config parse failed (保留旧配置): %s", e)
         else:
             logger.warning("presence config not found at %s", self.config_path)
             self.config = {}

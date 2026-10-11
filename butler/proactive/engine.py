@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from butler.config import get_settings
-from butler.core import singleton
 from butler.logging_setup import get_logger, warn_throttled
 
 logger = get_logger("butler.proactive.engine")
@@ -39,39 +38,17 @@ DISABLED_MODES = {"sleep", "movie", "guest"}
 
 
 def get_conn() -> sqlite3.Connection:
-    """懒初始化：建连＋建表全收进 `butler.core.singleton` 的双检锁，先跑完 `_init` 再发布 `_conn`。
-
-    同族坏码（D15，批75 当年因本枚在途而登记的另一半）＝判定在锁外＋先发布再建表：
-    并发首调各建一条、先建的那条被覆盖后⛔ 关；`_init` 抛错后坏对象永久缓存。
-    """
-    if _conn is not None:
-        return _conn                    # 热路径无锁
-    return singleton.init(globals(), "_conn", _build_conn)
-
-
-def close_conn() -> None:
-    """释放进程级缓存连接（批186·P1-11）：关停／换 DATA_DIR／测试临时目录里的句柄要收得回来。
-
-    真身在 `butler.core.singleton.release`——与 `get_conn` 共用同一条（模块, 全局名）锁，
-    站点⛔ 各写一遍关锁＋置 None。释放后 `get_conn()` 会重建（懒单例语义不变）。
-    """
-    singleton.release(globals(), "_conn")
-
-
-def _build_conn() -> sqlite3.Connection:
-    s = get_settings()
-    Path(s.data_dir).mkdir(parents=True, exist_ok=True)
-    db_path = Path(s.data_dir) / "butler.db"
-    c = sqlite3.connect(str(db_path), check_same_thread=False)
-    c.execute("PRAGMA journal_mode=WAL")
-    c.row_factory = sqlite3.Row
-    try:
-        _init(c)                         # ★ 建表跑完之前这条连接不对外可见
-    except Exception:
-        c.close()                        # ★ 坏连接⛔ 留在全局上、也⛔ 漏句柄
-        raise
-    logger.info("proactive engine store opened at %s", db_path)
-    return c
+    global _conn
+    if _conn is None:
+        s = get_settings()
+        Path(s.data_dir).mkdir(parents=True, exist_ok=True)
+        db_path = Path(s.data_dir) / "butler.db"
+        c = sqlite3.connect(str(db_path), check_same_thread=False)
+        c.execute("PRAGMA journal_mode=WAL")
+        c.row_factory = sqlite3.Row
+        _conn = c
+        _init(c)
+    return _conn
 
 
 def _init(c: sqlite3.Connection) -> None:

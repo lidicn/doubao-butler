@@ -9,8 +9,7 @@ v1.8.1 修复：CRITICAL_DEVICES 从宽泛子串匹配改为精确 entity_id 白
   - 关键设备掉线（路由器/网关/HA 本身掉线）
   - 模式异常（离家模式下检测到人体活动）
 
-去重（批141 · DCD 20261008-DB五件 件二 甲）：钥匙＝异常集合快照——新异常推一条、
-恢复正常推一条、持续期间不再重复；同键严重度升档＝状态变化、可再推。
+去重：同一异常 1 小时内只推送一次。
 推送：Bark（默认），critical 级别加小爱 TTS。
 """
 from __future__ import annotations
@@ -19,17 +18,14 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from butler.config import get_settings
 from butler.logging_setup import get_logger, warn_throttled
 from butler.timeseries import store as ts
 
 logger = get_logger("butler.timeseries.anomaly")
 
-# 异常集合快照：{key: 最近一次观测到的事件}。
-# 批141 退役了旧的时间窗去重（DEDUP_WINDOW=3600 + 小时粒度键 ⇒ 同一异常每小时换话重推，
-# 现证 387/397 正文互不相同）。检测条件消失即出账 ⇒ 这张 dict 天然有界（承接批85 的关切）。
-_active_events: dict[str, "AnomalyEvent"] = {}
-_SEV_RANK = {"info": 0, "warning": 1, "critical": 2}
+# 去重缓存：{anomaly_key: last_push_ts}
+_dedup_cache: dict[str, float] = {}
+DEDUP_WINDOW = 3600  # 1 小时
 
 # 紧急开关：异常检测推送总开关（v1.8 已改为汇总推送，重新开启）
 ANOMALY_PUSH_ENABLED = True
@@ -70,13 +66,12 @@ APPLIANCE_EXCLUDE_KEYWORDS = ["指示灯", "led", "indicator", "宽动态", "微
 @dataclass
 class AnomalyEvent:
     """异常事件。"""
-    key: str                    # 异常集合快照的键（状态身份，⛔ 嵌钟点/分钟数）
+    key: str                    # 去重用的唯一键
     entity_id: str              # 关联实体
     anomaly_type: str           # offline/low_battery/abnormal
     severity: str               # info/warning/critical
     message: str                # 人类可读描述
     extra: dict = field(default_factory=dict)
-    recoverable: bool = True    # False＝窗口型规则：窗口关闭≠恢复正常，⛔ 发恢复条
 
 
 class AnomalyDetector:
@@ -112,41 +107,28 @@ class AnomalyDetector:
         except Exception as e:
             logger.warning("check_mode_anomaly failed: %s", e)
 
-        # 集合差分去重（批141 甲）：⛔ 时间窗、⛔ 正文——只认「异常集合变了」
-        current: dict[str, AnomalyEvent] = {}
-        for ev in events:
-            current.setdefault(ev.key, ev)
-
+        # 去重 + 写入存储
         new_events = []
-        for k, e in current.items():
-            prev = _active_events.get(k)
-            if prev is None or _SEV_RANK.get(e.severity, 1) > _SEV_RANK.get(prev.severity, 1):
-                new_events.append(e)
-        cleared = [e for k, e in _active_events.items() if k not in current]
-
-        _active_events.clear()
-        _active_events.update(current)
-
-        for e in new_events:
+        for ev in events:
+            if self._is_duplicate(ev.key):
+                continue
+            self._mark_pushed(ev.key)
+            new_events.append(ev)
+            # 写入存储
             try:
                 ts.record_device_anomaly(
-                    entity_id=e.entity_id,
-                    anomaly_type=e.anomaly_type,
-                    severity=e.severity,
-                    message=e.message,
+                    entity_id=ev.entity_id,
+                    anomaly_type=ev.anomaly_type,
+                    severity=ev.severity,
+                    message=ev.message,
                 )
-            except Exception as ex:
-                logger.warning("record anomaly failed: %s", ex)
+            except Exception as e:
+                logger.warning("record anomaly failed: %s", e)
 
-        # 汇总推送：本轮新异常合并成一条 Bark（v1.8 优化，避免逐条推送骚扰）
+        # 汇总推送：所有新异常合并成一条 Bark（v1.8 优化，避免逐条推送骚扰）
         if new_events:
             await self._push_anomaly_summary(new_events)
             logger.info("anomaly check found %d new anomalies, summary pushed", len(new_events))
-        # 恢复推送：只在「消失那一刻」推一条，之后该键已出账 ⇒ 天然不重复
-        recoveries = [e for e in cleared if e.recoverable]
-        if recoveries:
-            await self._push_recovery(recoveries)
-            logger.info("anomaly recovery pushed for %d cleared anomalies", len(recoveries))
         return new_events
 
     # ---- 检测规则 ----
@@ -166,22 +148,20 @@ class AnomalyDetector:
         if current_mode != "sleep":
             return events
 
-        # 检查定位引擎：主成员是否在主卧且无活动
+        # 检查定位引擎：lidicn 是否在主卧且无活动
         if self.rt and hasattr(self.rt, "presence_engine"):
             try:
-                member = get_settings().primary_member
                 snapshot = self.rt.presence_engine.snapshot()
-                loc = snapshot.get("users", {}).get(member, {})
-                room = loc.get("room", "")
-                confidence = loc.get("confidence", 0)
+                lidicn_loc = snapshot.get("users", {}).get("lidicn", {})
+                room = lidicn_loc.get("room", "")
+                confidence = lidicn_loc.get("confidence", 0)
                 if "主卧" in room and confidence >= 0.6:
                     events.append(AnomalyEvent(
-                        key=f"no_activity_{member}_{time.strftime('%Y%m%d')}",
-                        entity_id=f"person.{member}",
+                        key=f"no_activity_lidicn_{time.strftime('%Y%m%d')}",
+                        entity_id="person.lidicn",
                         anomaly_type="abnormal",
                         severity="info",
-                        message=f"工作日 {hour}:00 后 {member} 仍在主卧（睡眠模式），可能起床异常，建议关怀提醒。",
-                        recoverable=False,  # 窗口型规则：11:00 窗闭≠起床异常恢复，⛔ 发恢复条
+                        message=f"工作日 {hour}:00 后 lidicn 仍在主卧（睡眠模式），可能起床异常，建议关怀提醒。",
                     ))
             except Exception as e:
                 logger.debug("presence snapshot failed: %s", e)
@@ -304,7 +284,7 @@ class AnomalyDetector:
                 for user, loc in snapshot.get("users", {}).items():
                     if loc.get("confidence", 0) >= 0.6 and loc.get("room"):
                         events.append(AnomalyEvent(
-                            key=f"mode_anomaly_{user}",  # 批141：键⛔ 嵌钟点——小时粒度键每小时换新钥匙，是逐小时重推的根因之一
+                            key=f"mode_anomaly_{user}_{time.strftime('%Y%m%d%H')}",
                             entity_id=f"person.{user}",
                             anomaly_type="abnormal",
                             severity="critical",
@@ -314,6 +294,19 @@ class AnomalyDetector:
                 logger.debug("presence snapshot failed: %s", e)
 
         return events
+
+    # ---- 去重 ----
+
+    def _is_duplicate(self, key: str) -> bool:
+        last = _dedup_cache.get(key, 0)
+        return (time.monotonic() - last) < DEDUP_WINDOW
+
+    def _mark_pushed(self, key: str) -> None:
+        now = time.time()
+        # 过期键当场淘汰：小时粒度键（mode_anomaly_{user}_{YYYYMMDDHH}）每小时换新，只写不清＝这张进程级 dict 无界增长
+        for stale in [k for k, seen in _dedup_cache.items() if now - seen >= DEDUP_WINDOW]:
+            _dedup_cache.pop(stale, None)
+        _dedup_cache[key] = now
 
     # ---- 推送 ----
 
@@ -386,26 +379,3 @@ class AnomalyDetector:
                 )
             except Exception as e:
                 logger.warning("anomaly critical tts failed: %s", e)
-
-    async def _push_recovery(self, events: list[AnomalyEvent]) -> None:
-        """恢复推送（批141 甲）：异常消失那一刻推一条，之后键已出账 ⇒ 不再重复。"""
-        if not ANOMALY_PUSH_ENABLED:
-            return
-        lines = [f"  - {e.message}" for e in events[:5]]
-        if len(events) > 5:
-            lines.append(f"  ... 还有 {len(events) - 5} 项")
-        body = "\n".join(lines)
-        title = f"【异常恢复】{len(events)} 项已恢复正常"
-        try:
-            from butler.runtime import get_runtime
-            rt = get_runtime()
-            bark = getattr(rt, "bark", None)
-            if bark:
-                await bark.push(
-                    body=body,
-                    title=title,
-                    group="anomaly",
-                    priority="info",
-                )
-        except Exception as e:
-            logger.warning("anomaly recovery push failed: %s", e)

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +19,12 @@ from butler.core.atomic_json import write_json_atomic
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.roles")
+
+# 批56（P1-8 剩下的「完全无锁」半腿）：同 id 两个标签页同时保存＝踩同一枚 `{id}.json.tmp`（原子 helper 的
+# 临时文件是固定名）；更要紧的是 `delete()` 的「unlink ＋ del 内存」与 `upsert()` 的「改内存 ＋ 写盘」可以交错，
+# 留下「盘上有、内存没有」⇒ 下次 `load()` 把刚删掉的角色读回来＝账实不符。
+# ⛔ 可重入：写腿各只在最外层拿一次锁，锁内只走 `_write_held`（普通 Lock 才有 `locked()`，批47 判例）。
+_ROLES_LOCK = threading.Lock()
 
 
 @dataclass
@@ -116,23 +123,7 @@ DEFAULT_ROLES: list[dict] = [
         "skills": [], "enabled": True, "fallback": "bark",
         "wake_words": ["露娜"], "bound_rooms": ["Emily房间"], "scope": "private", "member": "Emily",
     },
-    {
-        # 豆包 APP 里的文字对话角色（doc/06-场景设计/顾安恒专属对话.md）：
-        # 链路是 webhook 取帧→视觉分析→推回对话，⛔ 电视输出设备与唤醒词——
-        # 多一个唤醒词就等于在家里凭空多出一个会应答的名字。
-        "id": "gu_anheng", "name": "顾安恒", "gender": "男", "is_primary": False,
-        "voice": "zh-CN-YunjianNeural", "tts_backend": "nowvoice",
-        "presence_rooms": ["*"], "output_devices": [],
-        "system": "你是家庭安防专员「顾安恒」，冷静、可靠、观察力敏锐，"
-                  "回答简短，涉及摄像头画面时先说明正在调取哪个房间。",
-        "skills": ["monitor-camera"], "enabled": True, "fallback": "bark",
-        "wake_words": [], "bound_rooms": [], "scope": "private", "member": "lidicn",
-    },
 ]
-
-# 角色名册的唯一真源：⛔ 在任何引用面再抄一遍字面量（P1-10 的洞就是抄出来的——
-# 投喂面抄成 6 枚、真源只播 5 枚，两边都不报错，缺的那个角色默默走不通）。
-ALL_ROLE_IDS: tuple[str, ...] = tuple(d["id"] for d in DEFAULT_ROLES)
 
 
 class RoleRegistry:
@@ -182,17 +173,33 @@ class RoleRegistry:
                     skipped.append(rid)
                     continue
                 role = Role.from_dict(d)
-                self.roles[rid] = role
-                self._write(role)
+                with _ROLES_LOCK:
+                    self.roles[rid] = role
+                    self._write_held(role)
                 created.append(rid)
         if skipped:
             logger.info("default roles not seeded (archived): %s", skipped)
         return created
 
+    def _target_path(self, rid: str):
+        """DB57: 校验角色 id 不会写到 roles/ 目录之外（防路径穿越）。"""
+        target = (self.dir / f"{rid}.json").resolve()
+        root = self.dir.resolve()
+        if target != root and root not in target.parents:
+            raise ValueError(f"role id 非法：{rid!r} 会写到 roles/ 目录之外")
+        return target
+
     def _write(self, role: Role) -> None:
+        with _ROLES_LOCK:
+            self._write_held(role)
+
+    def _write_held(self, role: Role) -> None:
+        """单个角色档落盘。**调用方必须已持有 `_ROLES_LOCK`**（`upsert`/`ensure_defaults` 已在锁内，⛔ 再拿一次）。"""
         try:
             # 表行 45 P1-13：半截 {id}.json 会让 load() 跳过该角色，ensure_defaults 再把出厂默认塞回来
-            write_json_atomic(self.dir / f"{role.id}.json", role.to_dict())
+            # DB57: 用 _target_path 校验路径，防穿越写
+            target = self._target_path(role.id)
+            write_json_atomic(target, role.to_dict())
         except Exception as e:
             logger.warning("write role %s failed: %s", role.id, e)
 
@@ -218,8 +225,9 @@ class RoleRegistry:
         role = Role.from_dict(d)
         if not role.id:
             raise ValueError("role id required")
-        self.roles[role.id] = role
-        self._write(role)
+        with _ROLES_LOCK:
+            self.roles[role.id] = role
+            self._write_held(role)
         return role
 
     def delete(self, rid: str) -> bool:
@@ -227,15 +235,18 @@ class RoleRegistry:
             raise ValueError("主角色不可删除")
         if rid not in self.roles:
             return False
-        target = self.dir / f"{rid}.json"
-        try:
-            target.unlink()
-        except FileNotFoundError:
-            pass  # 盘上本就没有＝已是删除终态
-        except OSError as e:
-            # P2-9 ②类第 10 枚（批42）：旧形吞掉这里的失败还照报 True，
-            # 调用方以为删了、文件还在，下次 load() 又读回来＝账实不符。
-            logger.warning("role file unlink failed for %s: %s", rid, e)
-            return False
-        del self.roles[rid]
+        # DB57: 校验路径，防穿越删除
+        target = self._target_path(rid)
+        # 批56：`unlink` 与 `del self.roles[rid]` 必须是一段（与并发的 upsert 互斥，⛔ 交错）
+        with _ROLES_LOCK:
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass  # 盘上本就没有＝已是删除终态
+            except OSError as e:
+                # P2-9 ②类第 10 枚（批42）：旧形吞掉这里的失败还照报 True，
+                # 调用方以为删了、文件还在，下次 load() 又读回来＝账实不符。
+                logger.warning("role file unlink failed for %s: %s", rid, e)
+                return False
+            del self.roles[rid]
         return True

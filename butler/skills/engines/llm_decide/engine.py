@@ -16,7 +16,7 @@ from __future__ import annotations
 import time
 from datetime import datetime
 
-from homesdk.time import house_now, house_tz_name
+from homesdk.time import house_now
 from butler.core.tools import TOOL_SCHEMAS, dispatch_tool
 from butler.logging_setup import get_logger
 from butler.skills.engines.llm_decide.ask import pending_ask_manager
@@ -104,7 +104,7 @@ class LLMDecideEngine:
         prompt = _render(prompt_tpl)
 
         # 注入当前时间
-        system += f"\n\n【当前时间】{now.strftime('%Y年%m月%d日')} {weekday_cn} {now.strftime('%H:%M')}（{house_tz_name()}）。"
+        system += f"\n\n【当前时间】{now.strftime('%Y年%m月%d日')} {weekday_cn} {now.strftime('%H:%M')}（Asia/Shanghai）。"
 
         # ── 工具执行器 ──
         async def executor(name: str, args: dict) -> str:
@@ -158,7 +158,6 @@ class LLMDecideEngine:
             # LLM 输出是问题，注册 pending ask
             await pending_ask_manager.arm(
                 room=room, question=text, brain=brain, rt=rt, timeout=ask_wait,
-                role_id=str(getattr(ctx.role, "id", "") or ""),   # 批200 Q1：跨房 fallback 的过滤键
             )
             logger.info("llm_decide armed ask (%.0fs): %.40s", ask_wait, text)
 

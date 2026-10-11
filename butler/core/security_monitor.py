@@ -109,6 +109,21 @@ class SecurityMonitor:
 
         return alerts
 
+    def mark_undelivered(self, alert: dict) -> None:
+        """DB61: 推送失败时回滚冷却，让下一轮重试。
+
+        不可逆动作（置冷却）发生在可逆性确认（推送成功）之前。
+        失败时必须撤销刚置上的冷却，否则单次失败被放大到整个冷却窗口。
+        """
+        alert_key = None
+        atype = (alert or {}).get("type", "")
+        entity = (alert or {}).get("entity", "")
+        if atype and entity:
+            alert_key = f"{atype}_{entity}"
+        if alert_key and alert_key in self._last_alert:
+            del self._last_alert[alert_key]
+            logger.warning("security alert cooldown rolled back (push failed): %s", alert_key)
+
 
 async def push_alert(rt, alert: dict) -> bool:
     """把一枚安全告警推给 Bark（审计 MA-01）。返回值＝是否真送达。

@@ -9,15 +9,9 @@ from butler.logging_setup import get_logger
 
 logger = get_logger("butler.tools")
 
-# WO-BUT-018: token 从 config 读取，不再硬编码
-# 审计 D5（批63）：PM 发送 URL 基址走 settings.deskpilot_http_url（env DESKPILOT_HTTP_URL），
-# 不再烤死 LAN 字面量 ⇒ 换 DeskPilot 地址改配置即生效。
-
-
 def _deskpilot_pm_send_url() -> str:
-    """由 Settings 基址派生 DeskPilot PM 发送 URL（尾部斜杠裁剪）。"""
-    return get_settings().deskpilot_http_url.rstrip("/") + "/api/v1/pm/send"
-
+    return f"{get_settings().deskpilot_http_url.rstrip('/')}/api/v1/pm/send"
+# WO-BUT-018: token 从 config 读取，不再硬编码
 
 async def _deskpilot_pm_send(target: str, message: str, press_enter: bool = True) -> tuple[bool, str]:
     """通过 DeskPilot PM 消息管道发送消息到豆包对话。
@@ -104,11 +98,17 @@ async def _dispatch_deskpilot(agent, name: str, args: dict) -> str:
                 conv_y = int(round(raw_y * sy))
             else:
                 conv_x, conv_y = raw_x, raw_y
+            # DB70: confirm 由被约束方(LLM)自填＝门形同虚设。
+            # 本地无状态校验，LLM 首次调用即可带 confirm=true 绕过。
+            # 正确形态：忽略 LLM 传来的 confirm，危险区域命中时向用户求助。
+            llm_confirm = bool(args.get("confirm", False))
+            if llm_confirm:
+                logger.warning("desk_desktop_click: LLM 试图自填 confirm=true，已忽略（DB70）")
             r = await dpk.desktop_click(
                 conv_x, conv_y,
                 button=args.get("button", "left"),
                 double=bool(args.get("double", False)),
-                confirm=bool(args.get("confirm", False)),
+                confirm=False,
             )
             # 观察验证器：click 成功后自动截图，取元信息（不放 base64 省 token）
             if r.get("ok"):
@@ -418,4 +418,3 @@ async def _send_to_dp(agent, args: dict) -> str:
     ok, err = await _deskpilot_pm_send("DP", message)
     if ok:
         return "✅ 已向 DP 发送即时消息（DeskPilot PM 管道）。注意：需要电脑未锁屏。"
-    return f"❌ DP 消息发送失败：{err}"

@@ -48,7 +48,8 @@ def _time_of_day() -> str:
 
 def _build_system(user: str, scenario: str, sys_override: str | None) -> str:
     if sys_override:
-        return sys_override
+        # DB73: 系统人设属服务端配置，不接受远端指定；保留参数维持签名兼容
+        logger.warning("llm_chat: ignored remote system override (DB73)")
     persona = PERSONAS.get(user, "家里的成员。用亲切自然的口语打招呼，1-2句话，像家人闲聊。")
     tod = _time_of_day()
     return (
@@ -59,6 +60,10 @@ def _build_system(user: str, scenario: str, sys_override: str | None) -> str:
 
 async def handle_llm_chat(request: Request) -> JSONResponse:
     """POST /api/llm/chat — 兼容 NR LLM 中枢。"""
+    # DB73: 加入鉴权（guard 已导入但从未调用）
+    auth_err = guard(request)
+    if auth_err is not None:
+        return auth_err
     try:
         body: dict[str, Any] = await request.json()
     except Exception:

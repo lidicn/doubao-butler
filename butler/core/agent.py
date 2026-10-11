@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
-from homesdk.time import house_now, house_tz_name
+from homesdk.time import house_now
 
 from butler.agent_trace import AgentTracer
 from butler.agent_skill import match_dialog_skill, extract_params_from_text
@@ -83,10 +83,10 @@ class Agent:
         # P1-1：用 contextvar 记录当前请求用户输入，避免并发串话
         _current_user_text.set(text)
         system = system_override or self.s.persona.system
-        # 注入当前时间（家庭时区现取 house_tz_name），避免模型胡编时间
+        # 注入当前时间（Asia/Shanghai），避免模型胡编时间
         now = house_now()
         weekday_cn = ["周一","周二","周三","周四","周五","周六","周日"][now.weekday()]
-        system += f"\n\n【当前时间】{now.strftime('%Y年%m月%d日')} {weekday_cn} {now.strftime('%H:%M')}（{house_tz_name()}）。回答中涉及时间请以此为准，不确定时说不知道，不要编造。"
+        system += f"\n\n【当前时间】{now.strftime('%Y年%m月%d日')} {weekday_cn} {now.strftime('%H:%M')}（Asia/Shanghai）。回答中涉及时间请以此为准，不确定时说不知道，不要编造。"
         if member:
             ctx = PersonaEngine(self.s).member_context(member)
             if ctx:
