@@ -632,6 +632,15 @@ class DialogManager:
                     # notify_text：小爱原生 TTS（execute_text_directive），不走 media
                     r = await self.ha.notify_message(text, dev.ha_entity or None)
                     out.append({"device": dev.id, "mode": "notify_text", "ok": r == "ok", "detail": r})
+        # 设备级回声窗口（批194 A6＋A7①）：登记点只能有一枚，且挂在本函数——
+        # 三条调用路（speak_as_role／speak／`cron_task.py` 的定时播报）都汇聚到这里，
+        # 挂在 speak_as_role 时另两路根本没有窗口；且只登记**回执 ok 的小爱**：
+        # 下发失败那台若也开窗，它窗口内的真人话音会被耳腿当回声吞掉。
+        from butler.core.xiaomi_ear import XiaomiEar
+        ok_ids = {r.get("device") for r in out if r.get("ok")}
+        for d in devices:
+            if d.type == "xiaomi" and d.id in ok_ids:
+                XiaomiEar.note_speak(d.id, hold_s=self._est_speak_secs(text))
         return out
 
     async def speak_as_role(self, role, text: str, room: str, member: str, source_device: str = "") -> dict:
@@ -662,11 +671,7 @@ class DialogManager:
             )
         except Exception as e:
             logger.warning("WO-DB-111 butler 回复落库失败（不影响播报，也不得影响回声抑制）：%s", e)
-        # 回声抑制：下发后按本条文本的估算时长登记设备窗口（下界＝XiaomiEar.ECHO_COOLDOWN_S，
-        # 时长口径与 media_stop 同源 `_est_speak_secs`）
-        from butler.core.xiaomi_ear import XiaomiEar
-        for d in devices:
-            XiaomiEar.note_speak(d.id, hold_s=self._est_speak_secs(text))
+        # 设备级回声窗口已下沉到 `_emit_devices`（批194 A6＋A7①：这里登记会把下发失败的设备也算成「刚播过」）
         return {"spoken": True, "devices": out}
 
     # ---------- 发声（统一出口）----------

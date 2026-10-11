@@ -117,26 +117,24 @@ def _chain(node):
     return None
 
 
-def _func(tree, name):
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
-            return node
-    return None
-
-
 def write_leg_shape(src: str) -> dict:
-    """`speak_as_role` 里冷却腿的形状：{"note_speak": [(lineno, 带估算器?)], "direct": [lineno…]}。
+    """dialog 侧冷却写腿的形状：{"note_speak": [(lineno, 带估算器?)], "direct": [lineno…]}。
 
     `direct`＝`XiaomiEar._echo_cooldown[...] = …` 这种跨模块裸下标写（合并行 53 点名的形状）。
+    1011-b194 重钉两格：
+     1. 那枚写腿从 `speak_as_role` 下沉到 `_emit_devices`（批194 A6＋A7①，三条调用路共用一个汇聚点）
+        ⇒ 本尺改扫**整档**，⛔ 再钉某一枚函数；
+     2. 链必须精确等于 `XiaomiEar.note_speak`——dialog.py 里另有一枚**同名不同物**的
+        `self.state.note_speak(member)`（`RuntimeState` 的成员级记号，:537／:737），
+        只比尾名会把两枚算成三枚⇒假红（本批第一次重钉就撞了它）。
+    判据强度只增不减：「恰一枚写腿＋⛔ 裸下标写＋时长取 `_est_speak_secs`」在原函数体内同样成立。
     """
     out = {"note_speak": [], "direct": []}
-    fn = _func(ast.parse(src), "speak_as_role")
-    if fn is None:
-        return out
-    for item in ast.walk(fn):
+    tree = ast.parse(src)
+    for item in ast.walk(tree):
         if isinstance(item, ast.Call):
             chain = _chain(item.func)
-            if chain and chain[-1] == "note_speak":
+            if chain == ["XiaomiEar", "note_speak"]:
                 has_est = any(isinstance(n, ast.Attribute) and n.attr == "_est_speak_secs"
                               for n in ast.walk(item))
                 out["note_speak"].append((item.lineno, has_est))

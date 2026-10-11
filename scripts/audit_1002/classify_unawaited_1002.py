@@ -109,9 +109,11 @@ SITES = [
     #   两条调用点本体一字未动（⛔ 加减行号，按符号 `self.tv.notify` / `XiaomiEar.note_speak` 重钉）。
     ("core/dialog.py", 527, "notify"),
     # 1011-b192-NEW：批192 把冷却腿从「裸改别的模块的类属性」改成走 API，新调用点
-    #   `XiaomiEar.note_speak(d.id, hold_s=…)`（`dialog.py:669`）是同步 classmethod ⇒ 按名册规矩入册，
+    #   `XiaomiEar.note_speak(d.id, hold_s=…)`是同步 classmethod ⇒ 按名册规矩入册，
     #   ⛔ 让普查漏掉新腿（同批190 `cancel_watch_tasks` 那枚的先例）。
-    ("core/dialog.py", 669, "note_speak"),
+    # 1011-b194 re-anchor 669→643：批194 A6＋A7① 把那枚写腿从 `speak_as_role` 下沉到 `_emit_devices`
+    #   （三条调用路共用汇聚点，且只登记回执 ok 的小爱），调用点本体一字未动（按符号现读重钉）。
+    ("core/dialog.py", 643, "note_speak"),
     # 批165 re-anchor 245→260 / 253→268：形状分支在它们上方净插 15 行，调用点本体一字未动
     # （sqlite3 Connection.execute 与 write_failures.record 仍是原那两条腿）。
     ("core/event_stream.py", 260, "execute"),
