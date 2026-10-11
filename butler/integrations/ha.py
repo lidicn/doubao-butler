@@ -339,26 +339,6 @@ class HAClient:
             logger.warning("HA intelligent_speaker failed: %s", e)
             return f"error: {e}"
 
-        """通过 HA notify 平台让小爱音箱播报文本（如 xiaomi_miot 的 execute_text_directive）。"""
-        if not self.s.ha_token:
-            return "HA token 未配置"
-        data = {"message": message}
-        if entity_id:
-            data["entity_id"] = entity_id
-        try:
-            async with httpx.AsyncClient(timeout=10) as c:
-                r = await c.post(
-                    f"{self.s.ha_url.rstrip('/')}/api/services/notify/send_message",
-                    headers=self._headers(),
-                    json=data,
-                )
-                if r.status_code == 200:
-                    return "ok"
-                return f"http {r.status_code}: {r.text[:200]}"
-        except Exception as e:
-            logger.warning("HA notify_message failed: %s", e)
-            return f"error: {e}"
-
     async def notify_message(self, message: str, entity_id: str | None = None) -> str:
         async with self._play_lock("ha:" + str(entity_id)):
             return await self._notify_message_inner(message, entity_id)
