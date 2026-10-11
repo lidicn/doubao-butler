@@ -2,7 +2,7 @@
 
 记录所有触发源的执行历史到 SQLite，支持按触发源/时间范围/结果过滤查询。
 
-与 PushGuard 审计日志统一存储在 /app/data/push_guard.db（分表），
+与 PushGuard 审计日志统一存储在 `DATA_DIR`/push_guard.db（未设时仍为 /app/data，分表），
 但 trigger_audit 表独立，不与 push_audit 混合。
 """
 from __future__ import annotations
@@ -14,9 +14,20 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from butler.core import data_paths
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.triggers.audit")
+
+
+def _default_db_path() -> str:
+    """默认库＝`DATA_DIR` 单点惰性解析（每次现取，⛔ 烤成模块级常量）。
+
+    生产构造点 `triggers/registry.py` 是**无参** `TriggerAuditor()`，所以这一枚默认值
+    是活的：写死 `/app/data` 时，用户把 `DATA_DIR` 指到挂载点后，`trigger_audit` 表会
+    与其余审计分家成两个物理文件（批164 那条病形的第 7 枚）。
+    """
+    return str(data_paths.data_file("push_guard.db"))
 
 
 CALIBER_HEARTBEAT = "schedule_heartbeat"
@@ -56,9 +67,9 @@ CREATE INDEX IF NOT EXISTS idx_trigger_audit_result ON trigger_audit(result);
 class TriggerAuditor:
     """触发执行审计器。"""
 
-    def __init__(self, db_path: str = "/app/data/push_guard.db"):
-        self.db_path = db_path
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, db_path: str | None = None):
+        self.db_path = db_path or _default_db_path()
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _init_db(self) -> None:
