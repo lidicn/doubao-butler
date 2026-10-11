@@ -832,6 +832,17 @@ def _build_app() -> Starlette:
             yield
         finally:
             consumer.cancel()
+            # 批190·P1-11（合并行 #11 最后两条腿之一）：`_consume` 的 except 只兜 `queue.get()`
+            # 那一眼（`:106`），分发腿兜的是 `except Exception`（`:178`）——CancelledError 在 3.8+
+            # 是 BaseException，会从正在 `await rt.inbox.handle(...)`／`await rt.dialog.on_event(...)`
+            # 的那一轮逃出去。所以裸 `cancel()` 之后不 await，分发腿就可能压在 `mqtt.stop()` 与
+            # `close()` 之后回头往已关的通道里写。`CancelledError` 要一起兜：它正是上面那条形状
+            # 的产物，漏了它整条关停序列会从这一枚炸出去。
+            try:
+                await asyncio.wait_for(consumer, timeout=2.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as e:
+                consumer.cancel()      # 超时没收回＝再钉一次取消标志，⛔ 让收尾卡在这里
+                logger.warning("consumer shutdown wait failed: %s", e)
             # P1-5 后半：定位轮询⛔ 是 consumer 的下属，它有独立的退出闩与收尾，
             # 且必须排在 close() 之前（晚一步就是往已关闭的连接里写）。
             _stop = getattr(rt, "_stop_event", None)
@@ -877,6 +888,15 @@ def _build_app() -> Starlette:
                     rt.ha.stop_xiaomi_token_refresh()
             except Exception as e:
                 logger.warning("xiaomi token refresh stop failed: %s", e)
+            # 批190·P1-11（合并行 #11 最后一条腿）：两张「播完该停」的 watch 表（`ha.py` 的
+            # `_xiaomi_watch_tasks` 实例级／`_media_stop_tasks` 类级）此前只有起腿：每 0.2s 读一次
+            # HA 状态、到点连发 5 次 `media_pause`——进程收摊时再发一帧＝往正在拆的 httpx 客户端与
+            # HA token 里写。
+            try:
+                if getattr(rt, "ha", None) is not None:
+                    rt.ha.cancel_watch_tasks()
+            except Exception as e:
+                logger.warning("media stop watch tasks cancel failed: %s", e)
             mqtt.stop()
             try:
                 if hasattr(rt, "xiaomi_ear"):

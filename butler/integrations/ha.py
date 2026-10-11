@@ -76,6 +76,23 @@ class HAClient:
         self._xiaomi_token_refresh_task = None
         logger.info("xiaomi token auto-refresh stopped")
 
+    def cancel_watch_tasks(self) -> None:
+        """批190·P1-11：两张「播完该停」watch 任务表的关停腿。
+
+        `_xiaomi_watch_tasks`（实例级）与 `_media_stop_tasks`（类属性，跨实例共享）里的轮询任务
+        会往音箱下发 `media_pause`，进程收摊时再发一帧＝往正在拆的 httpx 客户端与 HA token 里写。
+        清表顺带把 done 任务摘掉——**平时**那两张表只 `.get`＋赋值、无 pop／done 回调，
+        那是内存回收一族，本批只保证「关停时不剩活任务」。
+        """
+        cancelled = 0
+        for tasks in (self._xiaomi_watch_tasks, self._media_stop_tasks):
+            for task in list(tasks.values()):
+                if not task.done():
+                    task.cancel()
+                    cancelled += 1
+            tasks.clear()
+        logger.info("xiaomi/media stop watch tasks cancelled=%d", cancelled)
+
     async def _xiaomi_token_refresh_loop(self) -> None:
         """后台循环：每 2 小时刷新一次 service_token；失败每 60 秒重试（最多 6 次）。
 

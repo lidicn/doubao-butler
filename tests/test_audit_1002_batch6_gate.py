@@ -16,12 +16,16 @@ B. **现网点开的调用点名单**：`gate(butler/, SITES)` 必须 0 枚 ASYN
    且 SYNC_OK=20 / EXTERNAL_SYNC=9（**1009-b6 重钉后口径覆盖 10-02 原读数**：名册 29＝原 30
    减一枚 `subprocess.run` 槽——该调用已重构进 `await ensure_wake_ding`，PM 裁退役；
    sched 两枚因尺子 None-遮蔽盲区修复转 EXTERNAL_SYNC。⛔ 靠"全对"两字过关）。
-   名册里的**行号**是活物：批164／165／166／167／170／179／180／186／188／189 各挪过若干枚的落点，
+   名册里的**行号**是活物：批164／165／166／167／170／179／180／186／188／189／190 各挪过若干枚的落点，
    每次重钉都在 `SITES` 旁留一行「本节口径覆盖批X 的落点登记」＋接收者现读点开。
    分布 20/9 自 1009-b6 起未动过——动了它必须改本判据与台账，⛔ 顺手把判据改成新读数。
    **1011-b189 更新本节口径**：批189（P1-11 关停收尾两条腿）新入册两枚 `app.py:872`／`:877`
    （逐枚 `def_at` 现读为同步体）⇒ 名册 29→31、SYNC_OK 20→22、锚点 12→14；EXTERNAL_SYNC=9 未动。
-C. **锚点**：判定所依赖的 14 处 `def` 仍是**同步体**且仍在登记的行号上
+   **1011-b190 更新本节口径**：批190（合并行 #11 最后两条腿）新入册一枚 `app.py:897`
+   （`rt.ha.cancel_watch_tasks()`，`def_at` 现读同步体；同批的 consumer 那枚是 **await**，⛔ 在册），
+   五条旧落点整体下移 883／888／900／903／907 ⇒ 名册 31→32、SYNC_OK 22→23、锚点 14→15；
+   EXTERNAL_SYNC=9 未动。
+C. **锚点**：判定所依赖的 15 处 `def` 仍是**同步体**且仍在登记的行号上
    ⇒ 谁把 `TVClient.notify` 改成 `async def` 而不动 5 个调用点，这里当场红。
 
 盲点（自报）：
@@ -135,10 +139,11 @@ class ProductionRosterTest(unittest.TestCase):
 
     def test_distribution_equals_todays_readings(self):
         counts = self.mod.verdict_counts(self.rows)
-        # 1011-b189：名册 29→31／SYNC_OK 20→22（本批新入册的关停腿两枚，`def_at` 现读皆同步体）。
-        self.assertEqual(counts.get("SYNC_OK"), 22, counts)
+        # 1011-b190：名册 31→32／SYNC_OK 22→23（本批新入册的 watch 关停腿 `app.py:897`，
+        #   `def_at` 现读为同步体；`consumer` 那枚是 **await**，⛔ 进本名册）。
+        self.assertEqual(counts.get("SYNC_OK"), 23, counts)
         self.assertEqual(counts.get("EXTERNAL_SYNC"), 9, counts)
-        self.assertEqual(sum(counts.values()), 31, counts)
+        self.assertEqual(sum(counts.values()), 32, counts)
 
     def test_roster_sites_all_classified(self):
         self.assertEqual(len(self.rows), len(self.mod.SITES),
@@ -152,10 +157,12 @@ ANCHORS = [
     ("integrations/ilink/bridge.py", "ILinkBridge", "start", 56),
     ("integrations/ilink/bridge.py", "ILinkBridge", "stop", 67),
     ("core/event_stream.py", "EventStream", "start", 96),
-    # 批189 新锚两枚：关停腿 app.py:872／:877 的判定撑在这两个 def 的「同步」性质上，
-    #   谁把它们翻成 `async def` 而不动调用点，这里当场红（`def_at` 现读均 kind=sync）。
+    # 批189 新锚两枚：关停腿 app.py:883／:888（1011-b190 重钉后）的判定撑在这两个 def 的
+    #   「同步」性质上，谁把它们翻成 `async def` 而不动调用点，这里当场红（`def_at` 现读均 kind=sync）。
     ("core/event_stream.py", "EventStream", "stop", 104),
     ("integrations/ha.py", "HAClient", "stop_xiaomi_token_refresh", 67),
+    # 批190 新锚一枚：`app.py:897`（`rt.ha.cancel_watch_tasks()`）同一条形状撑在 def 的同步性质上。
+    ("integrations/ha.py", "HAClient", "cancel_watch_tasks", 79),
     ("core/xiaomi_ear.py", "XiaomiEar", "start", 30),   # 批166 re-anchor 29→30（件五乙：头注「点名才答」占两行）
     ("core/xiaomi_ear.py", "XiaomiEar", "stop", 37),    # 批166 re-anchor 36→37（同上）
     ("core/aliases.py", "AliasStore", "delete_alias", 99),  # 批164 re-anchor 93→99（D5：别名路径改成惰性 alias_file()）
@@ -166,7 +173,7 @@ ANCHORS = [
 
 
 class AnchorTest(unittest.TestCase):
-    """C：14 处判定锚点——被这些 def 的「同步」性质撑住的调用点，⛔ 无人守护地翻成 async。"""
+    """C：15 处判定锚点——被这些 def 的「同步」性质撑住的调用点，⛔ 无人守护地翻成 async。"""
 
     def test_anchors_are_still_sync_at_recorded_lines(self):
         mod = load_mod()

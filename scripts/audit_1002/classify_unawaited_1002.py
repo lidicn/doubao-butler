@@ -78,21 +78,23 @@ SITES = [
     ("app.py", 794, "start"),
     ("app.py", 809, "start"),
     ("app.py", 817, "start"),
-    # 1011-b189-REANCHOR 865→880 / 868→883 / 872→887：**本节口径覆盖批177 的落点登记**——
-    #   漂移源＝批189（P1-11 关停收尾两条腿）在 `mqtt.stop()` 上方净插 15 行
-    #   （event_stream／token-refresh 两段收尾＋注释）。三条旧腿逐枚按「接收者＋包围函数」
-    #   现读点开（⛔ 靠 +15 算术）：880=`mqtt.stop()`、883=`rt.xiaomi_ear.stop()`、
-    #   887=`rt._sched.shutdown(False)` ⇒ 前两枚 SYNC_OK、末枚 APScheduler 外部同步
-    #   EXTERNAL_SYNC，判定与重钉前一致。
-    #   同批新入册两枚（本批的判定对象，⛔ 让普查漏掉新调用点）：872=`rt.event_stream.stop()`
-    #   （接收者 `rt.event_stream = EventStream(rt)`:816，`core/event_stream.py:104` 同步体）、
-    #   877=`rt.ha.stop_xiaomi_token_refresh()`（接收者 `rt.ha = ha`:366 ← `HAClient(s)`:327，
-    #   `integrations/ha.py:67` 同步体）⇒ 两枚 SYNC_OK，名册 29→31、SYNC_OK 20→22。
-    ("app.py", 872, "stop"),
-    ("app.py", 877, "stop_xiaomi_token_refresh"),
-    ("app.py", 880, "stop"),
+    # 1011-b190-REANCHOR 872→883 / 877→888 / 880→900 / 883→903 / 887→907：**本节口径覆盖批189
+    #   的落点登记**——漂移源＝批190（合并行 #11 最后两条腿）在 `finally` 里净插两段：
+    #   `consumer.cancel()` 之后补 `await asyncio.wait_for(consumer, timeout=2.0)`（+11 行，
+    #   那一枚本身是 **await**，⛔ 进本名册），`mqtt.stop()` 之前补 `rt.ha.cancel_watch_tasks()`
+    #   （+9 行）。六枚逐枚按「接收者＋包围函数」现读点开（⛔ 靠 +11/+9 算术）：
+    #   883=`rt.event_stream.stop()`、888=`rt.ha.stop_xiaomi_token_refresh()`、
+    #   897=`rt.ha.cancel_watch_tasks()`（本批新入册）、900=`mqtt.stop()`、
+    #   903=`rt.xiaomi_ear.stop()`、907=`rt._sched.shutdown(False)`
+    #   ⇒ 前五枚 SYNC_OK、末枚 APScheduler 外部同步 EXTERNAL_SYNC，判定与重钉前一致。
+    #   历史（批189 那遍的读数，已被上面覆盖）：865→880 / 868→883 / 872→887，
+    #   新入册两枚 872／877 ⇒ 名册 29→31、SYNC_OK 20→22。
     ("app.py", 883, "stop"),
-    ("app.py", 887, "shutdown"),
+    ("app.py", 888, "stop_xiaomi_token_refresh"),
+    ("app.py", 897, "cancel_watch_tasks"),
+    ("app.py", 900, "stop"),
+    ("app.py", 903, "stop"),
+    ("app.py", 907, "shutdown"),
     ("core/dialog.py", 513, "notify"),
     # 批165 re-anchor 245→260 / 253→268：形状分支在它们上方净插 15 行，调用点本体一字未动
     # （sqlite3 Connection.execute 与 write_failures.record 仍是原那两条腿）。
