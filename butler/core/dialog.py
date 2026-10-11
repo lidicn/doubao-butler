@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 import time
 
 from butler.bus.topics import PUB_DIALOG, PUB_SPEAK_OUT, parse_experiment
@@ -30,6 +31,9 @@ logger = get_logger("butler.dialog")
 _idle_tasks: set[asyncio.Task] = set()   # 收尾任务强引用注册表（第五轮 P0-7 同形状）
 
 _DEVICE_FAIL_REPLY = "嗯，刚才出了点问题，能再说一遍吗？"  # 简单规则设备控制没真成时的统一口径（⛔ 拿确认文案盖住失败）
+
+# 点名形＝句首或断点（标点/空白）之后紧跟唤醒词。批194 A1（第二轮小爱审计 §三 P0-1）。
+_WAKE_BOUNDARY = re.compile(r"(?:^|[，,。.!！?？、；;：:\s])")
 
 
 def _default_butler_role():
@@ -210,16 +214,35 @@ class DialogManager:
     # ---------- 按角色唤醒路由（Phase 6）----------
 
     def match_role_by_text(self, text: str):
-        """从文本中识别唤醒短语 → 角色（返回 role, 去唤醒词后的文本）。"""
+        """从文本中识别唤醒短语 → 角色（返回 role, 去唤醒词后的文本）。
+
+        点名＝唤醒词落在**句首或断点之后**，多个候选取**最长**者；命中点之后到正文之间的
+        逗号/句号/空白一并剥掉。⛔ 整串子串命中＋`replace`（那条坏账把「我买了个豆包」
+        读成一次点名，并把「豆包管家帮我查天气」洗成「管家帮我查天气」）。
+        本函数⛔ 解决「称呼 vs 描述」（「凯凯很乖」仍在句首命中）——那一格是语义问，走 DCD。
+        """
+        if not text:
+            return None, text
         rt = get_runtime()
+        best = None  # (role, 命中的唤醒词, 起点)
         for role in rt.roles.all():
             if not role.enabled or not role.wake_words:
                 continue
             for w in role.wake_words:
-                if w and w in text:
-                    cleaned = text.replace(w, "", 1).strip() if w else text
-                    return role, cleaned
-        return None, text
+                if not w:
+                    continue
+                for m in re.finditer(re.escape(w), text):
+                    pos = m.start()
+                    if pos != 0 and not _WAKE_BOUNDARY.fullmatch(text[pos - 1]):
+                        continue
+                    if best is None or len(w) > len(best[1]):
+                        best = (role, w, pos)
+                    break
+        if best is None:
+            return None, text
+        role, w, pos = best
+        cleaned = text[pos + len(w):].lstrip("，,。.、 \t").strip()
+        return role, cleaned or text
 
     def match_role_by_room(self, room: str):
         """按房间推断默认角色：私人助理(scope=private)的 bound_rooms 即其专属房间。

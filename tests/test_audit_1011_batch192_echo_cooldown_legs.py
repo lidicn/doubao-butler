@@ -357,15 +357,16 @@ class GlobalLegNotShrunkTest(unittest.TestCase):
 
 
 class AnchorSentinelTest(unittest.TestCase):
-    """批6 名册锚点哨兵：`("core/dialog.py", 527, "notify")` 行号漂了要当场咬，⛔ 靠算术猜。
+    """批6 名册锚点哨兵：`("core/dialog.py", 550, "notify")` 行号漂了要当场咬，⛔ 靠算术猜。
 
     批195 re-anchor 513→527：`_observe_presence` 助手在 `__init__` 下方净插 14 行，调用点本体一字未动。
+    批194 A1 re-anchor 527→550：`match_role_by_text` 改锚定版在它上方净插 23 行，调用点本体一字未动。
     """
 
     def test_17_batch6_dialog_anchor_still_names_the_same_line(self):
         lines = DIALOG_PY.read_text(encoding="utf-8").splitlines()
-        self.assertIn("self.tv.notify", lines[526],
-                      "dialog.py:527 已不是 `self.tv.notify`⇒批6 名册要按符号重钉（⛔ 加减行号）")
+        self.assertIn("self.tv.notify", lines[549],
+                      "dialog.py:550 已不是 `self.tv.notify`⇒批6 名册要按符号重钉（⛔ 加减行号）")
 
 
 if __name__ == "__main__":
