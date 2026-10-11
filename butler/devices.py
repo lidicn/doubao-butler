@@ -196,7 +196,14 @@ class DeviceRegistry:
         return self.devices.get(dev_id)
 
     def resolve(self, device_ids: list[str], room: str | None = None) -> list[Device]:
-        """返回角色在指定房间可用的设备（按 output_devices 过滤；room 为 None 或 '*' 不过滤房间）。"""
+        """返回角色在指定房间可用的设备（按 output_devices 过滤）。
+
+        批200 Q3（DCD 20261011 七问裁定 乙）——把原先挤在同一句里的口径**升格为判据**：
+        `room` 为 `None`／空串／`'*'` ＝**不按房间过滤，返回该角色全部可用台数**；
+        ⛔ 把空 room 读成「没设备」而拒绝（AF ask 桥那类天生不带 room 的问句会整条哑掉）。
+        这一档另配一行台数留痕（`room-unfiltered`），供装机窗回读「不带房间时到底给了几台」。
+        """
+        unfiltered = not room or room == "*"
         out: list[Device] = []
         for did in device_ids or []:
             dev = self.devices.get(did)
@@ -207,6 +214,9 @@ class DeviceRegistry:
             if room and room != "*" and dev.room and dev.room != "*" and dev.room != room:
                 continue
             out.append(dev)
+        if unfiltered:
+            logger.info("device resolve room-unfiltered: incoming=%d devices=%d",
+                        len(device_ids or []), len(out))
         return out
 
     # ---- 编辑（WebUI）----
