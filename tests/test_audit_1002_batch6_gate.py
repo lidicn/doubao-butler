@@ -27,10 +27,13 @@ B. **现网点开的调用点名单**：`gate(butler/, SITES)` 必须 0 枚 ASYN
    五条旧落点整体下移 883／888／900／903／907 ⇒ 名册 31→32、SYNC_OK 22→23、锚点 14→15；
    EXTERNAL_SYNC=9 未动。
    **1011-b192 更新本节口径**：批192（合并行 27＋53 回声冷却腿收编）把 `dialog.py` 里
-   「裸改别的模块类属性」那枚跨模块写改成走 API，新调用点 `core/dialog.py:655`
+   「裸改别的模块类属性」那枚跨模块写改成走 API，新调用点 `core/dialog.py:669`
    （`XiaomiEar.note_speak(...)`，`def_at` 现读 `sync`@`xiaomi_ear.py:117`）⇒ 名册 32→33、
-   SYNC_OK 23→24、锚点 15→16；`core/dialog.py:513`（`self.tv.notify`）在改动点**上方**，
+   SYNC_OK 23→24、锚点 15→16；`core/dialog.py:527`（`self.tv.notify`）在改动点**上方**，
    按符号现读点开未漂移（⛔ 靠算术），EXTERNAL_SYNC=9 未动。
+   **1011-b195 更新本节口径**：批195（DCD Q1 乙 在场房间只观察）在 `DialogManager.__init__` 下方
+   净插 14 行（`presence_observe` 计数＋`_observe_presence` 助手），两条 dialog.py 落点整体下移
+   513→527／655→669 ⇒ 名册 33、SYNC_OK 24、锚点 16 **计数未动**（调用点本体一字未动，⛔ 靠算术，按符号现读重钉）。
 C. **锚点**：判定所依赖的 16 处 `def` 仍是**同步体**且仍在登记的行号上
    ⇒ 谁把 `TVClient.notify` 改成 `async def` 而不动 5 个调用点，这里当场红。
 
@@ -147,8 +150,9 @@ class ProductionRosterTest(unittest.TestCase):
         counts = self.mod.verdict_counts(self.rows)
         # 1011-b190：名册 31→32／SYNC_OK 22→23（本批新入册的 watch 关停腿 `app.py:897`，
         #   `def_at` 现读为同步体；`consumer` 那枚是 **await**，⛔ 进本名册）。
-        # 1011-b192：名册 32→33／SYNC_OK 23→24（本批新入册的冷却写腿 `core/dialog.py:655`
+        # 1011-b192：名册 32→33／SYNC_OK 23→24（本批新入册的冷却写腿 `core/dialog.py:669`
         #   `XiaomiEar.note_speak`，`def_at` 现读 `xiaomi_ear.py:117`＝同步 classmethod）。
+        #   批195 在 `__init__` 下方净插 14 行 ⇒ 655→669，名册计数与判定形制未动。
         self.assertEqual(counts.get("SYNC_OK"), 24, counts)
         self.assertEqual(counts.get("EXTERNAL_SYNC"), 9, counts)
         self.assertEqual(sum(counts.values()), 33, counts)
@@ -171,7 +175,7 @@ ANCHORS = [
     ("integrations/ha.py", "HAClient", "stop_xiaomi_token_refresh", 67),
     # 批190 新锚一枚：`app.py:897`（`rt.ha.cancel_watch_tasks()`）同一条形状撑在 def 的同步性质上。
     ("integrations/ha.py", "HAClient", "cancel_watch_tasks", 79),
-    # 批192 新锚一枚：`core/dialog.py:655`（`XiaomiEar.note_speak(...)`）撑在这枚 classmethod 的同步性质上。
+    # 批192 新锚一枚：`core/dialog.py:669`（`XiaomiEar.note_speak(...)`）撑在这枚 classmethod 的同步性质上。
     ("core/xiaomi_ear.py", "XiaomiEar", "note_speak", 117),
     ("core/xiaomi_ear.py", "XiaomiEar", "start", 30),   # 批166 re-anchor 29→30（件五乙：头注「点名才答」占两行）
     ("core/xiaomi_ear.py", "XiaomiEar", "stop", 37),    # 批166 re-anchor 36→37（同上）

@@ -59,13 +59,17 @@ class SeedingTests(unittest.TestCase):
         self.assertIn("gu_anheng", ids, f"DEFAULT_ROLES 只播了 {sorted(ids)}")
 
     def test_gu_anheng_is_a_text_only_role(self):
-        """他是 APP 文字对话角色 ⇒ ⛔ 输出设备、⛔ 唤醒词（否则电视端会多一个应答名字）。"""
+        """他是 APP 文字对话角色 ⇒ ⛔ 输出设备、⛔ 唤醒词（否则电视端会多一个应答名字）。
+
+        批195（DCD 20261011 Q2 甲）：「不说话」由这两枚承担，`presence_rooms` 不再兼职表达它——
+        播种字面与 `from_dict` 装载值必须同读 `["*"]`（⛔ 靠 `or ["*"]` 暗逻辑抹平）。
+        """
         d = next((x for x in DEFAULT_ROLES if x["id"] == "gu_anheng"), None)
         self.assertIsNotNone(d, "gu_anheng 没播种")
         self.assertEqual(d["name"], "顾安恒")
         self.assertEqual(d["output_devices"], [])
         self.assertEqual(d["wake_words"], [])
-        self.assertEqual(d["presence_rooms"], [])
+        self.assertEqual(d["presence_rooms"], ["*"])
         self.assertFalse(d["is_primary"])
         self.assertTrue(d["enabled"])
 

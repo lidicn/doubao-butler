@@ -31,7 +31,7 @@
 判据钉**行为**（窗口真的按文本长度张开、陈旧键真的被清、过期戳真的放行）也钉**形状**
 （15.0 字面量收编成具名常量、写侧走 API ⛔ 裸下标赋值、注释与真身对齐）。
 形状尺配两侧合成校准（`test_01`-`test_04`：CLEAN 合成⇒0 命中，SYNTH 合成⇒恰好 1 命中），
-⛔ 只跑真文件。行号是活物：`test_17` 是批6 名册锚点（`core/dialog.py:513 notify`）的漂移哨兵。
+⛔ 只跑真文件。行号是活物：`test_17` 是批6 名册锚点（批195 重钉后 `core/dialog.py:527 notify`）的漂移哨兵。
 
 `butler/core/dialog.py` 与 `butler/core/xiaomi_ear.py` 都**可以** import（两档模块级不建库连接；
 批156／批44 同形状已在跑），但⛔ import `butler/app.py`（二次 import＝在停摆库上开连接）。
@@ -359,12 +359,15 @@ class GlobalLegNotShrunkTest(unittest.TestCase):
 
 
 class AnchorSentinelTest(unittest.TestCase):
-    """批6 名册锚点哨兵：`("core/dialog.py", 513, "notify")` 行号漂了要当场咬，⛔ 靠算术猜。"""
+    """批6 名册锚点哨兵：`("core/dialog.py", 527, "notify")` 行号漂了要当场咬，⛔ 靠算术猜。
+
+    批195 re-anchor 513→527：`_observe_presence` 助手在 `__init__` 下方净插 14 行，调用点本体一字未动。
+    """
 
     def test_17_batch6_dialog_anchor_still_names_the_same_line(self):
         lines = DIALOG_PY.read_text(encoding="utf-8").splitlines()
-        self.assertIn("self.tv.notify", lines[512],
-                      "dialog.py:513 已不是 `self.tv.notify`⇒批6 名册要按符号重钉（⛔ 加减行号）")
+        self.assertIn("self.tv.notify", lines[526],
+                      "dialog.py:527 已不是 `self.tv.notify`⇒批6 名册要按符号重钉（⛔ 加减行号）")
 
 
 if __name__ == "__main__":

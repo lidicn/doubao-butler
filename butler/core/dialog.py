@@ -76,6 +76,20 @@ class DialogManager:
         self._role_history: dict[str, list] = {}   # 按角色隔离的多轮上下文
         self._echo_until: float = 0.0              # 小爱出声后的回声抑制窗口（时间戳）
         self._pending_skill_desc: dict[str, float] = {}   # WO-DB-101：存过期时间戳，TTL=120s
+        self.presence_observe: int = 0                     # 批195（DCD Q1 乙）：在场房间越界只观察的累计次数
+
+    def _observe_presence(self, role, room: str) -> None:
+        """在场房间（presence_rooms）语义＝只记录、不拦截（DCD 裁定 20261011 Q1 乙）。
+
+        相邻那枚 `bound_rooms` 才是真拒绝，语义不同，⛔ 在此合并判定。
+        """
+        if not room or not role.presence_rooms or role.presence_rooms == ["*"]:
+            return
+        if room in role.presence_rooms:
+            return
+        self.presence_observe += 1
+        logger.info("presence_observe: role=%s woken in room=%s presence_rooms=%s（只记录、不拦截）",
+                    role.id, room, role.presence_rooms)
 
     # ---------- 事件分发 ----------
 
@@ -235,6 +249,7 @@ class DialogManager:
         """统一唤醒入口：NR 耳朵检测到唤醒短语后 POST 至此。
         - role_id 可省略，由 message 自动识别；
         - 私人助理(scope=private)校验 bound_rooms，越界拒绝；
+        - 在场房间 presence_rooms 只记录、不拦截（计数 `presence_observe`）；
         - 用角色 system 跑对话，按角色隔离多轮上下文；
         - 经角色 output_devices 发声（尊重设备 play_mode）。
         """
@@ -312,8 +327,7 @@ class DialogManager:
                 logger.info("on_wakeup scope_private rejected: role=%s room=%s allowed=%s", role.id, room, role.bound_rooms)
                 return {"ok": False, "error": "scope_private",
                         "message": f"{role.name} 只能在 {('、'.join(role.bound_rooms))} 唤醒"}
-        if role.presence_rooms != ["*"] and room and role.presence_rooms and room not in role.presence_rooms:
-            logger.info("role %s woken in room %s (outside presence_rooms)", role.id, room)
+        self._observe_presence(role, room)
         member = member or role.member
         self.state.set_state(DialogState.THINKING)
         import uuid

@@ -122,7 +122,7 @@ DEFAULT_ROLES: list[dict] = [
         # 多一个唤醒词就等于在家里凭空多出一个会应答的名字。
         "id": "gu_anheng", "name": "顾安恒", "gender": "男", "is_primary": False,
         "voice": "zh-CN-YunjianNeural", "tts_backend": "nowvoice",
-        "presence_rooms": [], "output_devices": [],
+        "presence_rooms": ["*"], "output_devices": [],
         "system": "你是家庭安防专员「顾安恒」，冷静、可靠、观察力敏锐，"
                   "回答简短，涉及摄像头画面时先说明正在调取哪个房间。",
         "skills": ["monitor-camera"], "enabled": True, "fallback": "bark",
