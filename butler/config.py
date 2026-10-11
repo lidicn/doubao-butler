@@ -122,6 +122,10 @@ class Settings:
     doubao_webhook_token: str = ""  # P0-9：豆包 webhook 鉴权钥匙（WO-ME-203：空=默认拒绝，不再放行）
     doubao_webhook_allow_unauthenticated: bool = False  # WO-ME-203：显式 true 才允许无凭证请求（仅内网调试）
     allow_no_auth: bool = False  # WO-ME-204：显式 true 才允许未配置 web_user 时放行全站鉴权（仅内网调试）
+    # 批197 WebUI 自更新：总闸 fail-closed（默认关），发布源＝现在的公开仓，重启只在版本 tag。
+    self_update_enabled: bool = False
+    update_repo_url: str = "https://github.com/lidicn/doubao-butler.git"
+    update_branch: str = "main"
 
     # MQTT
     # 模块4（批137）：broker 地址与凭据收编 homesdk.mqtt（每次现读 env、缺凭据 fail-closed），
@@ -261,6 +265,9 @@ class Settings:
             doubao_webhook_token=_env("DOUBAO_WEBHOOK_TOKEN"),
             doubao_webhook_allow_unauthenticated=_env_bool("DOUBAO_WEBHOOK_ALLOW_UNAUTHENTICATED", False),
             allow_no_auth=_env_bool("BUTLER_ALLOW_NO_AUTH", False),
+            self_update_enabled=_env_bool("SELF_UPDATE_ENABLED", False),
+            update_repo_url=_env("UPDATE_REPO_URL", "https://github.com/lidicn/doubao-butler.git"),
+            update_branch=_env("UPDATE_BRANCH", "main"),
             mqtt_client_id=_env("MQTT_CLIENT_ID", "butler-core"),
             tv_http_url=_env("TV_HTTP_URL", "http://192.168.2.238:8080"),
             tv_mqtt_prefix=_env("TV_MQTT_PREFIX", "tv/livingroom"),

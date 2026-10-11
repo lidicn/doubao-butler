@@ -34,6 +34,11 @@ B. **现网点开的调用点名单**：`gate(butler/, SITES)` 必须 0 枚 ASYN
    **1011-b195 更新本节口径**：批195（DCD Q1 乙 在场房间只观察）在 `DialogManager.__init__` 下方
    净插 14 行（`presence_observe` 计数＋`_observe_presence` 助手），两条 dialog.py 落点整体下移
    513→527／655→669 ⇒ 名册 33、SYNC_OK 24、锚点 16 **计数未动**（调用点本体一字未动，⛔ 靠算术，按符号现读重钉）。
+   **1011-b197 更新本节口径**：批197（WebUI 自更新容器侧）在 `butler/app.py` 的 `from butler.api import (...)`
+   里净插 `update_routes,`（:42）、在 `*system_routes.routes(),` 下方净插 `*update_routes.routes(),`（:249），
+   两枚都在 `async def lifespan` 上方⇒app.py 11 枚落点整体下移 2，逐枚按接收者现读点开
+   （504→506／581→583／794→796／809→811／817→819／883→885／888→890／897→899／900→902／903→905／907→909）
+   ⇒ 名册 33、SYNC_OK 24、锚点 16 **计数未动**，判定逐枚不变。
 C. **锚点**：判定所依赖的 16 处 `def` 仍是**同步体**且仍在登记的行号上
    ⇒ 谁把 `TVClient.notify` 改成 `async def` 而不动 5 个调用点，这里当场红。
 
@@ -169,11 +174,11 @@ ANCHORS = [
     ("integrations/ilink/bridge.py", "ILinkBridge", "start", 56),
     ("integrations/ilink/bridge.py", "ILinkBridge", "stop", 67),
     ("core/event_stream.py", "EventStream", "start", 96),
-    # 批189 新锚两枚：关停腿 app.py:883／:888（1011-b190 重钉后）的判定撑在这两个 def 的
+    # 批189 新锚两枚：关停腿 app.py:883／:888（1011-b190 重钉后；批197 后 :885／:890）的判定撑在这两个 def 的
     #   「同步」性质上，谁把它们翻成 `async def` 而不动调用点，这里当场红（`def_at` 现读均 kind=sync）。
     ("core/event_stream.py", "EventStream", "stop", 104),
     ("integrations/ha.py", "HAClient", "stop_xiaomi_token_refresh", 67),
-    # 批190 新锚一枚：`app.py:897`（`rt.ha.cancel_watch_tasks()`）同一条形状撑在 def 的同步性质上。
+    # 批190 新锚一枚：`app.py:897`（`rt.ha.cancel_watch_tasks()`，批197 后 :899）同一条形状撑在 def 的同步性质上。
     ("integrations/ha.py", "HAClient", "cancel_watch_tasks", 79),
     # 批192 新锚一枚：`core/dialog.py:669`（`XiaomiEar.note_speak(...)`）撑在这枚 classmethod 的同步性质上。
     ("core/xiaomi_ear.py", "XiaomiEar", "note_speak", 117),

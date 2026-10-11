@@ -73,11 +73,21 @@ SITES = [
     #   rt.ilink_bridge / mqtt / sched / rt.xiaomi_ear / rt.event_stream / mqtt / rt.xiaomi_ear / rt._sched，
     #   同文件另有 2 枚同名调用未在册（L539 `await af_bridge.start()`＝WRAPPED、
     #   L1029 `t.start()`＝`def _start_evolution_scheduler` 里的 threading.Thread），判定不变。
-    ("app.py", 504, "start"),
-    ("app.py", 581, "start"),
-    ("app.py", 794, "start"),
-    ("app.py", 809, "start"),
-    ("app.py", 817, "start"),
+    # 1011-b197-REANCHOR 本文件 app.py 11 枚全部 +2：**本节口径覆盖批170／批190 的落点登记**。
+    #   漂移源＝批197（WebUI 自更新容器侧）在 `from butler.api import (...)` 里净插 `update_routes,`
+    #   一行（:42）、在 `*system_routes.routes(),` 下方净插 `*update_routes.routes(),` 一行（:249），
+    #   两枚都在 lifespan 上方⇒11 枚调用点整体下移。逐枚按「接收者＋包围函数」现读点开
+    #   （⛔ 靠 +2 算术）：506=`rt.ilink_bridge.start()`、583=`mqtt.start()`、796=`sched.start()`、
+    #   811=`rt.xiaomi_ear.start()`、819=`rt.event_stream.start()`、885=`rt.event_stream.stop()`、
+    #   890=`rt.ha.stop_xiaomi_token_refresh()`、899=`rt.ha.cancel_watch_tasks()`、902=`mqtt.stop()`、
+    #   905=`rt.xiaomi_ear.stop()`、909=`rt._sched.shutdown(False)`⇒判定与重钉前一致。
+    #   同文件另有 2 枚同名调用未在册（L541 `await af_bridge.start()`＝WRAPPED、
+    #   L1114 `t.start()`＝`def _start_evolution_scheduler` 里的 threading.Thread）。
+    ("app.py", 506, "start"),
+    ("app.py", 583, "start"),
+    ("app.py", 796, "start"),
+    ("app.py", 811, "start"),
+    ("app.py", 819, "start"),
     # 1011-b190-REANCHOR 872→883 / 877→888 / 880→900 / 883→903 / 887→907：**本节口径覆盖批189
     #   的落点登记**——漂移源＝批190（合并行 #11 最后两条腿）在 `finally` 里净插两段：
     #   `consumer.cancel()` 之后补 `await asyncio.wait_for(consumer, timeout=2.0)`（+11 行，
@@ -89,12 +99,12 @@ SITES = [
     #   ⇒ 前五枚 SYNC_OK、末枚 APScheduler 外部同步 EXTERNAL_SYNC，判定与重钉前一致。
     #   历史（批189 那遍的读数，已被上面覆盖）：865→880 / 868→883 / 872→887，
     #   新入册两枚 872／877 ⇒ 名册 29→31、SYNC_OK 20→22。
-    ("app.py", 883, "stop"),
-    ("app.py", 888, "stop_xiaomi_token_refresh"),
-    ("app.py", 897, "cancel_watch_tasks"),
-    ("app.py", 900, "stop"),
-    ("app.py", 903, "stop"),
-    ("app.py", 907, "shutdown"),
+    ("app.py", 885, "stop"),
+    ("app.py", 890, "stop_xiaomi_token_refresh"),
+    ("app.py", 899, "cancel_watch_tasks"),
+    ("app.py", 902, "stop"),
+    ("app.py", 905, "stop"),
+    ("app.py", 909, "shutdown"),
     # 批195 re-anchor 513→527 / 655→669：`_observe_presence` 助手在 `__init__` 下方净插 14 行，
     #   两条调用点本体一字未动（⛔ 加减行号，按符号 `self.tv.notify` / `XiaomiEar.note_speak` 重钉）。
     ("core/dialog.py", 527, "notify"),

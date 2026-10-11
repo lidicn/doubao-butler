@@ -25,6 +25,10 @@
 （两条腿落在 `finally` 里、排在 `close()` 之前、各自 try/except＋`logger.warning`），
 形状尺配两侧合成校准（⛔ 只跑真文件）。`butler/app.py` 只读源码，⛔ import（二次 import＝
 在停摆库上开连接）。
+
+**读数时效**：本档正文里的 `app.py:NNN` 是批189 那遍的现读值，此后 app.py 上方有净插行
+（批195 之后批197 又插 2 行）⇒ 逐枚漂移。当前权威落点以 `scripts/audit_1002/classify_unawaited_1002.py`
+的 `SITES`（按符号现读重钉）为准；本档判据本身是**从源码现读行号**（`_leg_line`），⛔ 抄正文数字。
 """
 from __future__ import annotations
 
