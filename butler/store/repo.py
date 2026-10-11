@@ -5,6 +5,7 @@ import json
 import time
 from typing import Optional
 
+from butler.core import atomic_json
 from butler.store.db import get_conn
 
 
@@ -70,7 +71,14 @@ def recent_fingerprints(member: str, since_ts: float) -> list[set[str]]:
         "SELECT bigrams FROM dedup_fingerprints WHERE member=? AND ts>=? ORDER BY ts DESC",
         (member, since_ts),
     ).fetchall()
-    return [set(json.loads(r["bigrams"])) for r in rows]
+    out = []
+    for r in rows:
+        # 读不出来的一行直接跳过：降级成 `set()` 的那枚永远算不出相似度，留在列表里只会被当成一条真指纹
+        parsed = atomic_json.loads_column(r["bigrams"], None, site="dedup_fingerprints.bigrams")
+        if parsed is None:
+            continue
+        out.append(set(parsed))
+    return out
 
 
 def cleanup_fingerprints(before_ts: float) -> int:

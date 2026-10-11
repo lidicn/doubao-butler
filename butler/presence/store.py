@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from butler.core import atomic_json
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.presence.store")
@@ -82,7 +83,6 @@ class PresenceStore:
 
     def get_history(self, user_id: str, limit: int = 50) -> list[dict]:
         """获取用户位置历史。"""
-        import json
         c = self._get_conn()
         cur = c.execute(
             "SELECT user_id, room, confidence, sources, ts FROM presence_history WHERE user_id = ? ORDER BY ts DESC LIMIT ?",
@@ -95,7 +95,7 @@ class PresenceStore:
                 "user_id": row[0],
                 "room": row[1],
                 "confidence": row[2],
-                "sources": json.loads(row[3]) if row[3] else [],
+                "sources": atomic_json.loads_column(row[3], [], site="presence_history.sources"),
                 "ts": row[4],
             })
         return result

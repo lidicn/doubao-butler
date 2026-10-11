@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from butler.config import get_settings
-from butler.core import singleton
+from butler.core import atomic_json, singleton
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.decision_store")
@@ -155,7 +155,7 @@ def get_decision(dec_id: str) -> dict | None:
     if not row:
         return None
     d = dict(row)
-    d["options"] = json.loads(d["options"]) if d["options"] else []
+    d["options"] = atomic_json.loads_column(d["options"], [], site="decisions.options")
     return d
 
 
@@ -172,7 +172,7 @@ def list_decisions(status: str = None, limit: int = 50, offset: int = 0) -> list
     result = []
     for r in rows:
         d = dict(r)
-        d["options"] = json.loads(d["options"]) if d["options"] else []
+        d["options"] = atomic_json.loads_column(d["options"], [], site="decisions.options")
         result.append(d)
     return result
 

@@ -48,6 +48,26 @@ def read_json_object(path) -> tuple[dict, bool]:
     return data, False
 
 
+def loads_column(raw, default, *, site: str):
+    """数据库 JSON 列的收敛读法：坏一行只降级这一行，⛔ 让整批消失（批201 DB35）。
+
+    判定口径与 `read_json_object` 同一把尺子（批70b/批162「读不出来≠没有」），各站点⛔ 再自己 try/except：
+      - None／空串／纯空白＝真没有 → 静默返回 default（⛔ 喊成故障）；
+      - 有值但解析失败＝读不出来 → 返回 default 并留痕；
+      - 正常 JSON → 解析结果。
+    留痕⛔ 带列值本身：这几列存的是指纹 bigram／决策 options／在场 sources，
+    原样进日志等于把用户说过什么、有什么选项抄进日志文件（批185 同口径）。只报 site＋异常类名＋长度。
+    """
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    try:
+        return json.loads(raw)
+    except Exception as e:
+        logger.warning("%s JSON column unreadable (%s, len=%d), degrading to default",
+                       site, type(e).__name__, len(str(raw)))
+        return default
+
+
 def write_json_atomic(path, data) -> None:
     """把 data 序列化成 JSON 并原子替换 path。序列化失败即抛出，目标与临时文件都不碰。"""
     target = Path(path)

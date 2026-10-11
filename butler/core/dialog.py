@@ -703,7 +703,13 @@ class DialogManager:
         # 防重复：主动场景命中则跳过。这把闸在两条出口**之前**（第五轮 P0-9＝第三轮 T-1：
         # 旧形状＝入队成功就地 return，队列一活这把闸对那条腿永远轮不到）。
         if source == "proactive":
-            dup, sim = await self.dedup.is_duplicate(member, text)
+            # 去重闸读不出来时放行发声，⛔ 判成重复而静默（批201 DB35 极性·请追认）：
+            # 「消息只是不见了」在本项目台账里反复被判成比「重复播一遍」更坏的失败方向。
+            try:
+                dup, sim = await self.dedup.is_duplicate(member, text)
+            except Exception as e:
+                logger.warning("proactive dedup unreadable, 放行发声: %s", type(e).__name__)
+                dup, sim = False, 0.0
             if dup:
                 logger.info("proactive dedup skip (sim=%.2f): %s", sim, text[:20])
                 return {"spoken": False, "reason": "dedup", "similarity": sim}
