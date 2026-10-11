@@ -16,6 +16,7 @@ from collections import deque
 
 import aiohttp
 
+from butler.core.ws_connect import bounded_ws_connect
 from butler.logging_setup import get_logger, warn_throttled
 from butler.store.db import get_conn
 from butler.store import write_failures
@@ -123,7 +124,7 @@ class EventStream:
         logger.info("event_stream connecting to %s", ws_url)
 
         async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(ws_url, heartbeat=30) as ws:
+            async with bounded_ws_connect(session, ws_url) as ws:
                 # 认证（批48：握手帧读取加 wait_for 上界，HA 只回 ping 不回帧即超时重连）
                 msg = await asyncio.wait_for(ws.receive_json(), timeout=15)
                 if msg.get("type") == "auth_required":

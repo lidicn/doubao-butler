@@ -118,8 +118,11 @@ SITES = [
     ("core/dialog.py", 666, "note_speak"),
     # 批165 re-anchor 245→260 / 253→268：形状分支在它们上方净插 15 行，调用点本体一字未动
     # （sqlite3 Connection.execute 与 write_failures.record 仍是原那两条腿）。
-    ("core/event_stream.py", 260, "execute"),
-    ("core/event_stream.py", 268, "record"),
+    # 1011-b201 re-anchor 260→261 / 268→269：批201 DB47 在 event_stream.py 顶部净插 1 行 import
+    #   （`bounded_ws_connect` 单点），两条调用点本体一字未动——按符号现读重钉：
+    #   `conn.execute` 仍落在 `async def _handle_event`（现读 :261），`write_failures.record` 现读 :269。
+    ("core/event_stream.py", 261, "execute"),
+    ("core/event_stream.py", 269, "record"),
     ("core/perception_learn.py", 192, "execute"),
     ("core/perception_learn.py", 198, "execute"),
     ("core/perception_learn.py", 213, "execute"),
