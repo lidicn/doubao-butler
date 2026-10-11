@@ -329,7 +329,7 @@ class PendingSkillExpiryTest(unittest.IsolatedAsyncioTestCase):
                 patch.object(dialog_mod.repo, "add_turn", lambda *a, **k: None), \
                 patch.object(d, "speak_as_role", self._stub_speak), \
                 patch("butler.skills.engines.llm_decide.ask.pending_ask_manager",
-                      SimpleNamespace(check=lambda room: None)):
+                      SimpleNamespace(check=lambda room, role_id="": None)):
             result = await d.on_wakeup(role_id, "客厅", "今天天气怎么样", member="家人")
         return calls, result
 

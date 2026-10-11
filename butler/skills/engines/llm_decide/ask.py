@@ -6,7 +6,7 @@
   ask.arm(timeout=30)  # 注册，30秒内等回复
 
 在 dialog.on_wakeup 里：
-  pending = pending_ask_manager.check(room)
+  pending = pending_ask_manager.check(room, role_id)
   if pending:
       answer = pending.resolve(message)  # 用户回复
       result = await pending.run_followup(answer)  # LLM第二轮
@@ -28,6 +28,10 @@ logger = logging.getLogger("butler.skills.ask")
 # 这张强引用注册表，跑完由 done_callback 自己摘掉（同批18 dialog._idle_tasks／批21 cron_task）。
 _BG_TASKS: set = set()
 
+# 批200 Q1（DCD 20261011 七问裁定 乙 修正版）：房间不匹配时的 fallback 只认这个窗口内的同角色问句。
+# 读成模块级常量（⛔ 写进签名默认值）＝门能把负控跑起来：窗口设 0 ⇒ 跨房认领必须归零。
+ASK_FALLBACK_WINDOW_SECONDS = 15.0
+
 
 @dataclass
 class PendingAsk:
@@ -35,6 +39,7 @@ class PendingAsk:
     question: str
     brain: dict
     rt: Any = None
+    role_id: str = ""                     # 批200 Q1：武装时的角色，跨房 fallback 的过滤键
     created_at: float = field(default_factory=time.time)
     timeout: float = 30.0
     resolved: bool = False
@@ -45,9 +50,22 @@ class PendingAskManager:
     def __init__(self) -> None:
         self._pending: list[PendingAsk] = []
         self._lock = asyncio.Lock()
+        self._ask_stats = {"live_checks": 0, "cross_room_claims": 0}   # 批200 Q1 跨房率读数
 
-    async def arm(self, room: str, question: str, brain: dict, rt: Any, timeout: float = 30.0) -> None:
-        ask = PendingAsk(room=room, question=question, brain=brain, rt=rt, timeout=timeout)
+    def cross_room_stats(self) -> dict:
+        """跨房率读数：分母＝「当下有活 ask」的 check 次数，分子＝其中经 fallback 认领的次数。
+
+        分母只数有活 ask 的 check（⛔ 让空转 check 稀释）——否则「没人问」会被读成「没抢答」，
+        这条读数就变成一根永不红的闸。返回副本，调用方⛔ 改到内部态。
+        """
+        live = self._ask_stats["live_checks"]
+        claims = self._ask_stats["cross_room_claims"]
+        return {"live_checks": live, "cross_room_claims": claims,
+                "cross_room_rate": (claims / live) if live else 0.0}
+
+    async def arm(self, room: str, question: str, brain: dict, rt: Any, timeout: float = 30.0,
+                  role_id: str = "") -> None:
+        ask = PendingAsk(room=room, question=question, brain=brain, rt=rt, timeout=timeout, role_id=role_id)
         async with self._lock:
             self._pending.append(ask)
         logger.info("pending ask armed: room=%s q=%.30s timeout=%.0fs", room, question, timeout)
@@ -113,8 +131,14 @@ class PendingAskManager:
             except Exception as e:
                 logger.warning("xiaomi ask setup failed: %s", e)
 
-    def check(self, room: str) -> PendingAsk | None:
-        """获取该房间最早未解决的 ask，同时清理超时项。"""
+    def check(self, room: str, role_id: str = "") -> PendingAsk | None:
+        """获取该房间最早未解决的 ask，同时清理超时项。
+
+        批200 Q1（DCD 20261011 七问裁定 乙 修正版）：房间不匹配那档**保留** fallback（手动触发的
+        room 本就不准，删了会把「抢答」换成「沉默」），但只认同 `role_id` 且武装时刻在
+        `ASK_FALLBACK_WINDOW_SECONDS` 窗口内的那条。`role_id` 为空＝来话侧没认出角色，判成通配
+        （回执偏差登记：`on_wakeup(role_id=None)` 是现网主路径，按字面相等会把问句回执当场变哑）。
+        """
         now = time.time()
         # 清理超时
         expired = [a for a in self._pending if not a.resolved and (now - a.created_at) >= a.timeout]
@@ -126,13 +150,19 @@ class PendingAskManager:
                 # _tv_ask_stop removed (was undefined NameError)
             except Exception:
                 pass
+        live = [a for a in self._pending if not a.resolved]
+        if live:
+            self._ask_stats["live_checks"] += 1
         # 找同房间最早的
         candidates = [a for a in self._pending if a.room == room and not a.resolved]
         if not candidates:
             # room 不匹配时，fallback 到任意 pending ask（手动触发 room 可能不准）
-            candidates = [a for a in self._pending if not a.resolved]
+            candidates = [a for a in live
+                          if (a.role_id == role_id or not role_id)
+                          and (now - a.created_at) <= ASK_FALLBACK_WINDOW_SECONDS]
             if not candidates:
                 return None
+            self._ask_stats["cross_room_claims"] += 1
             logger.info("ask room mismatch: armed=%s incoming=%s, fallback to any", candidates[0].room, room)
         return min(candidates, key=lambda a: a.created_at)
 

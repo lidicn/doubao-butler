@@ -158,6 +158,7 @@ class LLMDecideEngine:
             # LLM 输出是问题，注册 pending ask
             await pending_ask_manager.arm(
                 room=room, question=text, brain=brain, rt=rt, timeout=ask_wait,
+                role_id=str(getattr(ctx.role, "id", "") or ""),   # 批200 Q1：跨房 fallback 的过滤键
             )
             logger.info("llm_decide armed ask (%.0fs): %.40s", ask_wait, text)
 

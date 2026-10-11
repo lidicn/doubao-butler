@@ -184,7 +184,7 @@ class Harness(unittest.TestCase):
         from butler.skills.engines.llm_decide.ask import pending_ask_manager as pam
         self.pam = pam
         self.saved_check = pam.check
-        pam.check = lambda room: None
+        pam.check = lambda room, role_id="": None
         self.addCleanup(lambda: setattr(pam, "check", self.saved_check))
         self.addCleanup(lambda: setattr(self.dlg, "get_runtime", self.saved_runtime))
 
@@ -397,7 +397,7 @@ class SelfProofLeg(unittest.TestCase):
         from butler.skills.engines.llm_decide.ask import pending_ask_manager as pam
         saved_check = pam.check
         dlg.get_runtime = lambda: types.SimpleNamespace(roles={"butler": role}, skill_creator=None, ha=ha)
-        pam.check = lambda room: None
+        pam.check = lambda room, role_id="": None
         try:
             out = _run(obj.on_wakeup("butler", "客厅", RULE_TEXT, member="家人", source="active"))
         finally:

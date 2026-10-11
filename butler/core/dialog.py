@@ -262,7 +262,7 @@ class DialogManager:
         # Ask 挂起：llm_decide 刚问完问题，用户语音回复走第二轮
         try:
             from butler.skills.engines.llm_decide.ask import pending_ask_manager
-            pending = pending_ask_manager.check(room)
+            pending = pending_ask_manager.check(room, role_id or "")
             if pending is not None:
                 followup = await pending_ask_manager.resolve_and_run(pending, message)
                 if followup:
