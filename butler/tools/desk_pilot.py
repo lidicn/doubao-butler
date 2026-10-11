@@ -418,3 +418,4 @@ async def _send_to_dp(agent, args: dict) -> str:
     ok, err = await _deskpilot_pm_send("DP", message)
     if ok:
         return "✅ 已向 DP 发送即时消息（DeskPilot PM 管道）。注意：需要电脑未锁屏。"
+    return f"❌ DP 消息发送失败：{err}"
