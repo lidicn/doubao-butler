@@ -112,6 +112,8 @@ class XiaomiEar:
     ECHO_COOLDOWN_S = 15.0     # 窗口下界：合成＋下发的固定缓冲（沿用原硬编码阈值，数值未动）
     _role_mode: dict = {}  # device_id -> {"role_id": str, "expires_at": float}
     ROLE_MODE_TIMEOUT = 90  # 角色模式90秒无对话自动退出
+    # 通用退出词：⛔ 依赖名册，空名册也必须放行（批194 A10 门 test_03）
+    ROLE_EXIT_WORDS = ("退出", "退下", "没事了", "好了退下")
 
     @classmethod
     def note_speak(cls, device_id: str, hold_s: float = 0.0) -> None:
@@ -180,8 +182,7 @@ class XiaomiEar:
         now = time.time()
         if mode and now < mode["expires_at"]:
             # 检查是否退出角色模式
-            if any(kw in text for kw in ["关闭贾维斯", "关闭凯撒", "关闭露娜",
-                                           "退出", "退下", "没事了", "好了退下"]):
+            if any(kw in text for kw in self._build_exit_keywords()):
                 del self._role_mode[dev.id]
                 logger.info("ear role-mode exited [%s]", dev.id)
                 return
@@ -241,6 +242,21 @@ class XiaomiEar:
                 if re.search(rf"打开{re.escape(name)}", text) or text.strip() == f"打开{name}":
                     return role
         return None
+
+    def _build_exit_keywords(self) -> list[str]:
+        """退出词表＝通用词＋按名册生成的「关闭{角色名/唤醒词}」。
+
+        批194 A10：原表写死「关闭贾维斯/关闭凯撒/关闭露娜」，这三枚名在 `data/roles/` 里 0 命中，
+        而 `_match_open_role` 让 6 个真实角色全能进（「打开小理」）⇒ 能进不能退。
+        源与 `_match_open_role` 同为 `self.rt.roles.all()`，⛔ 在此另起一份角色名单。
+        """
+        words = list(self.ROLE_EXIT_WORDS)
+        for role in self.rt.roles.all():
+            names = [getattr(role, "name", "")] + list(getattr(role, "wake_words", []) or [])
+            for name in names:
+                if name:
+                    words.append(f"关闭{name}")
+        return list(dict.fromkeys(words))
 
     def _match_audiobook_cmd(self, text: str) -> str | None:
         """匹配电子书语音控制指令，返回 stop/pause/resume/next/prev。"""
