@@ -142,4 +142,13 @@ const API = {
   collabRoute(task, room, member) {
     return this._req("POST", "/api/collab/route", { task, room, member });
   },
+
+  // 批199 BEGIN —— WebUI 自更新：三枚路径与 butler/api/update_routes.py 同源（批199 门逐条比对）。
+  // 本面只「读预览／写请求标记／报状态」，取码与重启在宿主 cron。
+  updateCheck() { return this._req("GET", "/api/system/update/check"); },
+  updateApply(ref, confirmVersion) {
+    return this._req("POST", "/api/system/update", { ref, confirm_version: confirmVersion });
+  },
+  updateStatus() { return this._req("GET", "/api/system/update/status"); },
+  // 批199 END
 };

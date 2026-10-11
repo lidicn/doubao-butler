@@ -135,6 +135,7 @@ document.addEventListener("alpine:init", () => {
       if (v === "devices") { this.loadHaDevices(); this.loadHaDomains(); }
       if (v === "evolution") this.loadEvolution();
       if (v === "overview") this.loadScenes();
+      if (v === "settings") this.loadUpdate && this.loadUpdate();
       if (v === "butler_chat") this.chatHistory = this.chatHistory || [];
     },
     // v1.5 管家对话
@@ -194,5 +195,59 @@ document.addEventListener("alpine:init", () => {
       return d.toLocaleString("zh-CN", { hour12: false });
     },
     fmtTs(ts) { try { return new Date(ts * 1000).toLocaleString("zh-CN"); } catch (e) { return ts; } },
+
+    // 批199 BEGIN —— WebUI 自更新面板：态与动作。版本号／判定／落后笔数全取自后端响应，
+    // ⛔ 拿本文件顶部那枚手抄的版本字面量当确认值（它会与后端 __version__ 分叉，批199 门盯这一条）。
+    upd: null,
+    updStatus: null,
+    updConfirm: "",
+    updError: "",
+    updTimer: null,
+    async loadUpdate() {
+      const r = await API.updateCheck();
+      this.upd = (r && r.ok) ? r.data : null;
+      this.updError = (r && !r.ok) ? (r.error || "检查接口不可用") : "";
+      this.startUpdatePoll();
+    },
+    startUpdatePoll() {
+      if (this.updTimer) { clearInterval(this.updTimer); this.updTimer = null; }
+      if (!this.upd || this.upd.decision.action !== "apply") return;
+      this.updTimer = setInterval(() => this.pollUpdate(), 5000);
+    },
+    async pollUpdate() {
+      const r = await API.updateStatus();
+      if (!r || !r.ok || !r.data) return;
+      this.updStatus = r.data;
+      if (["applied", "failed", "idle"].indexOf(this.updStatus.state) >= 0 && this.updTimer) {
+        clearInterval(this.updTimer);
+        this.updTimer = null;
+      }
+    },
+    async applyUpdate() {
+      if (!this.upd || this.upd.decision.action !== "apply") return;
+      if (this.updConfirm !== this.upd.version) { this.showToast("确认版本号与当前不一致"); return; }
+      const r = await API.updateApply(this.upd.branch, this.upd.version);
+      if (r && r.ok) {
+        this.showToast("已请求，宿主 cron 一分钟一轮");
+        this.pollUpdate();
+        this.startUpdatePoll();
+      } else {
+        this.showToast((r && r.error) || "请求被拒");
+      }
+    },
+    updateStateLabel(st) {
+      if (!st) return "";
+      // 「只落码没重启」这一档必须说成未生效——日常 main 更新就停在这里（owner 裁定：只有版本 tag 才自动重启）
+      if (st.state === "applied_pending_restart") return "已落码未生效，等下次重启窗口";
+      const map = {
+        idle: "空闲",
+        queued: "已排队，等宿主 cron 执行",
+        applied: "已应用（tag 更新，容器已重启）",
+        failed: "执行失败",
+        unreadable: "结果件读不出来",
+      };
+      return map[st.state] || st.state;
+    },
+    // 批199 END
   });
 });

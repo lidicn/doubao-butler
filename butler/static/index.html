@@ -1783,6 +1783,42 @@
         <div class="glass p-4 text-sm text-[var(--txt-1)]">
           数据目录挂载于 <code>/app/data</code>，音频缓存于 <code>/app/tts</code>。所有连接密码均从环境变量读取，不写入磁盘。
         </div>
+
+        <!-- 批199 BEGIN 面板：WebUI 自更新（取码/落码/重启都在宿主 cron，本面只请求与回报） -->
+        <div class="glass p-4 space-y-3">
+          <div class="card-title">WebUI 自更新</div>
+          <div class="grid grid-cols-2 gap-2 text-sm" x-show="$store.app.upd">
+            <div>当前版本：<span class="amber-text" x-text="$store.app.upd.version"></span></div>
+            <div>目标：<span x-text="$store.app.upd.branch"></span> ← <span x-text="$store.app.upd.repo_url"></span></div>
+            <div>落后：<span x-text="$store.app.upd.behind"></span> 笔</div>
+            <div>本地未收编改动：<span x-text="$store.app.upd.dirty"></span> 枚</div>
+            <div>可快进：<span x-text="$store.app.upd.fast_forward ? '是' : '否'"></span></div>
+            <div>检查于：<span x-text="$store.app.upd.checked_at || '宿主检查还没跑过'"></span></div>
+          </div>
+          <div class="text-sm amber-text" x-show="$store.app.upd" x-text="$store.app.upd.decision.reason"></div>
+          <div class="text-sm amber-text" x-show="$store.app.updError" x-text="$store.app.updError"></div>
+          <div class="text-xs space-y-1" x-show="$store.app.upd && $store.app.upd.changelog && $store.app.upd.changelog.length">
+            <template x-for="(c, i) in ($store.app.upd ? $store.app.upd.changelog : [])" :key="i">
+              <div class="truncate" x-text="c"></div>
+            </template>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-sm">
+            <button class="btn-ghost" @click="$store.app.loadUpdate()">检查更新</button>
+            <input class="input" style="max-width:180px" type="text" x-model="$store.app.updConfirm"
+                   placeholder="填入当前版本号以确认" />
+            <button class="btn-amber"
+                    :disabled="!$store.app.upd || $store.app.upd.decision.action !== 'apply' || $store.app.updConfirm !== $store.app.upd.version"
+                    @click="$store.app.applyUpdate()">请求更新</button>
+          </div>
+          <div class="text-sm" x-show="$store.app.updStatus">
+            状态：<span class="amber-text" x-text="$store.app.updateStateLabel($store.app.updStatus)"></span>
+            <span x-show="$store.app.updStatus.from && $store.app.updStatus.to">
+              <span x-text="$store.app.updStatus.from"></span> → <span x-text="$store.app.updStatus.to"></span>
+            </span>
+            <span class="amber-text" x-show="$store.app.updStatus.error" x-text="'· ' + $store.app.updStatus.error"></span>
+          </div>
+        </div>
+        <!-- 批199 END -->
       </section>
 
       <!-- 通道配置页 -->
