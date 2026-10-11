@@ -22,6 +22,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "request"}
 RECV_METHODS = {"receive", "receive_json", "receive_str", "receive_bytes"}
+# 批201 DB47 收编后，两条 HA 长连接腿改挂单点 `bounded_ws_connect(session, url)`（见
+# butler/core/ws_connect.py），其内部才是裸 `session.ws_connect(...)`。这把尺把单点与裸
+# ws_connect 等同对待——否则「握手读帧有界」的判据会因为调用被收进单点而判 0，假红。
+WS_ENTRY_POINTS = {"ws_connect", "bounded_ws_connect"}
 
 FIXTURE_UNWRAPPED = (
     "import aiohttp\n"
@@ -69,6 +73,16 @@ def _has_kw(call, name: str) -> bool:
     return any(kw.arg == name for kw in call.keywords)
 
 
+def _entry_point_name(func) -> str | None:
+    """调用 func 是哪个 WS 入口点（属性 `session.ws_connect` 或单点裸名
+    `bounded_ws_connect`），都不是返回 None。"""
+    if isinstance(func, ast.Attribute):
+        return func.attr if func.attr in WS_ENTRY_POINTS else None
+    if isinstance(func, ast.Name):
+        return func.id if func.id in WS_ENTRY_POINTS else None
+    return None
+
+
 def _parent_map(tree):
     parents = {}
     for parent in ast.walk(tree):
@@ -107,7 +121,8 @@ def _bounded_by_wait_for(node, parents) -> bool:
 
 
 def _receiver_bound_to_wsconnect(node, parents) -> bool:
-    """`await ws.receive*()` 里的 ws 是不是 `... ws_connect(...) as ws` 绑出来的那个。"""
+    """`await ws.receive*()` 里的 ws 是不是 `... ws_connect(...) as ws`（或批201 DB47
+    单点 `bounded_ws_connect(...) as ws`）绑出来的那个。"""
     f = node.func
     if not (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)):
         return False
@@ -120,8 +135,8 @@ def _receiver_bound_to_wsconnect(node, parents) -> bool:
             for item in cur.items:
                 if (isinstance(item.optional_vars, ast.Name) and item.optional_vars.id == name
                         and isinstance(item.context_expr, ast.Call)
-                        and isinstance(item.context_expr.func, ast.Attribute)
-                        and item.context_expr.func.attr == "ws_connect"):
+                        and isinstance(item.context_expr.func, (ast.Attribute, ast.Name))
+                        and _entry_point_name(item.context_expr.func) in WS_ENTRY_POINTS):
                     return True
         cur = parents.get(cur)
     return False
@@ -136,7 +151,17 @@ def _scan(tree):
         scope = awith if awith is not None else ctor
         http_n = ws_n = 0
         for n in ast.walk(scope):
-            if not isinstance(n, ast.Call) or not isinstance(n.func, ast.Attribute):
+            if not isinstance(n, ast.Call):
+                continue
+            # 批201 DB47 单点：`bounded_ws_connect(session, url, ...)` 裸名调用——把第一
+            # 实参当会话变量，等价于 `session.ws_connect(url, ...)`。heartbeat 在单点
+            # 模块里（butler/core/ws_connect.py）硬编 HEARTBEAT_SECONDS=30，不在调用点。
+            if var is not None and isinstance(n.func, ast.Name) and n.func.id == "bounded_ws_connect":
+                if (n.args and isinstance(n.args[0], ast.Name) and n.args[0].id == var):
+                    ws_n += 1
+                    rows["ws_sessions"].append({"line": n.lineno, "heartbeat": True})
+                continue
+            if not isinstance(n.func, ast.Attribute):
                 continue
             attr = n.func.attr
             if var is not None and isinstance(n.func.value, ast.Name) and n.func.value.id == var:
