@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import subprocess
 
 from butler.logging_setup import get_logger
@@ -18,6 +19,26 @@ _ALLOWED_CONTAINERS = {
     "autoforge", "node-red", "homeassistant", "mqtt",
     "mariadb", "redis", "watchtower",
 }
+# compose 位置参数的形状：⛔ 以 `-` 开头——那正是 flag 的形状
+_ALLOWED_SERVICE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _validate_services(services) -> str | None:
+    """校验 `docker compose … [services...]` 的位置参数，返回拒绝原因（None=放行）。
+
+    `project_dir`、`container_name` 两枚入口各有白名单，`services` 是第 N+1 个入口：
+    裸拼 argv 时 `["--profile","x"]` 变成 flag，`["-f","/tmp/evil.yml"]` 更狠——
+    compose 的多 `-f` 是合并语义，等于绕过 project_dir 的前缀校验。
+    ⛔ 业务白名单：服务名随 compose 文件变化，穷举会误伤。
+    """
+    if not services:
+        return None
+    if isinstance(services, str) or not isinstance(services, (list, tuple)):
+        return "services 必须是字符串列表"
+    for name in services:
+        if not isinstance(name, str) or not _ALLOWED_SERVICE.match(name):
+            return f"非法 service 名: {repr(str(name)[:40])}"
+    return None
 
 
 def _validate_project_dir(project_dir: str) -> str | None:
@@ -140,6 +161,9 @@ class DockerClient:
         safe_dir = _validate_project_dir(project_dir)
         if not safe_dir:
             return {"ok": False, "tool": "docker_compose_up", "error": "permission_denied", "message": "project_dir not in whitelist prefix"}
+        reason = _validate_services(services)
+        if reason:
+            return {"ok": False, "tool": "docker_compose_up", "error": "permission_denied", "message": reason}
         args = ["compose", "-f", f"{safe_dir}/docker-compose.yml", "up", "-d"]
         if build:
             args.append("--build")
@@ -161,6 +185,9 @@ class DockerClient:
         safe_dir = _validate_project_dir(project_dir)
         if not safe_dir:
             return {"ok": False, "tool": "docker_compose_down", "error": "permission_denied", "message": "project_dir not in whitelist prefix"}
+        reason = _validate_services(services)
+        if reason:
+            return {"ok": False, "tool": "docker_compose_down", "error": "permission_denied", "message": reason}
         args = ["compose", "-f", f"{safe_dir}/docker-compose.yml", "down"]
         if services:
             args.extend(services)
