@@ -60,6 +60,16 @@ _DEVICE_ON_PATTERNS = [
     (re.compile(r"关.*空调"), re.compile(r"关(.*?)空调"), "climate", "turn_off"),
     (re.compile(r"打开.*电视"), re.compile(r"打开(.*?)电视"), "media_player", "turn_on"),
     (re.compile(r"关闭.*电视"), re.compile(r"关闭(.*?)电视"), "media_player", "turn_off"),
+    # ↓ 批194 A4「只增不删」：上面六条⛔ 改、⛔ 调序（`tests/test_audit_1011_batch194_a4_verb_table_leg.py` 逐条钉住）。
+    # 小爱话术里高频的是**名词在前**的「把」字形（把灯关了／把客厅电视打开），原六条全是动词在前⇒整族落 LLM。
+    # `(?!开关)`＝挡名词"灯开关/空调开关"（"把空调开关按下"⛔ 被读成开空调）：三族都要，只给灯加会漏两族。
+    (re.compile(r"把.*灯(?!开关)(?:关闭|关掉|关了|关)"), re.compile(r"把(.*?)灯"), "light", "turn_off"),
+    (re.compile(r"把.*灯(?!开关)(?:打开|开了|开)"), re.compile(r"把(.*?)灯"), "light", "turn_on"),
+    (re.compile(r"把.*空调(?!开关)(?:关闭|关掉|关了|关)"), re.compile(r"把(.*?)空调"), "climate", "turn_off"),
+    (re.compile(r"把.*空调(?!开关)(?:打开|开了|开)"), re.compile(r"把(.*?)空调"), "climate", "turn_on"),
+    (re.compile(r"把.*电视(?!开关)(?:关闭|关掉|关了|关)"), re.compile(r"把(.*?)电视"), "media_player", "turn_off"),
+    (re.compile(r"把.*电视(?!开关)(?:打开|开了|开)"), re.compile(r"把(.*?)电视"), "media_player", "turn_on"),
+    (re.compile(r"关掉.*电视"), re.compile(r"关掉(.*?)电视"), "media_player", "turn_off"),
 ]
 _DEVICE_NOUNS = {"light": "灯", "climate": "空调", "media_player": "电视"}
 
@@ -86,8 +96,11 @@ def _device_hint(text: str, extract: re.Pattern) -> str:
 
 
 def _ask_device_reply(domain: str, service: str) -> str:
+    noun = _DEVICE_NOUNS.get(domain, "设备")
+    if service == "set_temperature":
+        return f"要把哪个房间的{noun}调温度？"
     verb = "开" if service == "turn_on" else "关"
-    return f"要{verb}哪个房间的{_DEVICE_NOUNS.get(domain, '设备')}？"
+    return f"要{verb}哪个房间的{noun}？"
 
 
 def _ask_device_action(domain: str, service: str, text: str, hint: str = "") -> dict:
@@ -142,7 +155,39 @@ async def _resolve_device_entity(agent, hint: str, domain: str) -> str:
     return ""
 
 
-# 3. 技能创建意图（WO-BUT-026：拦截"创建技能"，返回简短反问，不走 LLM 长篇介绍）
+# 3. 温控「（房间的）空调调到 N 度」（批194 A4）
+#    ⛔ 挂进 `_DEVICE_ON_PATTERNS`：那张表四元组里没有**载荷**位，reply 也只会说"打开了"。
+_TEMP_CMD = re.compile(r"调(?:到|至|为|成)?\s*(\d{1,2}(?:\.\d)?)\s*度")
+_TEMP_NOUN = re.compile(r"空调|冷气")
+_TEMP_HINT = re.compile(r"(.*?)(?:空调|冷气)")
+
+
+def _check_temperature(text: str) -> tuple[str, dict] | None:
+    """带温度的空调指令：`climate.set_temperature`，`data` 先装 temperature，entity 由汇聚腿补。"""
+    if _TONE_EXCLUDE.search(text):
+        return None
+    if not _TEMP_NOUN.search(text):
+        return None
+    match = _TEMP_CMD.search(text)
+    if not match:
+        return None
+    label = match.group(1)
+    temperature: float | int = float(label) if "." in label else int(label)
+    hint = _device_hint(text, _TEMP_HINT)
+    if not hint:
+        return (f"要把哪个房间的空调调到 {label} 度？",
+                _ask_device_action("climate", "set_temperature", text, ""))
+    return (f"好的，调到 {label} 度了。", {
+        "action": "call_service",
+        "domain": "climate",
+        "service": "set_temperature",
+        "data": {"temperature": temperature},
+        "device_hint": hint,
+        "text": text,
+    })
+
+
+# 4. 技能创建意图（WO-BUT-026：拦截"创建技能"，返回简短反问，不走 LLM 长篇介绍）
 _SKILL_CREATE_PATTERNS = [
     re.compile(r"创建技能"),
     re.compile(r"新建技能"),
@@ -184,29 +229,31 @@ async def check_simple_command(text: str, agent=None) -> tuple[str, dict] | None
         logger.info("simple rule matched: time query")
         return result
 
-    # 2. 设备控制
-    result = _check_device_control(text)
+    # 2. 设备控制（含 2b 温控「X调N度」：挂在设备控制**之后**＝原有六条句式先命中，⛔ 抢老形）
+    result = _check_device_control(text) or _check_temperature(text)
     if result:
         reply, action = result
+        rule = "temperature" if action.get("service") == "set_temperature" else "device control"
         if action.get("action") == "call_service":
             entity_id = await _resolve_device_entity(
                 agent, action.get("device_hint", ""), action["domain"])
             if entity_id:
-                action["data"] = {"entity_id": entity_id}
-                logger.info("simple rule matched: device control %s.%s entity=%s",
-                            action["domain"], action["service"], entity_id)
+                # 合并⛔ 覆盖：温控那一族进来时 `data` 里已经装着 temperature，整键覆盖会把它抹掉
+                action["data"] = {**action.get("data", {}), "entity_id": entity_id}
+                logger.info("simple rule matched: %s %s.%s entity=%s",
+                            rule, action["domain"], action["service"], entity_id)
             else:
                 reply = _ask_device_reply(action["domain"], action["service"])
                 action = _ask_device_action(action["domain"], action["service"],
                                             action.get("text", ""),
                                             action.get("device_hint", ""))
-                logger.info("simple rule matched: device control needs a room (hint=%s)",
-                            action.get("device_hint", ""))
+                logger.info("simple rule matched: %s needs a room (hint=%s)",
+                            rule, action.get("device_hint", ""))
         else:
-            logger.info("simple rule matched: device control")
+            logger.info("simple rule matched: %s", rule)
         return reply, action
 
-    # 3. 技能创建意图
+    # 4. 技能创建意图
     result = _check_skill_create(text)
     if result:
         logger.info("simple rule matched: skill create intent")
