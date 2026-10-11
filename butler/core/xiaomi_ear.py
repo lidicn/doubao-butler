@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 
 import aiohttp
@@ -19,6 +20,19 @@ import aiohttp
 from butler.logging_setup import get_logger, warn_throttled
 
 logger = get_logger("butler.xiaomi_ear")
+
+# 电子书口令表（批194 A9）：五族关键词是**唯一**词源，⛔ 在匹配函数里再硬编码一份。
+# 报告 §六 T14 点名的两枚裸方位词（往后／往前）已摘出表——摘的是关键词，判据形制另见 `_match_audiobook_cmd`。
+AUDIOBOOK_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("stop", ("停止播放", "别播了", "不要播了", "停下", "闭嘴", "别念了", "不要念了")),
+    ("pause", ("暂停播放", "暂停", "先别播", "等一下", "等会儿")),
+    ("resume", ("继续播放", "继续", "接着播", "接着听", "继续念")),
+    ("next", ("下一章", "下一节", "跳过", "换一章")),
+    ("prev", ("上一章", "上一节", "回去", "重听")),
+)
+
+_AB_BOUNDARY = re.compile(r"[，,。.!！?？、；;：:～~\s]+")
+_AB_MODAL = "吧啊呀呢嘛哦哈"  # 尾随语气词＝⛔ 宾语（「暂停吧」仍是暂停；「暂停一下我去拿东西」不是）
 
 
 class XiaomiEar:
@@ -259,21 +273,18 @@ class XiaomiEar:
         return list(dict.fromkeys(words))
 
     def _match_audiobook_cmd(self, text: str) -> str | None:
-        """匹配电子书语音控制指令，返回 stop/pause/resume/next/prev。"""
-        t = text.strip()
-        # 停止
-        if any(k in t for k in ["停止播放", "别播了", "不要播了", "停下", "闭嘴", "别念了", "不要念了"]):
-            return "stop"
-        # 暂停
-        if any(k in t for k in ["暂停播放", "暂停", "先别播", "等一下", "等会儿"]):
-            return "pause"
-        # 继续
-        if any(k in t for k in ["继续播放", "继续", "接着播", "接着听", "继续念"]):
-            return "resume"
-        # 下一章
-        if any(k in t for k in ["下一章", "下一节", "往后", "跳过", "换一章"]):
-            return "next"
-        # 上一章
-        if any(k in t for k in ["上一章", "上一节", "往前", "回去", "重听"]):
-            return "prev"
+        """电子书口令＝**整段相等**：按标点/空白切段，某段剥掉尾随语气词后整段等于关键词才算。
+
+        ⛔ 再用子串命中（第二轮小爱审计 A9）：旧形把「继续开灯」读成 resume（想开灯，电子书被
+        恢复了）、「往后翻」「往前」读成 next/prev，且这一支在播放中**优先于唤醒词**，被它
+        `return` 掉的那句话管家全程不答＝「答非所问」。呼格形态（「豆包，暂停」）仍算命中＝⛔ 造新病灶。
+        命中归属⛔ 由表序决定：一段只可能整段等于一枚关键词（五族关键词互不相等）。
+        """
+        for seg in _AB_BOUNDARY.split((text or "").strip()):
+            core = seg.strip().rstrip(_AB_MODAL)
+            if not core:
+                continue
+            for action, words in AUDIOBOOK_COMMANDS:
+                if core in words:
+                    return action
         return None

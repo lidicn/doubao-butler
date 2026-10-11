@@ -181,9 +181,9 @@ ANCHORS = [
     # 批190 新锚一枚：`app.py:897`（`rt.ha.cancel_watch_tasks()`，批197 后 :899）同一条形状撑在 def 的同步性质上。
     ("integrations/ha.py", "HAClient", "cancel_watch_tasks", 79),
     # 批192 新锚一枚：`core/dialog.py:669`（`XiaomiEar.note_speak(...)`）撑在这枚 classmethod 的同步性质上。
-    ("core/xiaomi_ear.py", "XiaomiEar", "note_speak", 119),  # 批194 A10 re-anchor 117→119（类体新入 ROLE_EXIT_WORDS 两行通用退出词；def 本体一字未动，`def_at` 现读 kind=sync）
-    ("core/xiaomi_ear.py", "XiaomiEar", "start", 30),   # 批166 re-anchor 29→30（件五乙：头注「点名才答」占两行）
-    ("core/xiaomi_ear.py", "XiaomiEar", "stop", 37),    # 批166 re-anchor 36→37（同上）
+    ("core/xiaomi_ear.py", "XiaomiEar", "note_speak", 133),  # 批194 A10 re-anchor 117→119（类体新入 ROLE_EXIT_WORDS 两行通用退出词）；批194 A9 re-anchor 119→133（模块级 AUDIOBOOK_COMMANDS 表＋两枚切段常量净插 14 行，def 本体一字未动，`def_at` 现读 kind=sync）
+    ("core/xiaomi_ear.py", "XiaomiEar", "start", 44),   # 批166 re-anchor 29→30（件五乙：头注「点名才答」占两行）；批194 A9 re-anchor 30→44（同上，模块级净插 14 行）
+    ("core/xiaomi_ear.py", "XiaomiEar", "stop", 51),    # 批166 re-anchor 36→37（同上）；批194 A9 re-anchor 37→51（同上）
     ("core/aliases.py", "AliasStore", "delete_alias", 99),  # 批164 re-anchor 93→99（D5：别名路径改成惰性 alias_file()）
     ("core/cron_task.py", "CronTaskExecutor", "register_api", 143),  # 批180 re-anchor 140→143（顶部导入 url_guard 净插 3 行，def 本体一字未动）
     ("core/cron_task.py", "CronTaskExecutor", "unregister_api", 162),  # 批180 re-anchor 159→162（同上；批179 那次是 docstring 变两行）
