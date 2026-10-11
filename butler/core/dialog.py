@@ -534,6 +534,7 @@ class DialogManager:
         注意：时钟从调用时（合成前）开始计时，edge-tts 合成需 3-8s，
         因此缓冲必须覆盖合成 + 播放 + 播放末尾的唤醒词检测窗口。
         中文 TTS 语速约 2.2-2.8 字/秒（YunyangNeural 偏慢），取保守值 2.5 字/秒。
+        设备级那一腿在 `XiaomiEar.note_speak`：起点是下发后、时长按 `_est_speak_secs` 张开。
         """
         secs = max(8.0, len(text) * 0.4 + 6.0)
         self._echo_until = max(self._echo_until, time.time() + secs)
@@ -647,10 +648,11 @@ class DialogManager:
             )
         except Exception as e:
             logger.warning("WO-DB-111 butler 回复落库失败（不影响播报，也不得影响回声抑制）：%s", e)
-        # 回声抑制：播报后标记设备，6 秒内忽略该设备的 ear 事件
+        # 回声抑制：下发后按本条文本的估算时长登记设备窗口（下界＝XiaomiEar.ECHO_COOLDOWN_S，
+        # 时长口径与 media_stop 同源 `_est_speak_secs`）
         from butler.core.xiaomi_ear import XiaomiEar
         for d in devices:
-            XiaomiEar._echo_cooldown[d.id] = time.time()
+            XiaomiEar.note_speak(d.id, hold_s=self._est_speak_secs(text))
         return {"spoken": True, "devices": out}
 
     # ---------- 发声（统一出口）----------

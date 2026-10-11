@@ -104,10 +104,26 @@ class XiaomiEar:
                         warn_throttled(logger, "ear.handle_event", "ear handle_event 抛错（该帧丢弃，订阅与监听不断）")
                         continue
 
-    # 回声抑制：butler 播报后 N 秒内忽略同设备的 ear 事件
-    _echo_cooldown: dict = {}  # device_id -> timestamp
+    # 回声抑制：butler 播报后该设备的 ear 事件在窗口内忽略
+    # 值＝**过期时刻**（⛔ 盖戳时刻）：写侧按本条播报的估算时长把窗口推到播放结束。
+    # 字典留在类体＝进程级共享（`dialog.speak_as_role` 手上只有类引用，拿不到 ear 实例），
+    # 因此写侧统一走 note_speak——过期键的清扫也挂在写侧（合并行 53：原形状全仓无清理点）。
+    _echo_cooldown: dict = {}  # device_id -> expires_at
+    ECHO_COOLDOWN_S = 15.0     # 窗口下界：合成＋下发的固定缓冲（沿用原硬编码阈值，数值未动）
     _role_mode: dict = {}  # device_id -> {"role_id": str, "expires_at": float}
     ROLE_MODE_TIMEOUT = 90  # 角色模式90秒无对话自动退出
+
+    @classmethod
+    def note_speak(cls, device_id: str, hold_s: float = 0.0) -> None:
+        """登记一次播报的回声窗口：过期时刻 = now + max(下界, 本条文本估算时长)。
+
+        max() 语义与 `dialog.suppress_echo` 同形：后一条短播报⛔ 把正在播的长窗口拉回。
+        """
+        now = time.time()
+        until = now + max(cls.ECHO_COOLDOWN_S, float(hold_s))
+        cls._echo_cooldown[device_id] = max(cls._echo_cooldown.get(device_id, 0.0), until)
+        for stale in [k for k, v in cls._echo_cooldown.items() if v <= now]:
+            del cls._echo_cooldown[stale]
 
     async def _handle_event(self, event: dict, sensor_map: dict):
         data = event.get("data", {})
@@ -130,10 +146,11 @@ class XiaomiEar:
             logger.info("ear filtered system-prompt [%s] text=%s", dev.id, text[:60])
             return
 
-        # 回声抑制：该设备最近 15 秒内 butler 刚播报过，忽略（防止自己听自己；阈值见下一行的 15.0）
-        last_speak = self._echo_cooldown.get(dev.id, 0)
-        if time.time() - last_speak < 15.0:
-            logger.info("ear echo-suppressed [%s] text=%s (%.1fs ago)", dev.id, text[:40], time.time()-last_speak)
+        # 回声抑制：该设备仍在 note_speak 登记的窗口内＝自己听自己，忽略（下界见 ECHO_COOLDOWN_S）
+        expiry = self._echo_cooldown.get(dev.id, 0.0)
+        if time.time() < expiry:
+            logger.info("ear echo-suppressed [%s] text=%s (%.1fs left)", dev.id, text[:40],
+                        expiry - time.time())
             return
 
         room = getattr(dev, "room", "") or ""

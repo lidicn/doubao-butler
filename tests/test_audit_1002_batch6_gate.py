@@ -13,19 +13,25 @@ A. **负控（先证尺会咬）**：合成包里埋 4 枚 —— ①async 未 a
    门必须给出**逐枚点名**的判定，且各 verdict 计数＝{ASYNC_UNAWAITED:1, SYNC_OK:1, WRAPPED:2}
    （⛔ 只要求「>0」——那等于没测）。
 B. **现网点开的调用点名单**：`gate(butler/, SITES)` 必须 0 枚 ASYNC_UNAWAITED、0 枚 UNKNOWN，
-   且 SYNC_OK=20 / EXTERNAL_SYNC=9（**1009-b6 重钉后口径覆盖 10-02 原读数**：名册 29＝原 30
-   减一枚 `subprocess.run` 槽——该调用已重构进 `await ensure_wake_ding`，PM 裁退役；
+   且 SYNC_OK=24 / EXTERNAL_SYNC=9、名册 33 枚（**原读数＝1009-b6 的 20/9、名册 29**：那一名册
+   由原 30 减一枚 `subprocess.run` 槽——该调用已重构进 `await ensure_wake_ding`，PM 裁退役；
    sched 两枚因尺子 None-遮蔽盲区修复转 EXTERNAL_SYNC。⛔ 靠"全对"两字过关）。
    名册里的**行号**是活物：批164／165／166／167／170／179／180／186／188／189／190 各挪过若干枚的落点，
    每次重钉都在 `SITES` 旁留一行「本节口径覆盖批X 的落点登记」＋接收者现读点开。
-   分布 20/9 自 1009-b6 起未动过——动了它必须改本判据与台账，⛔ 顺手把判据改成新读数。
+   分布**会动**（批189／190／192 各入册新站点⇒现读 24/9）——动了它必须改本判据与台账，
+   ⛔ 顺手把判据改成新读数；逐次来路见下面三条 b1XX 口径注。
    **1011-b189 更新本节口径**：批189（P1-11 关停收尾两条腿）新入册两枚 `app.py:872`／`:877`
    （逐枚 `def_at` 现读为同步体）⇒ 名册 29→31、SYNC_OK 20→22、锚点 12→14；EXTERNAL_SYNC=9 未动。
    **1011-b190 更新本节口径**：批190（合并行 #11 最后两条腿）新入册一枚 `app.py:897`
    （`rt.ha.cancel_watch_tasks()`，`def_at` 现读同步体；同批的 consumer 那枚是 **await**，⛔ 在册），
    五条旧落点整体下移 883／888／900／903／907 ⇒ 名册 31→32、SYNC_OK 22→23、锚点 14→15；
    EXTERNAL_SYNC=9 未动。
-C. **锚点**：判定所依赖的 15 处 `def` 仍是**同步体**且仍在登记的行号上
+   **1011-b192 更新本节口径**：批192（合并行 27＋53 回声冷却腿收编）把 `dialog.py` 里
+   「裸改别的模块类属性」那枚跨模块写改成走 API，新调用点 `core/dialog.py:655`
+   （`XiaomiEar.note_speak(...)`，`def_at` 现读 `sync`@`xiaomi_ear.py:117`）⇒ 名册 32→33、
+   SYNC_OK 23→24、锚点 15→16；`core/dialog.py:513`（`self.tv.notify`）在改动点**上方**，
+   按符号现读点开未漂移（⛔ 靠算术），EXTERNAL_SYNC=9 未动。
+C. **锚点**：判定所依赖的 16 处 `def` 仍是**同步体**且仍在登记的行号上
    ⇒ 谁把 `TVClient.notify` 改成 `async def` 而不动 5 个调用点，这里当场红。
 
 盲点（自报）：
@@ -141,9 +147,11 @@ class ProductionRosterTest(unittest.TestCase):
         counts = self.mod.verdict_counts(self.rows)
         # 1011-b190：名册 31→32／SYNC_OK 22→23（本批新入册的 watch 关停腿 `app.py:897`，
         #   `def_at` 现读为同步体；`consumer` 那枚是 **await**，⛔ 进本名册）。
-        self.assertEqual(counts.get("SYNC_OK"), 23, counts)
+        # 1011-b192：名册 32→33／SYNC_OK 23→24（本批新入册的冷却写腿 `core/dialog.py:655`
+        #   `XiaomiEar.note_speak`，`def_at` 现读 `xiaomi_ear.py:117`＝同步 classmethod）。
+        self.assertEqual(counts.get("SYNC_OK"), 24, counts)
         self.assertEqual(counts.get("EXTERNAL_SYNC"), 9, counts)
-        self.assertEqual(sum(counts.values()), 32, counts)
+        self.assertEqual(sum(counts.values()), 33, counts)
 
     def test_roster_sites_all_classified(self):
         self.assertEqual(len(self.rows), len(self.mod.SITES),
@@ -163,6 +171,8 @@ ANCHORS = [
     ("integrations/ha.py", "HAClient", "stop_xiaomi_token_refresh", 67),
     # 批190 新锚一枚：`app.py:897`（`rt.ha.cancel_watch_tasks()`）同一条形状撑在 def 的同步性质上。
     ("integrations/ha.py", "HAClient", "cancel_watch_tasks", 79),
+    # 批192 新锚一枚：`core/dialog.py:655`（`XiaomiEar.note_speak(...)`）撑在这枚 classmethod 的同步性质上。
+    ("core/xiaomi_ear.py", "XiaomiEar", "note_speak", 117),
     ("core/xiaomi_ear.py", "XiaomiEar", "start", 30),   # 批166 re-anchor 29→30（件五乙：头注「点名才答」占两行）
     ("core/xiaomi_ear.py", "XiaomiEar", "stop", 37),    # 批166 re-anchor 36→37（同上）
     ("core/aliases.py", "AliasStore", "delete_alias", 99),  # 批164 re-anchor 93→99（D5：别名路径改成惰性 alias_file()）
@@ -173,7 +183,7 @@ ANCHORS = [
 
 
 class AnchorTest(unittest.TestCase):
-    """C：15 处判定锚点——被这些 def 的「同步」性质撑住的调用点，⛔ 无人守护地翻成 async。"""
+    """C：16 处判定锚点——被这些 def 的「同步」性质撑住的调用点，⛔ 无人守护地翻成 async。"""
 
     def test_anchors_are_still_sync_at_recorded_lines(self):
         mod = load_mod()
