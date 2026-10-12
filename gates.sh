@@ -38,6 +38,18 @@ echo "══ import 冒烟（解释器：$("$PYTHON" -V 2>&1)）═════�
 smoke_rc=${PIPESTATUS[0]}
 
 echo
+echo "══ 跨仓契约测试（ADM 契约表 §五：DB↔MA / AF↔DB / MA↔DB / 主题白名单）═"
+# 循环本体在 scripts/contract_gate.sh：这条腿要能脱离 gates.sh 单跑——
+# 现网宿主机没装 homesdk（gates.sh 第一道门就 exit 2），而 gates.sh 卡6③ 又要求「部署前必跑」。
+if [ -x "$REPO/scripts/contract_gate.sh" ] || [ -f "$REPO/scripts/contract_gate.sh" ]; then
+  bash "$REPO/scripts/contract_gate.sh"
+  contract_rc=$?
+else
+  echo "  缺 $REPO/scripts/contract_gate.sh —— 契约腿没尺子可跑，判 2（⛔ 当绿）。"
+  contract_rc=2
+fi
+
+echo
 if [ $ast_rc -ne 0 ]; then
   echo "结论：AST 门禁红（exit=$ast_rc）。修，或在 .gates-baseline.txt 里逐条写明放行理由。"
   exit $ast_rc
@@ -45,6 +57,10 @@ fi
 if [ $smoke_rc -ne 0 ]; then
   echo "结论：冒烟红（exit=$smoke_rc）。先在容器里复跑一次再定性——见 README 第三节。"
   exit $smoke_rc
+fi
+if [ $contract_rc -ne 0 ]; then
+  echo "结论：契约腿未通过或没跑到（exit=$contract_rc）。1=契约不一致，2=这条腿此刻量不到。"
+  exit $contract_rc
 fi
 echo '结论：门禁干净。注意 import 通过不等于服务能起，验收仍要 compose ps + HTTP。'
 exit 0
