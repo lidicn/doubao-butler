@@ -1,0 +1,199 @@
+# -*- coding: utf-8 -*-
+"""批206（2026-10-13）部署面归一门。
+
+现读凭据（读数件 `workorders/readings/1012/b219_deploy_face_1012.txt`、
+`b216_inflight_and_ro_1012.txt`、`b207_nasline_area_1012.txt`）：
+
+· 部署面（仓库根）也在两本账里：`docker-compose.yml` 我这侧 78 行、NAS 面 149 行；
+  NAS 面上有一整套 P0-10 加固（非 root／cap_drop ALL／no-new-privileges／pids_limit／
+  read_only 根＋tmpfs／docker.sock 改走受限代理）＋ `TZ`／`NOWVOICE_*`／`BUTLER_SPEAK_TARGET=tv`
+  ＋ songloft 只读挂载 ⇒ ⛔ 换线时拿我这侧覆盖过去，这些一起没。
+· 出资人 2026-10-13 令：「不能再把代码拷进容器。也不能直接编辑 nas 上的代码」
+  ⇒ 源码挂载 `./butler:/app/butler` 必须转只读（丙案，本席推荐已被采纳）。
+· 开发规范 §6.1：端口映射必绑 `192.168.2.200`，⛔ `0.0.0.0`
+  ⇒ 现读 `- "8095:8095"` 违例（`b207_nasline_area_1012.txt` 的 compose 段同值）。
+
+本档⛔ import `butler`（只读文件＋自己写的窄解析），是**文件面**验收。
+每把解析尺都配「应咬的合成文本」负控格：⛔ 只会点头的尺不配当闸。
+"""
+
+import pathlib
+import re
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8").replace("\r\n", "\n")
+DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8").replace("\r\n", "\n")
+
+LAN_IP = "192.168.2.200"
+SRC_MOUNT = "./butler:/app/butler"
+# 运行时确实要写的两枚挂载（现读证据：源码树自容器启动后被改文件=0，data/tts 是活写入面）
+WRITABLE_MOUNTS = ("/app/data", "/app/tts")
+
+HARDENING_KEYS = ("user:", "cap_drop:", "security_opt:", "pids_limit:", "read_only:", "tmpfs:")
+
+
+def _mount_lines(text: str):
+    """volumes 段里的每一枚挂载串（去掉行首 `- ` 与注释）。"""
+    out = []
+    in_volumes = False
+    for raw in text.split("\n"):
+        line = raw.split("#")[0].rstrip()
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"^volumes:\s*$", stripped):
+            in_volumes = True
+            continue
+        if in_volumes:
+            if not stripped.startswith("- "):
+                in_volumes = False
+                continue
+            out.append(stripped[2:].strip().strip('"').strip("'"))
+    return out
+
+
+def _published_ports(text: str):
+    """ports 段里的每一枚发布串（`[[IP:]HOST:]CONTAINER`）。"""
+    out = []
+    in_ports = False
+    for raw in text.split("\n"):
+        stripped = raw.split("#")[0].strip()
+        if not stripped:
+            continue
+        if re.match(r"^ports:\s*$", stripped):
+            in_ports = True
+            continue
+        if in_ports:
+            if not stripped.startswith("- "):
+                in_ports = False
+                continue
+            out.append(stripped[2:].strip().strip('"').strip("'"))
+    return out
+
+
+def _mount_dest(mount: str) -> str:
+    parts = mount.split(":")
+    return parts[1] if len(parts) >= 2 else mount
+
+
+def _mount_is_ro(mount: str) -> bool:
+    return mount.split(":")[-1] == "ro"
+
+
+def _port_bound_to_lan(port: str) -> bool:
+    """三段式且首段是 LAN IP ⇒ 合规；两段式（`HOST:CONTAINER`）＝绑 0.0.0.0 ⇒ 违例。"""
+    parts = port.split(":")
+    return len(parts) == 3 and parts[0] == LAN_IP
+
+
+def _service_block(text: str, name: str) -> str:
+    """某个服务的行（`  <name>:` 起，到下一个两格缩进键止）。
+
+    没有这把「服务」尺，`/var/run/docker.sock` 那条只能挂在全局 volumes 上，
+    会把受限代理自己的合法只读挂载也算成违例（我第一版就这么假红过一次）。
+    """
+    out, started = [], False
+    for raw in text.split("\n"):
+        line = raw.split("#")[0].rstrip()
+        if line == f"  {name}:":
+            started = True
+            continue
+        if started:
+            if line.strip() and not line.startswith("   "):
+                break
+            out.append(line)
+    return "\n".join(out)
+
+
+BAD_SAMPLE = """services:
+  doubao-butler:
+    ports:
+      - "8095:8095"
+    volumes:
+      - ./butler:/app/butler
+      - /vol1/1000/docker/doubao-butler/data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+"""
+
+PROXY_SAMPLE = """  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+"""
+
+
+class DeployFaceGate(unittest.TestCase):
+    # ---- 尺子先自证会咬（合成文本＝违例形态，必须被同一把尺判出来）----
+    def test_00_rulers_bite_on_synthetic_violation(self):
+        mounts = _mount_lines(BAD_SAMPLE)
+        ports = _published_ports(BAD_SAMPLE)
+        self.assertEqual(len(mounts), 3, f"合成文本应解析出 3 枚挂载，实得 {mounts}")
+        self.assertTrue(any(_mount_dest(m) == "/app/butler" and not _mount_is_ro(m) for m in mounts),
+                        "尺失灵：合成文本里 rw 源码挂载没被认出")
+        self.assertEqual(ports, ["8095:8095"], f"合成端口应解析出 1 枚，实得 {ports}")
+        self.assertFalse(_port_bound_to_lan("8095:8095"), "尺失灵：两段式发布串被判成已绑 LAN IP")
+        self.assertTrue(_port_bound_to_lan("192.168.2.200:8095:8095"))
+        two = BAD_SAMPLE + PROXY_SAMPLE
+        main = _service_block(two, "doubao-butler")
+        self.assertIn("/var/run/docker.sock", main, "尺失灵：主服务块里的 sock 没被看到")
+        self.assertNotIn("tecnativa", main, "尺失灵：服务块切过了头，把下一个服务也算进来了")
+        self.assertIn("/var/run/docker.sock", _service_block(two, "docker-socket-proxy"))
+
+    # ---- 一、源码挂载只读（出资人令「⛔ 直接编辑 NAS 上的代码」的机械腿）----
+    def test_01_butler_mount_is_read_only(self):
+        mounts = [m for m in _mount_lines(COMPOSE) if _mount_dest(m) == "/app/butler"]
+        self.assertEqual(len(mounts), 1, f"/app/butler 挂载应恰好一枚，实得 {mounts}")
+        self.assertTrue(_mount_is_ro(mounts[0]),
+                        f"源码挂载⛔ 只读＝「直编 NAS 码」没焊死，现值={mounts[0]}")
+
+    def test_02_runtime_writable_mounts_stay_writable(self):
+        """防「一刀切 :ro」把活写入面一起掐死：data/tts 必须仍可写。"""
+        mounts = _mount_lines(COMPOSE)
+        for dest in WRITABLE_MOUNTS:
+            hit = [m for m in mounts if _mount_dest(m) == dest]
+            self.assertEqual(len(hit), 1, f"{dest} 应恰好一枚挂载，实得 {hit}")
+            self.assertFalse(_mount_is_ro(hit[0]), f"{dest} 被误置只读＝容器写不进数据，现值={hit[0]}")
+
+    # ---- 二、端口绑 LAN IP（开发规范 §6.1）----
+    def test_03_published_ports_bound_to_lan_ip(self):
+        ports = _published_ports(COMPOSE)
+        self.assertGreater(len(ports), 0, "尺失灵：ports 段一枚没解析到")
+        bad = [p for p in ports if not _port_bound_to_lan(p)]
+        self.assertEqual(bad, [], f"违 §6.1（⛔ 0.0.0.0 发布）：{bad}")
+
+    # ---- 三、NAS 面那套 P0-10 加固必须进我这侧（⛔ 换线时被覆盖）----
+    def test_04_hardening_keys_present(self):
+        missing = [k for k in HARDENING_KEYS if k not in COMPOSE]
+        self.assertEqual(missing, [], f"缺 P0-10 加固腿：{missing}")
+
+    def test_05_docker_socket_proxy_replaces_raw_sock(self):
+        main = _service_block(COMPOSE, "doubao-butler")
+        self.assertNotIn("/var/run/docker.sock", main,
+                         "docker.sock 仍直挂主容器＝P0-10 那条腿被覆盖掉了")
+        proxy = _service_block(COMPOSE, "docker-socket-proxy")
+        self.assertIn("/var/run/docker.sock", proxy, "受限代理自己没有 sock 挂载，代理链是断的")
+        self.assertIn("docker-socket-proxy", COMPOSE, "受限代理服务块没进来")
+        self.assertIn("DOCKER_HOST", COMPOSE, "主容器没接 DOCKER_HOST=tcp://docker-socket-proxy:2375")
+
+    def test_06_runtime_env_legs_present(self):
+        for key in ("TZ=Asia/Shanghai", "NOWVOICE_VOICE", "BUTLER_SPEAK_TARGET=tv"):
+            self.assertIn(key, COMPOSE, f"运行参数腿缺失：{key}（NAS 面现读在册）")
+
+    def test_07_extra_readonly_mounts_present(self):
+        mounts = _mount_lines(COMPOSE)
+        for frag in ("/nas/books", "/app/songloft_miot"):
+            hit = [m for m in mounts if _mount_dest(m) == frag]
+            self.assertEqual(len(hit), 1, f"{frag} 挂载没进来，实得 {hit}")
+            self.assertTrue(_mount_is_ro(hit[0]), f"{frag} 应只读，现值={hit[0]}")
+
+    # ---- 四、Dockerfile：非 root 运行腿 ----
+    def test_08_dockerfile_nonroot_user(self):
+        self.assertIn("useradd -r -u 10001", DOCKERFILE, "Dockerfile 没建 butler 用户")
+        self.assertRegex(DOCKERFILE, r"(?m)^USER butler\s*$", "Dockerfile 没切到 USER butler")
+        self.assertIn("homesdk-0.3.2-py3-none-any.whl", DOCKERFILE,
+                      "homesdk 0.3.2 wheel 安装腿不在＝0fa806a 那笔又被抹了")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

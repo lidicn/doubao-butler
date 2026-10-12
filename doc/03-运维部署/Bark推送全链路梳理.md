@@ -111,6 +111,6 @@ Bark 是一款 iOS 推送工具，自部署服务端运行在 NAS（`http://192.
 ## 七、Bark 配置
 
 - **服务端地址**：`http://192.168.2.200:18273`
-- **Key**：`tmLBKcC47VWTW95fYmB5x7`
+- **Key**：`«REDACTED-BARK-KEY·真值只在 .env»`
 - **手机端**：Bark App（iOS），也可通过 tailscale IP `100.114.216.94:18273` 访问
 - **环境变量**：`BARK_URL`、`BARK_KEY`（在 `.env` 中配置）

@@ -12,6 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
+# P0-10 phase3: 非 root 用户运行
+RUN useradd -r -u 10001 -s /usr/sbin/nologin butler \
+    && mkdir -p /app/data /app/tts \
+    && chown -R 10001:10001 /app
+
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -25,5 +30,7 @@ EXPOSE 8095
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8095/api/health').status==200 else 1)"
+
+USER butler
 
 CMD ["uvicorn", "butler.app:app", "--host", "0.0.0.0", "--port", "8095", "--workers", "1"]

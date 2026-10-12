@@ -78,7 +78,7 @@ curl -X POST http://192.168.2.200:9090/v1/images/analyses \
     }],
     "stream": false,
     "keep_conversation": true,
-    "conversation_id": "38440360274498562"
+    "conversation_id": "«会话号·按实例标识符，真值⛔ 入本仓»"
   }'
 ```
 
@@ -95,7 +95,7 @@ curl -X POST http://192.168.2.200:9090/v1/images/analyses \
 ```json
 {
   "choices": [{"message": {"content": "总体结论：安全..."}}],
-  "conversation_id": "38440360274498562"
+  "conversation_id": "«会话号·按实例标识符，真值⛔ 入本仓»"
 }
 ```
 
@@ -114,7 +114,7 @@ curl -X POST http://192.168.2.200:9090/v1/chat/completions \
     "messages": [{"role": "user", "content": "你好"}],
     "stream": false,
     "keep_conversation": true,
-    "conversation_id": "38440360274498562",
+    "conversation_id": "«会话号·按实例标识符，真值⛔ 入本仓»",
     "silent": true
   }'
 ```
@@ -123,12 +123,12 @@ curl -X POST http://192.168.2.200:9090/v1/chat/completions \
 
 | 角色 | conversation_id |
 |------|-----------------|
-| gu_anheng（顾安恒/安防专员） | `38440360274498562` |
-| butler（管家主角色） | `38440799895645442` |
-| xiaoyue（小月） | `38440346897148674` |
-| jarvis（贾维斯/书房） | `38440435372313602` |
-| caesar（凯撒） | `38440300276672258` |
-| luna（露娜） | `38440300318818050` |
+| gu_anheng（顾安恒/安防专员） | `«会话号·按实例标识符，真值⛔ 入本仓»` |
+| butler（管家主角色） | `«会话号·按实例标识符，真值⛔ 入本仓»` |
+| xiaoyue（小月） | `«会话号·按实例标识符，真值⛔ 入本仓»` |
+| jarvis（贾维斯/书房） | `«会话号·按实例标识符，真值⛔ 入本仓»` |
+| caesar（凯撒） | `«会话号·按实例标识符，真值⛔ 入本仓»` |
+| luna（露娜） | `«会话号·按实例标识符，真值⛔ 入本仓»` |
 
 ---
 
@@ -145,7 +145,7 @@ client = DoubaoClient(settings)
 text, conv_id = await client.chat(
     "你好",
     keep_conversation=True,
-    conversation_id="38440360274498562",
+    conversation_id="«会话号·按实例标识符，真值⛔ 入本仓»",
     silent=True,
 )
 
@@ -154,7 +154,7 @@ text, conv_id = await client.vision(
     prompt="这是客厅摄像头画面，简要汇报",
     image_url="data:image/jpeg;base64,...",
     keep_conversation=True,
-    conversation_id="38440360274498562",
+    conversation_id="«会话号·按实例标识符，真值⛔ 入本仓»",
 )
 ```
 

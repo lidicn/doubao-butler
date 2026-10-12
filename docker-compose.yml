@@ -3,15 +3,29 @@ services:
     build: .
     container_name: doubao-butler
     restart: unless-stopped
+    # P0-10 phase3: 非 root + 安全加固
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+      - /run:size=16m
     ports:
-      - "8095:8095"
+      - "192.168.2.200:8095:8095"  # 开发规范 §6.1：⛔ 0.0.0.0 发布
     env_file:
       - .env  # 敏感信息（密码/Token/密钥），不入库
     environment:
       # 基础配置（非敏感）
       - BUTLER_HOST=0.0.0.0
       - BUTLER_PORT=8095
+      - TZ=Asia/Shanghai
       - BUTLER_BASE_URL=http://192.168.2.200:8095
+      # P0-10: docker 走受限代理，不再直挂 docker.sock
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
       # TV 端（非敏感）
       - TV_HTTP_URL=http://192.168.2.238:8080
       - TV_MQTT_PREFIX=tv/livingroom
@@ -20,18 +34,20 @@ services:
       - LLM_TIMEOUT=15
       - WAKE_PHRASE=豆包管家
       # TTS（非敏感）
-      - TTS_PRIMARY=edge-tts
+      - TTS_PRIMARY=nowvoice
       - TTS_EDGE_VOICE=zh-CN-XiaoxiaoNeural
       - TTS_KOKORO_URL=http://doubao-butler-kokoro:8880/v1/audio/speech
       - TTS_KOKORO_VOICE=zm_Yunzhe
       - TTS_SPEED=1.0
       - TTS_VOLUME=80
       - TTS_CACHE_ENABLED=true
+      - NOWVOICE_TOKEN=${NOWVOICE_TOKEN}
+      - NOWVOICE_VOICE=afeb4759
       # 对话/唤醒（非敏感）
       - COOLDOWN_SECONDS=600
       - ACTIVE_DIALOG_TIMEOUT=10
       - WAITING_SECONDS=5
-      - BUTLER_SPEAK_TARGET=mqtt
+      - BUTLER_SPEAK_TARGET=tv
       - DEDUP_WINDOW_DAYS=7
       - DEDUP_JACCARD_THRESHOLD=0.6
       - DND_WINDOWS=
@@ -41,26 +57,84 @@ services:
       # GO2RTC_BASE_URL / GO2RTC_USER / GO2RTC_PASS
       # NEW_API_URL / NEW_API_KEY / NEW_API_MODEL
       # DOUBAO_API_URL / DOUBAO_API_KEY / DOUBAO_MODEL / DOUBAO_BASE_URL
+      # DESKPILOT_HTTP_URL / DESKPILOT_API_TOKEN / TASK_REPORT_TOKEN（后两枚＝启动硬门槛）
       # MEMORY_AGENT_URL / MEMORY_AGENT_MCP_URL / MEMORY_AGENT_TOKEN / MEMORY_AGENT_BUTLER_TOKEN
       # HA_URL / HA_TOKEN
       # XIAOMI_SERVICE_TOKEN / XIAOMI_USER_ID / XIAOMI_SSECURITY
       # BARK_URL / BARK_KEY / BARK_ENCRYPT_KEY / BARK_ENCRYPT_IV
     volumes:
-      - ./butler:/app/butler
+      # 出资人 2026-10-13 令「⛔ 直接把代码拷进容器／⛔ 编辑 NAS 上的代码」⇒ 源码树只读；
+      # 改码只有「推 GitHub → NAS 拉 → 重建」一条路（现读证据：容器 rootfs read_only＋镜像内
+      # PYTHONDONTWRITEBYTECODE=1，启动后源码树被改文件=0，故 :ro 不会掐死任何活写入面）
+      - ./butler:/app/butler:ro
       - /vol1/1000/docker/doubao-butler/data:/app/data
       - /vol1/1000/docker/doubao-butler/tts:/app/tts
-      - /vol1/1000/books:/nas/books
+      - /vol1/1000/books:/nas/books:ro  # P0-10 phase5: audiobook 只读
       # NAS 运维：new-api 数据库直连（三表同步）
       - /vol1/1000/docker/new-api/data/one-api.db:/app/data/new-api.db
-      # NAS 运维：docker.sock（容器管理/重启/compose）
-      - /var/run/docker.sock:/var/run/docker.sock
+      # P0-10: docker.sock 已移除，改走 docker-socket-proxy 受限代理
       # 挂载宿主机 docker CLI（容器内不安装 docker 包）
       - /usr/bin/docker:/usr/bin/docker:ro
+      # 挂载 Songloft 目录（用于自动读取小爱音箱 token）
+      - /vol1/1000/docker/songloft-player/data/jsplugins_data/miot/data:/app/songloft_miot:ro
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+
+  # P0-10: Docker API 受限代理 — 只放行容器列表/日志/重启，禁止 create/build/exec/delete
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: doubao-butler-docker-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # 只允许容器相关操作
+      CONTAINERS: 1
+      # 允许 POST（restart 需要）
+      POST: 1
+      # 显式禁止危险的容器操作（只允许 restart）
+      ALLOW_START: 0
+      ALLOW_STOP: 0
+      ALLOW_KILL: 0
+      ALLOW_UPDATE: 0
+      ALLOW_RENAME: 0
+      ALLOW_PAUSE: 0
+      ALLOW_UNPAUSE: 0
+      # 允许 GET（ps/logs 需要）
+      GET: 1
+      # docker CLI 启动时需要 version/ping
+      VERSION: 1
+      INFO: 1
+      PING: 1
+      # 以下全部禁止
+      EXEC: 0
+      IMAGES: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      GRPC: 0
+      NODES: 0
+      PLUGINS: 0
+      SECRETS: 0
+      SERVICES: 0
+      SESSION: 0
+      SWARM: 0
+      SYSTEM: 0
+      TASKS: 0
+      AUTH: 0
+      EVENTS: 0
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
 
   # 可选本地 TTS 备引擎（默认不启动，需显式 --profile kokoro）
   # 镜像未经验证，请按需替换；启用：docker compose --profile kokoro up -d
@@ -70,7 +144,7 @@ services:
     container_name: doubao-butler-kokoro
     restart: unless-stopped
     ports:
-      - "8880:8880"
+      - "192.168.2.200:8880:8880"  # 开发规范 §6.1：⛔ 0.0.0.0 发布
     logging:
       driver: json-file
       options:
