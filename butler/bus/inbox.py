@@ -35,6 +35,7 @@ from butler.config import get_settings
 from butler.logging_setup import get_logger
 from butler.notify.singleton import get_router as get_notify_router
 from butler.tts.helper import enqueue_tts
+from homesdk.adm.errors import ADM_ERR_INTERNAL, ADM_ERR_PAYLOAD_INVALID
 
 logger = get_logger("butler.bus.inbox")
 
@@ -297,26 +298,26 @@ class InboxGate:
         if channel not in CHANNELS:
             return OUTCOME_DROPPED, "未知通道"
         if not self.enabled:
-            logger.info("INBOX_DROP channel=%s reason=inbox_disabled", channel)
+            logger.info("%s inbox drop channel=%s reason=inbox_disabled", ADM_ERR_INTERNAL, channel)
             return OUTCOME_DROPPED, "收件箱已关闭"
         ok, why, note = self.validate(payload, channel)
         if not ok:
-            logger.warning("INBOX_DROP channel=%s reason=%s topic=%s", channel, why, topic)
+            logger.warning("%s inbox drop channel=%s reason=%s topic=%s", ADM_ERR_PAYLOAD_INVALID, channel, why, topic)
             return OUTCOME_DROPPED, why
         if not self.rate_ok(note["source"]):
-            logger.warning("INBOX_DROP channel=%s source=%s trace=%s reason=限流(%d/分钟)",
-                           channel, note["source"], note["trace_id"], self.rate_per_min)
+            logger.warning("%s inbox drop channel=%s source=%s trace=%s reason=限流(%d/分钟)",
+                           ADM_ERR_INTERNAL, channel, note["source"], note["trace_id"], self.rate_per_min)
             return OUTCOME_DROPPED, "限流(%d/分钟)" % self.rate_per_min
         if not self.cool_ok(channel, note["source"], note["text"]):
-            logger.info("INBOX_DROP channel=%s source=%s trace=%s reason=冷却中",
-                        channel, note["source"], note["trace_id"])
+            logger.info("%s inbox drop channel=%s source=%s trace=%s reason=冷却中",
+                        ADM_ERR_INTERNAL, channel, note["source"], note["trace_id"])
             return OUTCOME_DROPPED, "冷却中"
 
         if channel == "speak":
             used = self.budget_used(note["source"])
             if used >= self.speak_daily_limit:
-                logger.warning("INBOX_DROP channel=speak source=%s trace=%s reason=每日预算用尽(%d/%d)",
-                               note["source"], note["trace_id"], used, self.speak_daily_limit)
+                logger.warning("%s inbox drop channel=speak source=%s trace=%s reason=每日预算用尽(%d/%d)",
+                               ADM_ERR_INTERNAL, note["source"], note["trace_id"], used, self.speak_daily_limit)
                 return OUTCOME_DROPPED, "每日预算用尽(%d/%d)" % (used, self.speak_daily_limit)
             accepted = enqueue_tts(
                 note["text"], priority=note["priority"], room=note["room"],
@@ -328,14 +329,14 @@ class InboxGate:
                 logger.info("INBOX_DONE channel=speak source=%s trace=%s budget=%d/%d",
                             note["source"], note["trace_id"], today, self.speak_daily_limit)
                 return OUTCOME_ACCEPTED, "budget=%d/%d" % (today, self.speak_daily_limit)
-            logger.info("INBOX_DROP channel=speak source=%s trace=%s reason=队列拒绝",
-                        note["source"], note["trace_id"])
+            logger.info("%s inbox drop channel=speak source=%s trace=%s reason=队列拒绝",
+                        ADM_ERR_INTERNAL, note["source"], note["trace_id"])
             return OUTCOME_REJECTED, "队列拒绝"
 
         router = get_notify_router()
         if router is None:
-            logger.warning("INBOX_DROP channel=%s source=%s trace=%s reason=路由未初始化",
-                           channel, note["source"], note["trace_id"])
+            logger.warning("%s inbox drop channel=%s source=%s trace=%s reason=路由未初始化",
+                           ADM_ERR_INTERNAL, channel, note["source"], note["trace_id"])
             return OUTCOME_DROPPED, "路由未初始化"
         try:
             if channel == "notify":
@@ -367,6 +368,6 @@ class InboxGate:
                 return OUTCOME_ACCEPTED, "下游 ok"
             return OUTCOME_FAILED, "下游 not ok"
         except Exception as e:
-            logger.warning("INBOX_FAIL channel=%s source=%s trace=%s err=%s",
-                           channel, note["source"], note["trace_id"], e)
+            logger.warning("%s inbox fail channel=%s source=%s trace=%s err=%s",
+                           ADM_ERR_INTERNAL, channel, note["source"], note["trace_id"], e)
             return OUTCOME_FAILED, "分发异常 %s" % type(e).__name__
