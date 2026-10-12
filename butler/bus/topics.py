@@ -32,31 +32,40 @@ SUB_MA_INSIGHTS = f"{MA_PREFIX}/insights"         # memory-agent 视觉异常/�
 SUB_INBOX_SPEAK = f"{BUTLER_ROOT}/inbox/speak"
 SUB_INBOX_NOTIFY = f"{BUTLER_ROOT}/inbox/notify"
 SUB_INBOX_TV = f"{BUTLER_ROOT}/inbox/tv"
-ADM_STATUS = "adm/doubao-butler/status"      # retained 在线状态：载荷字面量 online/offline，offline 由 LWT 代发（契约表 §1.1）
+ADM_STATUS = "adm/doubao-butler/status"      # retained 在线状态：载荷为 encode_status JSON（契约 v2.0 §7.1），offline 由 LWT 代发（契约表 §1.1）
 ADM_CAPS = "adm/doubao-butler/caps"          # retained 能力摘要（契约表 §1.1：adm/<成员>/caps）
 SUB_ADM_MA_STATUS = "adm/memory-agent/status"
 SUB_ADM_AF_STATUS = "adm/autoforge/status"
 
 
 def adm_status_is_online(payload: Any) -> bool:
-    """`adm/<成员>/status` 消费侧的判读单点（契约表 §1.1；homesdk 0.3.1 presence.is_online 同式）。
+    """`adm/<成员>/status` 消费侧的判读单点（契约 v2.0 §7.1，homesdk.adm.status.decode_status）。
 
-    载荷是字面量 `online`/`offline`。拿到 str 还去 `.get("online")` 会抛 AttributeError——
-    表现是「订阅在跑、缓存永远空」，比崩更难查。
-    dict 分支是过渡：MA/AF 此刻发什么形状未现采，两种都得能读，⛔ 在每个消费点各写一份。
+    0.3.2 起载荷是 JSON {"state": online|offline|degraded, ...}；decode_status 同时兼容
+    旧字面量 "online"/"offline"（过渡期不得丢弃、不得抛错）。判读只在这一个函数里做，
+    ⛔ 在每个消费点各写一份（此前 MA 发字面量、DB 按 dict 取 "online" 键永远读空就是这个 bug）。
+    dict 分支兼容直接传进来的对象：优先认 `state`，没有 state 才回退旧 `online` 布尔字段。
+    degraded 视为在场（能力降档≠离线），不可解/空载荷 fail-closed 记离线。
     """
-    if isinstance(payload, (bytes, bytearray)):
-        payload = payload.decode("utf-8", "replace")
-    if isinstance(payload, str):
-        return payload.strip() == "online"
+    from homesdk.adm.status import STATE_DEGRADED, STATE_ONLINE, decode_status
+
+    if isinstance(payload, (bytes, bytearray, str)):
+        try:
+            payload = decode_status(payload)
+        except ValueError:
+            return False
     if isinstance(payload, dict):
+        state = payload.get("state")
+        if state is not None:
+            return state in (STATE_ONLINE, STATE_DEGRADED)
         return bool(payload.get("online"))
     return False
 
-# AF 自动化事件（契约 v2.0 §D）：DB↔AF 事件腿走 HTTP 轮询 /api/asks/pending，
-# 不订阅 af/automation/fired|failed（避免与 HTTP 轮询重复消费）。登记于此供后续切换。
-# SUB_AF_AUTOMATION_FIRED = "af/automation/fired"
-# SUB_AF_AUTOMATION_FAILED = "af/automation/failed"
+# AF 自动化上报（契约表 §1.2 行 57-58）：fired {trace_id, ts, automation_id, ref}；
+# failed 多带 error。QoS1 非 retained。DCD 2026-10-08 采纳走 MQTT 订阅（替代 HTTP 轮询获知自动化结果）；
+# /api/asks/pending 是用户问询桥，与本事件腿不重叠、不重复消费。
+SUB_AF_AUTOMATION_FIRED = "af/automation/fired"
+SUB_AF_AUTOMATION_FAILED = "af/automation/failed"
 
 SUB_TOPICS = (
     SUB_TV_STATUS,
@@ -75,6 +84,8 @@ SUB_TOPICS = (
     SUB_INBOX_TV,
     SUB_ADM_MA_STATUS,
     SUB_ADM_AF_STATUS,
+    SUB_AF_AUTOMATION_FIRED,
+    SUB_AF_AUTOMATION_FAILED,
     f"{BUTLER_ROOT}/dialog/event",  # 订阅自身发布的对话事件，用于 SSE 推送
 )
 
