@@ -62,6 +62,14 @@ def _sign_answer(ask_id: str, text: str, room: str, answer: dict | None) -> str:
     return hmac.new(_inbox_key.encode("utf-8"), msg, hashlib.sha256).hexdigest()
 
 
+def _auth_headers() -> dict[str, str]:
+    """AF 出站鉴权的唯一出口：GET（read 域）与 POST（write 域）共用同一把令牌。
+
+    无令牌时返回空 dict，让 AF 的 fail-closed 403 原样透出来，⛔ 在这里拼一把空 Bearer 假装带过鉴权。
+    """
+    return {"Authorization": f"Bearer {_api_token}"} if _api_token else {}
+
+
 def init(rt: Any, base_url: str = "", poll_interval: float = 5.0,
          api_token: str = "", inbox_key: str = "",
          answer_window_s: float = 0.0) -> None:
@@ -117,7 +125,9 @@ async def _poll_once() -> None:
     now = time.time()
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{_base_url}/api/asks/pending", timeout=aiohttp.ClientTimeout(total=5)) as r:
+            async with session.get(f"{_base_url}/api/asks/pending",
+                                   timeout=aiohttp.ClientTimeout(total=5),
+                                   headers=_auth_headers()) as r:
                 if r.status >= 400:
                     body = (await r.text())[:200]
                     # 契约 v2.0 §7.2/§B：异常文本带码，⛔ 裸 "HTTP 403"（§八#4）
@@ -239,9 +249,7 @@ async def on_user_reply(room: str, text: str) -> bool:
             return True
         logger.info("af_bridge: user replied to ask %s: %s", aid, text)
         try:
-            headers = {}
-            if _api_token:
-                headers["Authorization"] = f"Bearer {_api_token}"
+            headers = _auth_headers()
             answer: dict[str, Any] = {}
             body: dict[str, Any] = {"ask_id": aid, "text": text, "room": room, "answer": answer}
             if _inbox_key:
