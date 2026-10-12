@@ -12,11 +12,16 @@
   ⇒ 源码挂载 `./butler:/app/butler` 必须转只读（丙案，本席推荐已被采纳）。
 · 开发规范 §6.1：端口映射必绑 `192.168.2.200`，⛔ `0.0.0.0`
   ⇒ 现读 `- "8095:8095"` 违例（`b207_nasline_area_1012.txt` 的 compose 段同值）。
+· 读数件 `workorders/readings/1013/b206c_literal_envkeys_1013.txt`：受跟踪的 dev 面带活凭据
+  —— NAS 面 3 枚（`BARK_KEY`/`BARK_ENCRYPT_KEY`/`BARK_ENCRYPT_IV`）、我这侧 1 枚
+  （`BUTLER_WEB_PASSWORD`）⇒ test_09/10 一把尺两面都收（值本体⛔ 出现在任何输出里）。
+  同读数件：`.env.example` 我这侧 89 枚 ⊇ NAS 45 枚（NAS 独有=0、同键异值=0）⇒ 记载面以我这侧为准。
 
 本档⛔ import `butler`（只读文件＋自己写的窄解析），是**文件面**验收。
 每把解析尺都配「应咬的合成文本」负控格：⛔ 只会点头的尺不配当闸。
 """
 
+import hashlib
 import pathlib
 import re
 import unittest
@@ -85,6 +90,45 @@ def _port_bound_to_lan(port: str) -> bool:
     """三段式且首段是 LAN IP ⇒ 合规；两段式（`HOST:CONTAINER`）＝绑 0.0.0.0 ⇒ 违例。"""
     parts = port.split(":")
     return len(parts) == 3 and parts[0] == LAN_IP
+
+
+# 受跟踪的部署面配置文件（b206c 现读：这四枚是凭据字面量的落点面）
+CONFIG_FILES = ("docker-compose.yml", "docker-compose.dev.yml", ".env.example", "Dockerfile")
+
+# 非凭据语义的键尾（值长≧16 也不该报）：主机/端口/URL/用户名/音色/模型一类
+_NON_SECRET_SUFFIX = ("USER", "HOST", "PORT", "URL", "PREFIX", "ID", "VOICE", "MODEL",
+                      "PATH", "TIMEOUT", "PHRASE", "SECONDS", "DAYS", "WINDOW", "THRESHOLD")
+_SECRET_SHAPE = re.compile(r"^[A-Za-z0-9._~+/-]{16,}$")
+_PLACEHOLDER = re.compile(r"(your_|change_me|placeholder|example|<|\$\{)", re.I)
+
+
+def credential_literals(text: str, name: str) -> list:
+    """扫 `KEY=value` 形态里的活凭据字面量。
+
+    ⛔ 返回串里带值本体（尺子自己不能成为泄露面）⇒ 只给键名＋行号＋长度＋md5 前 8。
+    """
+    hits = []
+    for lineno, line in enumerate(text.split("\n"), 1):
+        m = re.match(r"^\s*-?\s*([A-Z][A-Z0-9_]{2,})=(\S+)\s*$", line)
+        if not m:
+            continue
+        key, value = m.group(1), m.group(2)
+        if key.endswith(_NON_SECRET_SUFFIX) or _PLACEHOLDER.search(value) or not _SECRET_SHAPE.match(value):
+            continue
+        digest = hashlib.md5(value.encode("utf-8")).hexdigest()[:8]
+        hits.append(f"{key}@{name}:L{lineno}(len={len(value)},md5={digest})")
+    return hits
+
+
+SYNTH_OK_SAMPLE = """services:
+  x:
+    environment:
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+      - NEW_API_KEY=your_new_api_key_here
+      - BUTLER_WEB_USER=admin
+      - MQTT_HOST=192.168.2.200
+      - NOWVOICE_VOICE=afeb4759
+"""
 
 
 def _service_block(text: str, name: str) -> str:
@@ -187,12 +231,41 @@ class DeployFaceGate(unittest.TestCase):
             self.assertEqual(len(hit), 1, f"{frag} 挂载没进来，实得 {hit}")
             self.assertTrue(_mount_is_ro(hit[0]), f"{frag} 应只读，现值={hit[0]}")
 
-    # ---- 四、Dockerfile：非 root 运行腿 ----
+    # ---- 五、Dockerfile：非 root 运行腿 ----
     def test_08_dockerfile_nonroot_user(self):
         self.assertIn("useradd -r -u 10001", DOCKERFILE, "Dockerfile 没建 butler 用户")
         self.assertRegex(DOCKERFILE, r"(?m)^USER butler\s*$", "Dockerfile 没切到 USER butler")
         self.assertIn("homesdk-0.3.2-py3-none-any.whl", DOCKERFILE,
                       "homesdk 0.3.2 wheel 安装腿不在＝0fa806a 那笔又被抹了")
+
+    # ---- 六、部署面⛔ 凭据字面量（现读 b206c：NAS 面 dev 有 3 枚、我这侧 dev 有 1 枚）----
+    def test_09_deploy_face_has_no_credential_literals(self):
+        offenders = []
+        for name in CONFIG_FILES:
+            path = ROOT / name
+            if not path.exists():
+                continue
+            offenders += credential_literals(path.read_text(encoding="utf-8").replace("\r\n", "\n"), name)
+        self.assertEqual(offenders, [], f"受跟踪的部署面文件里带活凭据：{offenders}")
+
+    def test_10_credential_ruler_bites_on_synthetic_literal(self):
+        """负控：同一把尺必须咬得住合成字面量，且在占位符/插值/用户名形态上不误报。"""
+        sample = ("services:\n"
+                  "  x:\n"
+                  "    environment:\n"
+                  "      - BARK_KEY=«REDACTED-BARK-KEY·真值只在 .env»\n"
+                  "      - BUTLER_WEB_PASSWORD=e32xl1Pm1gMteXBjuXT\n"
+                  "      - MQTT_PASSWORD=${MQTT_PASSWORD}\n"
+                  "      - NEW_API_KEY=your_new_api_key_here\n"
+                  "      - BUTLER_WEB_USER=admin\n"
+                  "      - MQTT_HOST=192.168.2.200\n")
+        hits = credential_literals(sample, "sample")
+        self.assertEqual([h.split("@")[0] for h in hits], ["BARK_KEY", "BUTLER_WEB_PASSWORD"],
+                         f"尺不咬或误报，实得 {hits}")
+        for h in hits:
+            self.assertNotIn("tmLBK", h, "尺把凭据值本体打印出来了＝泄露面自己造了一枚")
+        self.assertEqual(credential_literals(SYNTH_OK_SAMPLE, "sample"), [],
+                         f"合规形态被误报：{credential_literals(SYNTH_OK_SAMPLE, 'sample')}")
 
 
 if __name__ == "__main__":

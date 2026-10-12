@@ -1,4 +1,4 @@
-# 开发模式：代码热重载
+# 开发模式：代码热重载（应急用；日常改动一律走「推 GitHub → NAS 拉 → 重建」那条路）
 # 用法：docker compose -f docker-compose.dev.yml up
 # 与生产模式的区别：
 #   1. uvicorn --reload：检测到 butler/ 目录下 .py 文件变化自动重启
@@ -13,17 +13,18 @@ services:
     build: .
     container_name: doubao-butler
     ports:
-      - "8095:8095"
+      - "192.168.2.200:8095:8095"  # 开发规范 §6.1：⛔ 0.0.0.0 发布
     environment:
       - BUTLER_HOST=0.0.0.0
       - BUTLER_PORT=8095
+      - TZ=Asia/Shanghai
       - BUTLER_BASE_URL=http://192.168.2.200:8095
-      - BUTLER_WEB_USER=butler-owner
-      - BUTLER_WEB_PASSWORD=e32xl1Pm1gMteXBjuXTM
+      - BUTLER_WEB_USER=admin
+      - BUTLER_WEB_PASSWORD=${BUTLER_WEB_PASSWORD_DEV_COMPOSE}
       - MQTT_HOST=192.168.2.200
       - MQTT_PORT=1883
       - MQTT_USER=butler
-      - MQTT_PASSWORD=your_mqtt_password_here
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
       - MQTT_CLIENT_ID=butler-core-dev
       - TV_HTTP_URL=http://192.168.2.238:8080
       - TV_MQTT_PREFIX=tv/livingroom
@@ -32,27 +33,32 @@ services:
       - GO2RTC_USER=lidicn
       - GO2RTC_PASS=your_go2rtc_password_here
       - NEW_API_URL=http://192.168.2.200:3001/v1
-      - NEW_API_KEY=your_new_api_key_here
-      - NEW_API_MODEL=deepseek-v4-flash
+      - NEW_API_KEY=${NEW_API_KEY}
+      - NEW_API_MODEL=butler-chat
       - DOUBAO_API_URL=http://192.168.2.200:9090/v1/chat/completions
-      - DOUBAO_API_KEY=your_doubao_api_key_here
-      - DOUBAO_MODEL=doubao-seed-1-6
+      - DOUBAO_API_KEY=${DOUBAO_API_KEY}
+      - DOUBAO_MODEL=butler-chat
       - DOUBAO_BASE_URL=http://192.168.2.200:9090
       - LLM_TIMEOUT=15
       - WAKE_PHRASE=豆包管家
       - MEMORY_AGENT_URL=http://192.168.2.200:8086
       - MEMORY_AGENT_MCP_URL=http://192.168.2.200:8086/mcp
-      - MEMORY_AGENT_TOKEN=your_memory_agent_token_here
-      - MEMORY_AGENT_BUTLER_TOKEN=your_memory_agent_butler_token_here
+      - MEMORY_AGENT_TOKEN=${MEMORY_AGENT_TOKEN_DEV_COMPOSE}
+      - MEMORY_AGENT_BUTLER_TOKEN=${MEMORY_AGENT_BUTLER_TOKEN_DEV_COMPOSE}
       - HA_URL=http://192.168.2.200:8123
-      - HA_TOKEN=your_ha_token_here
-      - XIAOMI_SERVICE_TOKEN=your_xiaomi_service_token_here
+      - HA_TOKEN=${HA_TOKEN_DEV_COMPOSE}
+      - XIAOMI_SERVICE_TOKEN=${XIAOMI_SERVICE_TOKEN_DEV_COMPOSE}
       - XIAOMI_USER_ID=your_xiaomi_user_id_here
       - XIAOMI_SSECURITY=your_xiaomi_ssecurity_here
       - BARK_URL=http://192.168.2.200:18273
-      - BARK_KEY=your_bark_key_here
-      - TTS_PRIMARY=edge-tts
-      - TTS_EDGE_VOICE=zh-CN-XiaoxiaoNeural
+      - BARK_KEY=${BARK_KEY}
+      - BARK_ENCRYPT_KEY=${BARK_ENCRYPT_KEY}
+      - BARK_ENCRYPT_IV=${BARK_ENCRYPT_IV}
+      - TTS_PRIMARY=nowvoice
+      - NOWVOICE_VOICE=afeb4759
+      - NOWVOICE_TOKEN=${NOWVOICE_TOKEN}
+      - ILINK_ENABLED=true
+      - TTS_EDGE_VOICE=zh-CN-YunyangNeural
       - TTS_KOKORO_URL=http://doubao-butler-kokoro:8880/v1/audio/speech
       - TTS_KOKORO_VOICE=zm_Yunzhe
       - TTS_SPEED=1.0
@@ -65,16 +71,22 @@ services:
       - DEDUP_WINDOW_DAYS=7
       - DEDUP_JACCARD_THRESHOLD=0.6
       - DND_WINDOWS=
+      # docker 面与生产同口径：⛔ 直挂 docker.sock，走受限代理（代理服务只在 docker-compose.yml 里，
+      # 单跑本 dev 文件时容器管理/重启那几条腿量不到，属预期，⛔ 为此把 sock 挂回来）
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
     volumes:
-      - ./butler:/app/butler
+      # 与生产同口径：源码树只读（出资人 2026-10-13 令「⛔ 把代码拷进容器／⛔ 编辑 NAS 上的代码」）；
+      # --reload 只读＋监听，不写树（镜像内 PYTHONDONTWRITEBYTECODE=1）
+      - ./butler:/app/butler:ro
       - /vol1/1000/docker/doubao-butler/data:/app/data
       - /vol1/1000/docker/doubao-butler/tts:/app/tts
-      - /vol1/1000/books:/nas/books
+      - /vol1/1000/books:/nas/books:ro
       - /vol1/1000/docker/new-api/data/one-api.db:/app/data/new-api.db
-      - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker:ro
       # 挂载 HA 配置目录（用于自动读取小米 service_token）
       - /vol1/1000/docker/homeassistant/config/.storage:/app/ha_config:ro
+      # 挂载 Songloft 目录（用于自动读取小爱音箱 token）
+      - /vol1/1000/docker/songloft-player/data/jsplugins_data/miot/data:/app/songloft_miot:ro
     # 开发模式核心：覆盖启动命令为 --reload
     command: uvicorn butler.app:app --host 0.0.0.0 --port 8095 --reload --reload-dir /app/butler
     logging:
