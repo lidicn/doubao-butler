@@ -6,12 +6,16 @@
 `.git/hooks/` 里除 `.sample` 外一枚钩子都没有；`gates.sh` 三道门（AST／冒烟／契约）里
 `grep -nE "leak|secret|credential|凭据"` 0 命中。⇒ 有没有泄露，全靠某个人记得去跑一把尺。
 
-两臂：
+三臂：
   A 值比对：拿 `.env` 的长值撞待提交文本。⛔ 形状猜（形状尺在本仓历史上假阳 1845 次），
     ⛔ 打印值本体（闸自己造泄露面＝条目九十三那条老病）。
   B 用户数据路径：头像与归档名册这类**内容即个人信息**的路径出现在索引里就红。
     这一臂⛔ 依赖 `.gitignore`——`git add -f` 与「先 add 再改 ignore」两条路都绕得过它，
     要看的是**索引里实际有什么**，那才是会被推出去的东西。
+  C 实例标识符（批209）：豆包会话号那类 17 位号——它们⛔ 在 `.env` 里，A 臂天然看不见，
+    比对集来自 `workorders/leak/instance_ids.txt`（⛔ 入库，`workorders/` 整目录已 ignore）。
+    册不在位 ⇒ 打印「未量」，⛔ 静默读成干净。豁免只认 `.leak-baseline.txt` 里的
+    `path:lineno ＋非空理由`，且⛔ 豁免 B 臂（路径进了索引就是要推出去的东西）。
 
 退出码：0 干净 / 1 命中（拦） / 2 本腿未量（取不到 .env 或取不到 git ⇒ ⛔ 当绿）。
 """
@@ -39,6 +43,57 @@ PLACEHOLDER = ("changeme", "change_me", "your-", "your_", "placeholder", "<", "$
 # （判例：恒红与恒绿同病，都不改变真文件读数）。它们单列成「登记不拦」桶，读数里看得见。
 SECRET_KEY_RE = re.compile(r"(?i)(token|password|passwd|secret|api_?key|credential|signature"
                            r"|\biv\b|\bsig\b|_key$|^key_|access_|auth|cert|private)")
+# 批209 第三类比对集：**按实例标识符**（豆包会话号那类 17 位号）。
+# 它们⛔ 在 `.env` 里（现读 `data/roles/*.json` 内 `conversation_id` 0 命中）⇒ A 臂天然看不见，
+# 只能靠一份**册**（真值名册）。册⛔ 入库：默认落在 `workorders/`（那条 ignore 已经覆盖整目录），
+# 与 `.env` 同性质。册不在位＝这一类没量到 ⇒ 打印「未量」，⛔ 静默读成干净，也⛔ 因缺册判红
+# （否则换个 clone 就跑不动闸，而「跑不动」与「发现泄露」在人眼里长得一样）。
+INSTANCE_IDS_DEFAULT = "workorders/leak/instance_ids.txt"
+# 豁免基线（入库件）：只认「`path:lineno` ＋非空理由」，缺理由**由尺判红**。
+# 与仓里既有 `.gates-baseline.txt` 同口径——放行必须留字，⛔ 让空行把闸门静默放宽。
+BASELINE_FILE = ".leak-baseline.txt"
+
+
+def load_instance_ids(repo: pathlib.Path, explicit: str | None = None):
+    """返回 `(值表, 册路径, 在册?)`；值表键名 `INSTANCE#<行号>`，⛔ 以值当键。"""
+    path = pathlib.Path(explicit) if explicit else repo / INSTANCE_IDS_DEFAULT
+    if not path.is_file():
+        return {}, path, False
+    out: dict[str, str] = {}
+    for no, raw in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+        s = raw.strip()
+        if not s or s.startswith("#"):
+            continue
+        out[f"INSTANCE#{no}"] = s
+    return out, path, True
+
+
+def load_baseline(repo: pathlib.Path):
+    """返回 `(豁免表 loc→理由, 尺子问题列表)`。"""
+    path = repo / BASELINE_FILE
+    allow: dict[str, str] = {}
+    problems: list[str] = []
+    if not path.is_file():
+        return allow, problems
+    for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        s = raw.strip()
+        if not s or s.startswith("#"):
+            continue
+        loc, _, reason = s.partition(" ")
+        if not re.search(r":\d+$", loc):
+            problems.append(f"C-BASELINE-LOCATION {loc}（⛔ 没有 `path:lineno` 定位＝整文件被放过）")
+            continue
+        if not reason.strip():
+            problems.append(f"C-BASELINE-NO-REASON {loc}（放行必须留字，与 .gates-baseline.txt 同口径）")
+            continue
+        allow[loc] = reason.strip()
+    return allow, problems
+
+
+def problem_location(problem: str) -> str:
+    """从 `… file=<rev> <path>:<行>` 或 `… file=<path>:<行>` 里取出 `path:行` 尾段。"""
+    _, _, tail = problem.partition("file=")
+    return tail.rsplit(" ", 1)[-1] if " " in tail else tail
 
 
 def parse_env(raw: str) -> dict[str, str]:
@@ -132,6 +187,8 @@ def main(argv: list[str] | None = None) -> int:
                          "中间 blob 一个字节没动，而推的是整条 range）")
     ap.add_argument("--repo", default=".", help="仓库根（默认当前目录）")
     ap.add_argument("--min-len", type=int, default=MIN_VALUE_LEN)
+    ap.add_argument("--instance-ids", dest="instance_ids", metavar="PATH",
+                    help=f"按实例标识符名册（默认 {INSTANCE_IDS_DEFAULT}，⛔ 入库）")
     args = ap.parse_args(argv)
 
     repo = pathlib.Path(args.repo).resolve()
@@ -152,19 +209,40 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[blind-spot] 凭据语义但值短（子串必假阳）{len(short)} 枚：{sorted(k for k, _ in short)}")
     print(f"[登记不拦] 地址/型号类键 {len(nonsecret)} 枚：{sorted(nonsecret)}")
 
+    inst, inst_path, inst_present = load_instance_ids(repo, args.instance_ids)
+    if inst_present:
+        values.update(inst)
+        print(f"[instance] 实例号册 {len(inst)} 枚入比对集（册：{inst_path.name}，⛔ 值出口）")
+    else:
+        print(f"[instance] 实例号册不在位（{inst_path}）⇒ 会话号那一类**未量**，⛔ 记成绿")
+
+    allow, baseline_problems = load_baseline(repo)
+
+    def emit(problems: list[str]) -> list[str]:
+        """按基线滤豁免（只滤值比对臂，用户数据路径臂⛔ 可豁免——路径进了索引就是要推出去的东西）。"""
+        kept = []
+        for line in problems:
+            loc = problem_location(line)
+            if line.startswith("A-LEAK") and loc in allow:
+                print(f"  [豁免] {loc} 理由：{allow[loc]}")
+                continue
+            kept.append(line)
+            print("  " + line)
+        return kept
+
     if args.range_:
         revs = [r for r in _git(repo, ["rev-list", args.range_]).splitlines() if r.strip()]
         print(f"[scope] 待推区间 {args.range_} 共 {len(revs)} 枚 commit（逐枚扫整棵树）")
-        range_problems: list[str] = []
+        range_problems: list[str] = list(baseline_problems)
+        for line in baseline_problems:
+            print("  " + line)
         for rev in revs:
             paths = [p for p in _git(repo, ["ls-tree", "-r", "--name-only", rev]).splitlines() if p.strip()]
             problems = userdata_problems([f"{rev[:7]}:{p}" for p in paths])
             for path, lineno, line in _candidate_lines(repo, rev, values):
                 problems += value_problems(line, path, values,
                                            label=f"{rev[:7]} {path}:{lineno}")
-            for line in problems:
-                print("  " + line)
-            range_problems += problems
+            range_problems += emit(problems)
         print("[verdict] " + (f"⛔ 待推区间命中 {len(range_problems)} 处"
                               if range_problems else "待推区间逐枚 0 命中"))
         return 1 if range_problems else 0
@@ -178,10 +256,11 @@ def main(argv: list[str] | None = None) -> int:
     for path, lineno, line in _candidate_lines(repo, source, values):
         problems += value_problems(line, path, values, label=f"{path}:{lineno}")
 
-    for line in problems:
+    for line in baseline_problems:
         print("  " + line)
+    problems = baseline_problems + emit(problems)
     print("[verdict] " + (f"⛔ 命中 {len(problems)} 处" if problems
-                          else "两臂 0 命中（值比对＋用户数据路径）"))
+                          else "三臂 0 命中（值比对＋实例号＋用户数据路径）"))
     return 1 if problems else 0
 
 
