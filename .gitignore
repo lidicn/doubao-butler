@@ -1,10 +1,12 @@
-# 数据卷（运行时生成，不入库）
-# 例外：data/roles/_archive/ 是行为件不是数据备份——roles/store.py:147 archived_ids()
-# 靠这批 json 挡住「已归档角色被重启重新播种」（决策 10）。删了这条例外＝归档会被静默撤销。
+# 数据卷与用户数据（运行时生成，⛔ 入库——本仓 remote 是公开仓）
+# 10-13 出资人判：`data/roles/_archive/` 那批归档名册 json 是用户数据（家人英文名、设备名册、
+# 人设文本），不是程序的一部分 ⇒ 早先的 `!/data/roles/` ＋ `!/data/roles/_archive/` 豁免作废。
+# 归档不被重启重新播种这件事（roles/store.py:147）靠**部署面的数据卷**成立，⛔ 靠代码库；
+# 彻底解法是路线图「用户数据独立存储」那一格（全部用户数据移出代码树，落在 DATA_DIR 之后）。
 /data/*
-!/data/roles/
 /data/roles/*
-!/data/roles/_archive/
+data/roles/_archive/
+butler/static/avatars/
 /tts/
 *.db
 *.db-wal
