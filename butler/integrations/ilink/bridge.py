@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -21,6 +20,7 @@ from typing import Any, Optional
 
 from butler.logging_setup import get_logger
 from butler.config import get_settings
+from butler.core.atomic_json import read_json_object, write_json_atomic
 from butler.integrations.ilink.client import ILinkClient
 
 logger = get_logger("butler.ilink.bridge")
@@ -44,6 +44,9 @@ class ILinkBridge:
         # 用户换 DATA_DIR 后账实分叉，且 /app 不可写的运行面上构造即 PermissionError）。
         self._context_dir = Path(self._data_dir()) / "ilink" / "contexts"
         self._context_dir.mkdir(parents=True, exist_ok=True)
+        # 批213：会话档「在而读不出」的用户名册——写侧据此**拒绝整档覆盖**，
+        # ⛔ 让一次坏读把该用户其余历史抹平。
+        self._unreadable_users: set[str] = set()
 
     def _data_dir(self) -> Path:
         """data_dir 取数序：注入运行时的 settings → 全局 get_settings()。"""
@@ -212,29 +215,41 @@ class ILinkBridge:
         return "管家 AI 未就绪。"
 
     def _load_context(self, from_user: str) -> list[dict]:
+        """读该用户的历史。档在而读不出＝**在册**（`_unreadable_users`），⛔ 静默当成「没有历史」。
+
+        判定口径走批70b 收敛尺子 `read_json_object`（各写手⛔ 再自己 try/except）：
+        缺档＝真没有（`unreadable=False`，首写照常）；读不出＝现场还在盘上，写腿据此拒整份覆盖。
+        """
         ctx_file = self._context_dir / f"{from_user}.json"
-        if ctx_file.exists():
-            try:
-                data = json.loads(ctx_file.read_text(encoding="utf-8"))
-                return data.get("history", [])[-MAX_HISTORY_PER_USER:]
-            except Exception:
-                pass
-        return []
+        stored, unreadable = read_json_object(ctx_file)
+        if unreadable:
+            self._unreadable_users.add(from_user)
+            logger.warning("ilink context unreadable, on-disk history kept untouched: %s", ctx_file)
+            return []
+        self._unreadable_users.discard(from_user)
+        return stored.get("history", [])[-MAX_HISTORY_PER_USER:]
 
     def _save_context(self, from_user: str, user_msg: str, reply: str) -> None:
         ctx_file = self._context_dir / f"{from_user}.json"
         history = self._load_context(from_user)
+        if from_user in self._unreadable_users:
+            # D7（批73 同族，NAS 线 `9cdb4f5` 那条腿）：此刻内存态是**不完整**的，
+            # 盖回去＝该用户其余历史从此消失。拒绝这一轮记忆，保住盘上现场。
+            logger.error("ilink context unreadable, refused full overwrite that would erase "
+                         "the rest of this user's history: %s", ctx_file)
+            return
         history.append({"role": "user", "content": user_msg})
         history.append({"role": "assistant", "content": reply})
         history = history[-MAX_HISTORY_PER_USER:]
         try:
-            ctx_file.write_text(
-                json.dumps({"user": from_user, "history": history, "updated_at": time.time()},
-                           ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            # 表行 45 同族：就地 write_text 崩在半路＝半截会话档，下次读侧静默归零
+            write_json_atomic(ctx_file, {
+                "user": from_user,
+                "history": history,
+                "updated_at": time.time(),
+            })
         except Exception as e:
-            logger.debug("ilink context save failed: %s", e)
+            logger.warning("ilink context save failed: %s", e)
 
     @property
     def is_running(self) -> bool:
