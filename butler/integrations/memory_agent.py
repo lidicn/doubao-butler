@@ -10,15 +10,17 @@ from typing import Any, Optional
 
 import httpx
 
+from homesdk.adm.errors import ADM_ERR_AUTH_REQUIRED, ADM_ERR_INTERNAL, ADM_ERR_UPSTREAM_TIMEOUT
+from homesdk.auth import AuthMissing, require_auth_headers, require_basic_headers
 from homesdk.http import ma_url, join_url
 from butler.config import Settings
 from butler.logging_setup import get_logger
 
 logger = get_logger("butler.memory_agent")
 
-# O-3：MA 四个鉴权面的凭据构造只在这里发生。
-# 缺凭据时抛 CredentialMissing，⛔ 发空 Bearer / 空 Basic（那会换回 401，
-# 再被上层读成「最近30分钟没有识别到家庭成员」＝假绿）。
+# O-3 → PR-C2：四面凭据的**取值与拼装**收编 homesdk.auth（凭据每次现读、库内兜底恒零）。
+# 这里只剩缺凭据时的翻译：AuthMissing → CredentialMissing，⛔ 发空凭据
+# （空凭据换回 401，会被上层读成「最近30分钟没有识别到家庭成员」＝假绿）。
 MA_TOKEN_ENV_KEYS = {
     "mcp": "MEMORY_AGENT_TOKEN",
     "butler": "MEMORY_AGENT_BUTLER_TOKEN",
@@ -35,11 +37,22 @@ class CredentialMissing(RuntimeError):
         self.env_key = env_key
 
 
+def _code_for_status(status):
+    # 契约 v2.0 §7.2/§B 落点：401/403＝凭据/越权，其余 ≥400＝未分类兜底（ADM_ERR_INTERNAL）。
+    return ADM_ERR_AUTH_REQUIRED if status in (401, 403) else ADM_ERR_INTERNAL
+
+
+def _code_for_exc(e):
+    # 超时与连不上在联动语义里同判"对端不可达"（计划 §八#4 点名 ADM_ERR_UPSTREAM_TIMEOUT）。
+    if isinstance(e, (httpx.TimeoutException, httpx.TransportError)):
+        return ADM_ERR_UPSTREAM_TIMEOUT
+    return ADM_ERR_INTERNAL
+
+
 class MemoryAgentClient:
     def __init__(self, settings: Settings):
         self.s = settings
         self.url = settings.memory_agent_mcp_url
-        self.token = settings.memory_agent_token
         self._session_id: Optional[str] = None
         self._initialized = False
         # WO-ADM-001 R-32：熔断 + 健康位
@@ -48,30 +61,22 @@ class MemoryAgentClient:
         self._circuit_threshold: int = 5       # 连续失败 5 次开闸
         self._circuit_cooldown: float = 30.0   # 开闸后 30 秒半开探测
 
-    def _token_for(self, surface):
-        if surface == "mcp":
-            return self.token
-        if surface == "butler":
-            return self.s.memory_agent_butler_token
-        if surface == "app":
-            return self.s.memory_agent_app_token
-        raise KeyError("unknown MA token surface: " + str(surface))
+    def _ma_bearer(self, surface: str) -> dict:
+        # PR-C2 单点：三面各读各键（token_key 显式隔离，⛔ 顺 LEGACY 表串面）。
+        env_key = MA_TOKEN_ENV_KEYS[surface]
+        try:
+            return require_auth_headers("memory-agent", token_key=env_key)
+        except AuthMissing as e:
+            raise CredentialMissing(surface, env_key) from e
 
-    def bearer_headers(self, surface):
-        # O-3 单点：Bearer 头只在这里构造。
-        token = self._token_for(surface)
-        if not token:
-            raise CredentialMissing(surface, MA_TOKEN_ENV_KEYS[surface])
-        return {"Authorization": "Bearer " + token}
-
-    def basic_auth(self):
-        user, password = self.s.memory_agent_user, self.s.memory_agent_pass
-        if not user or not password:
-            raise CredentialMissing("basic", "MEMORY_AGENT_USER/PASS")
-        return (user, password)
+    def _ma_basic(self) -> dict:
+        try:
+            return require_basic_headers("memory-agent")
+        except AuthMissing as e:
+            raise CredentialMissing("basic", "MEMORY_AGENT_USER/PASS") from e
 
     def _headers(self) -> dict:
-        h = self.bearer_headers("mcp")
+        h = self._ma_bearer("mcp")
         h["Content-Type"] = "application/json"
         h["Accept"] = "application/json, text/event-stream"
         if self._session_id:
@@ -253,22 +258,24 @@ class MemoryAgentClient:
         """
         url = join_url(ma_url(), "/api/vision/analyze")
         try:
-            auth = self.basic_auth()
+            basic = self._ma_basic()
         except CredentialMissing as e:
             logger.warning("analyze_room_live skipped: %s", e)
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "code": ADM_ERR_AUTH_REQUIRED}
         try:
             async with httpx.AsyncClient(timeout=timeout) as c:
-                r = await c.post(url, json={"room": room, "force": True, "wait": True}, auth=auth)
+                r = await c.post(url, json={"room": room, "force": True, "wait": True}, headers=basic)
                 r.raise_for_status()
                 data = r.json()
         except Exception as e:
-            logger.warning("analyze_room_live failed: %s", e)
-            return {"ok": False, "error": str(e)}
+            logger.warning("analyze_room_live failed: %s (%s)", _code_for_exc(e), e)
+            return {"ok": False, "error": str(e), "code": _code_for_exc(e)}
         if not isinstance(data, dict):
-            return {"ok": False, "error": "invalid response"}
+            return {"ok": False, "error": "invalid response", "code": ADM_ERR_INTERNAL}
         if not data.get("ok"):
-            return {"ok": False, "error": str(data.get("error") or data.get("message") or "识别失败")}
+            return {"ok": False,
+                    "error": str(data.get("error") or data.get("message") or "识别失败"),
+                    "code": ADM_ERR_INTERNAL}
         return data
 
     async def add_memory(self, content: str, source_refs: list[str], member: str = "", dry_run: bool = False) -> dict:
@@ -331,7 +338,7 @@ class MemoryAgentClient:
     # ---- MA 窄接口（butler_token Bearer，交接单交付项） ----
 
     def _butler_headers(self) -> dict:
-        return self.bearer_headers("butler")
+        return self._ma_bearer("butler")
 
     async def _butler_fetch(self, path: str, params: dict | None = None, timeout: float = 10.0) -> dict:
         # O-3 单点请求：{ok, data, error}。缺凭据/非 2xx/解析失败都带 error。
@@ -341,17 +348,19 @@ class MemoryAgentClient:
             headers = self._butler_headers()
         except CredentialMissing as e:
             logger.warning("MA GET %s skipped: %s", path, e)
-            return {"ok": False, "data": None, "error": str(e)}
+            return {"ok": False, "data": None, "error": str(e), "code": ADM_ERR_AUTH_REQUIRED}
         try:
             async with httpx.AsyncClient(timeout=timeout) as c:
                 r = await c.get(url, headers=headers, params=clean)
                 if r.status_code >= 400:
-                    logger.warning("MA GET %s http %s", path, r.status_code)
-                    return {"ok": False, "data": None, "error": "HTTP %s" % r.status_code}
-                return {"ok": True, "data": r.json(), "error": ""}
+                    logger.warning("MA GET %s http %s (%s)", path, r.status_code,
+                                   _code_for_status(r.status_code))
+                    return {"ok": False, "data": None, "error": "HTTP %s" % r.status_code,
+                            "code": _code_for_status(r.status_code)}
+                return {"ok": True, "data": r.json(), "error": "", "code": ""}
         except Exception as e:
-            logger.warning("MA GET %s failed: %s", path, e)
-            return {"ok": False, "data": None, "error": str(e)}
+            logger.warning("MA GET %s failed: %s (%s)", path, e, _code_for_exc(e))
+            return {"ok": False, "data": None, "error": str(e), "code": _code_for_exc(e)}
 
     async def _butler_get(self, path: str, params: dict | None = None) -> Any:
         res = await self._butler_fetch(path, params)
@@ -459,7 +468,7 @@ class MemoryAgentClient:
     # ---- MA v0.6 记忆统一入库（app_token，source=butler） ----
 
     def _app_token_headers(self) -> dict:
-        h = self.bearer_headers("app")
+        h = self._ma_bearer("app")
         h["Content-Type"] = "application/json"
         return h
 
@@ -472,8 +481,10 @@ class MemoryAgentClient:
         - 走 REST POST /api/agent/memories，不需要 MCP 初始化
         - 写入默认 state=staging，不自动进 live（低置信隔离）
         """
-        if not self.s.memory_agent_app_token:
-            return {"ok": False, "raw": "", "error": "MEMORY_AGENT_APP_TOKEN 未配置"}
+        try:
+            headers = self._app_token_headers()
+        except CredentialMissing as e:
+            return {"ok": False, "raw": "", "error": str(e), "code": ADM_ERR_AUTH_REQUIRED}
 
         url = join_url(ma_url(), "/api/agent/memories")
         body: dict[str, Any] = {"text": text, "dry_run": dry_run}
@@ -482,20 +493,23 @@ class MemoryAgentClient:
 
         try:
             async with httpx.AsyncClient(timeout=10) as c:
-                r = await c.post(url, headers=self._app_token_headers(), json=body)
+                r = await c.post(url, headers=headers, json=body)
                 if r.status_code == 403:
-                    return {"ok": False, "raw": r.text, "error": "app_token 无权限（403）"}
+                    return {"ok": False, "raw": r.text, "error": "app_token 无权限（403）",
+                            "code": ADM_ERR_AUTH_REQUIRED}
                 r.raise_for_status()
                 data = r.json()
             ok = bool(data.get("ok")) if isinstance(data, dict) else True
             return {"ok": ok, "raw": json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else r.text, "error": ""}
         except Exception as e:
             logger.warning("add_memory_via_app_token failed: %s", e)
-            return {"ok": False, "raw": "", "error": str(e)}
+            return {"ok": False, "raw": "", "error": str(e), "code": _code_for_exc(e)}
 
     async def list_memories_via_app_token(self, source: str = "", limit: int = 20) -> list[dict]:
         """通过 app_token 列出记忆（可按 source 过滤）。"""
-        if not self.s.memory_agent_app_token:
+        try:
+            headers = self._app_token_headers()
+        except CredentialMissing:
             return []
         url = join_url(ma_url(), "/api/agent/memories")
         params: dict[str, Any] = {"limit": limit}
@@ -503,7 +517,7 @@ class MemoryAgentClient:
             params["source"] = source
         try:
             async with httpx.AsyncClient(timeout=10) as c:
-                r = await c.get(url, headers=self._app_token_headers(), params=params)
+                r = await c.get(url, headers=headers, params=params)
                 r.raise_for_status()
                 data = r.json()
             items = self._extract_list(json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else "", preferred="memories")
