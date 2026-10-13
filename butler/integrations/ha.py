@@ -44,11 +44,28 @@ class HATimeout(HAError):
     pass
 
 
+def _forget_task_when_done(table: dict, key, task) -> None:
+    """watch 任务结束（正常／取消／异常）后把条目从表里回收（批211·V43）。
+
+    两张 watch 表此前只 `.get`＋赋值、无 `pop`／done 回调 ⇒ 每轮播放留一枚 done 任务在表里，
+    长驻进程按播放次数单调增长。回收**按身份**判：`cancel()` 只把 done 回调排进队列，
+    同键的新任务往往已先登记，无条件 `pop(key)` 会把新 watch 抹掉 ⇒ 下次换入时⛔ 再取消旧任务。
+    """
+    def _drop(done) -> None:
+        if table.get(key) is done:
+            table.pop(key, None)
+
+    task.add_done_callback(_drop)
+
+
 class HAClient:
     def __init__(self, settings: Settings):
         self.s = settings
         # 每个设备的 watch 停止任务（会话管理：新播放先取消旧 watch，防误停后续播放）
         self._xiaomi_watch_tasks: dict[str, asyncio.Task] = {}
+        # 通用 media_player 的停止 watch 任务，同样**逐实例**（批211·V42：挂在类体上＝
+        # 全部实例共用一张 dict，一次换入会 cancel 掉另一条会话正挂着的停播轮询）。
+        self._media_stop_tasks: dict[str, asyncio.Task] = {}
         self._xiaomi_token_refresh_task: asyncio.Task | None = None
         # did -> 播放方式缓存（devices.json mtime 变化时自动重建）
         self._play_method_cache: dict[str, str] = {}
@@ -79,10 +96,10 @@ class HAClient:
     def cancel_watch_tasks(self) -> None:
         """批190·P1-11：两张「播完该停」watch 任务表的关停腿。
 
-        `_xiaomi_watch_tasks`（实例级）与 `_media_stop_tasks`（类属性，跨实例共享）里的轮询任务
-        会往音箱下发 `media_pause`，进程收摊时再发一帧＝往正在拆的 httpx 客户端与 HA token 里写。
-        清表顺带把 done 任务摘掉——**平时**那两张表只 `.get`＋赋值、无 pop／done 回调，
-        那是内存回收一族，本批只保证「关停时不剩活任务」。
+        `_xiaomi_watch_tasks` 与 `_media_stop_tasks`（两张表都在 `__init__` 里逐实例建表）
+        里的轮询任务会往音箱下发 `media_pause`，进程收摊时再发一帧＝往正在拆的 httpx 客户端与
+        HA token 里写。这里的 `clear()` 是**关停那一眼**的兜底；平时条目的弹除走
+        `_forget_task_when_done` 的 done 回调（批211·V43 收的内存回收一族）。
         """
         cancelled = 0
         for tasks in (self._xiaomi_watch_tasks, self._media_stop_tasks):
@@ -589,13 +606,14 @@ class HAClient:
         try:
             task = asyncio.create_task(_watch())
             self._xiaomi_watch_tasks[device_id] = task
+            _forget_task_when_done(self._xiaomi_watch_tasks, device_id, task)
         except Exception as e:
             # P2-9 ②类（批42）：没武装成＝「播完该停」静默消失，必须响一声
             logger.warning("xiaomi stop watch not armed for %s: %s", device_id, e)
 
     # ── 通用 media_player 停止（不需要小米 token，走 HA） ──────────
     # 完全不需要自己管 token！HA 的 xiaomi_miot 集成自己会处理 token 刷新。
-    _media_stop_tasks: dict[str, asyncio.Task] = {}
+    # `_media_stop_tasks` 在 `__init__` 里逐实例建表（批211·V42，⛔ 挪回类体）。
 
     async def schedule_media_stop(self, entity_id: str, audio_secs: float) -> None:
         """轮询 position/duration，播完前连续发 pause 防止循环。"""
@@ -669,4 +687,6 @@ class HAClient:
                     return
 
         # 创建并启动 watch task（在 _watch 函数外面！）
-        self._media_stop_tasks[entity_id] = asyncio.create_task(_watch())
+        task = asyncio.create_task(_watch())
+        self._media_stop_tasks[entity_id] = task
+        _forget_task_when_done(self._media_stop_tasks, entity_id, task)

@@ -18,6 +18,10 @@
 
 ⛔ 本批顺手收的，登记给下一批（§二十五 档头同一条）：两张表**平时**只 `.get`＋赋值、无 `pop`／
 done 回调（内存回收一族），本批的 `cancel_watch_tasks()` 只在关停那一眼清表，⛔ 治那条。
+⇒ **下一批已到＝批211**（`tests/test_audit_1013_batch211_watch_task_reclaim.py`）：那条登记腿已接上
+（`_forget_task_when_done` 按身份回收），同批把 `_media_stop_tasks` 从类体挪进 `__init__`。本档的
+测试夹具因此从 `HAClient._media_stop_tasks` 改走 `h._media_stop_tasks`——**判据不变**（两张表的活
+任务都要被取消、表要清空、连停两次⛔ 抛），只改取表的路径。
 
 判据钉**行为**（`cancel_watch_tasks()` 必须真把两张表里的活任务取消并把表清空）也钉**形状**
 （await 走 `asyncio.wait_for(consumer, timeout=…)`，⛔ 裸 `await consumer`＝分发腿不收就永远卡在这，
@@ -353,7 +357,7 @@ class TestBatch190ConsumerAndWatchLegs(unittest.TestCase):
             try:
                 h.cancel_watch_tasks()
             finally:
-                HAClient._media_stop_tasks.clear()       # 类属性＝测试夹具⛔ 留在档间
+                h._media_stop_tasks.clear()              # 批211 起该表逐实例＝夹具⛔ 留在档间
             state = {"armed": armed,
                      "watch_left": len(h._xiaomi_watch_tasks),
                      "media_left": len(h._media_stop_tasks),
@@ -365,13 +369,10 @@ class TestBatch190ConsumerAndWatchLegs(unittest.TestCase):
                     state["cancelled_count"] += 1
             return state
 
-        try:
-            out = asyncio.run(_scenario())
-        finally:
-            HAClient._media_stop_tasks.clear()
+        out = asyncio.run(_scenario())
         self.assertEqual(out["armed"], (1, 1), "夹具没把两张表都挂上＝这一格什么都没测")
         self.assertEqual(out["watch_left"], 0, "实例级 `_xiaomi_watch_tasks` 没清")
-        self.assertEqual(out["media_left"], 0, "类级 `_media_stop_tasks` 没清")
+        self.assertEqual(out["media_left"], 0, "实例级 `_media_stop_tasks` 没清")
         self.assertEqual(out["cancelled_count"], 2,
                          "两张表里的任务有一枚没被取消＝关停窗口里它还会往音箱下发 pause")
 
@@ -380,10 +381,10 @@ class TestBatch190ConsumerAndWatchLegs(unittest.TestCase):
         from butler.integrations.ha import HAClient
         h = HAClient(types.SimpleNamespace(xiaomi_pass_token=""))
         self.assertEqual(len(h._xiaomi_watch_tasks), 0)
-        HAClient._media_stop_tasks.clear()
+        self.assertEqual(len(h._media_stop_tasks), 0)
         h.cancel_watch_tasks()
         h.cancel_watch_tasks()
-        self.assertEqual(len(HAClient._media_stop_tasks), 0)
+        self.assertEqual(len(h._media_stop_tasks), 0)
 
     def test_10_watch_leg_is_wired_before_db_close(self):
         line = _leg_line(self.calls, *WATCH_LEG)
