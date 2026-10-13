@@ -1,7 +1,8 @@
 """批172（D21 的 `*.db` 腿）：按报告的处方改**会更糟**——本批落的是「不动它」这把尺。
 
 报告原文（第十九轮 §三／最终轮 §处置）的处方：`data/`、`*.db` 都照 D19 那样加前导斜杠。
-`data/` 那半条 10-09 已落（现读 `.gitignore:2:/data/`）。`*.db` 这半条⛔ 照抄，理由是把两件事
+`data/` 那半条 10-09 已落、10-13 丙案后现读形制＝`.gitignore:4:/data/*` ＋ `:7:!/data/roles/_archive/`
+（归档角色 json 是行为件，见下文 S3 臂）。`*.db` 这半条⛔ 照抄，理由是把两件事
 分开了看：
 
   D19 的病＝**源代码被无声吞掉**（`tts/` 把 `butler/tts/` 整包 .py 吞了）⇒ 药是**收窄**模式。
@@ -33,7 +34,12 @@ GITIGNORE = TREE / ".gitignore"
 # 必须**裸**（不限深度）的形态：兜运行期产物，落哪儿都算
 BARE_REQUIRED = ("*.db", "*.db-wal", "*.db-shm")
 # 必须**锚到根**的形态：D19/D21 收编过的目录类，收窄过＝回到原判例
-ANCHORED_REQUIRED = ("/data/", "/tts/")
+# `/data/` 认两式：整目录忽略（旧形制）／根锚定＋归档区豁免（10-13 丙案落地形制）；
+# 裸 `data/` 两式下都仍是 D19 原病，照咬。
+ANCHORED_FORMS = {"/data/": ("/data/", "/data/*"), "/tts/": ("/tts/",)}
+# 10-13 丙案：`data/roles/_archive/*.json` 是行为件（`roles/store.py:147 archived_ids()` 靠它
+# 挡「已归档角色被重启重新播种」），豁免行一旦被人抹掉，这五枚 json 会**静默**回到不入库。
+ARCHIVE_EXEMPTION = "!/data/roles/_archive/"
 
 
 def gitignore_problems(text: str) -> list[str]:
@@ -44,18 +50,23 @@ def gitignore_problems(text: str) -> list[str]:
             problems.append(f"S1-MISSING-BARE {pat}（收窄了：子目录里的运行库不再被兜住）")
         if "/" + pat in lines:
             problems.append(f"S1-ANCHORED {pat} 被钉成了 /{pat}（同上一条的另一 half）")
-    for pat in ANCHORED_REQUIRED:
-        if pat not in lines:
+    for pat, forms in ANCHORED_FORMS.items():
+        if not any(f in lines for f in forms):
             problems.append(f"S2-MISSING-ANCHOR {pat}")
         bare = pat.lstrip("/")
         if bare in lines:
             problems.append(f"S2-UNANCHORED {bare}（D19 原病：会把 butler/{bare} 这类源码目录吞掉）")
+    if "/data/*" in lines and ARCHIVE_EXEMPTION not in lines:
+        problems.append(f"S3-ARCHIVE-EXEMPTION-MISSING {ARCHIVE_EXEMPTION}"
+                        "（根锚定改的是 /data/*，豁免行不在位＝归档角色件静默回库外）")
     return problems
 
 
-CLEAN_TEXT = "\n".join(["# x", "/data/", "/tts/", "*.db", "*.db-wal", "*.db-shm", "tmp/"]) + "\n"
+CLEAN_TEXT = "\n".join(["# x", "/data/*", "!/data/roles/", "/data/roles/*",
+                        ARCHIVE_EXEMPTION, "/tts/", "*.db", "*.db-wal", "*.db-shm", "tmp/"]) + "\n"
 PRESCRIPTION_TEXT = CLEAN_TEXT.replace("*.db", "/*.db")
 D19_REGRESS_TEXT = CLEAN_TEXT.replace("/tts/", "tts/")
+EXEMPTION_LOSS_TEXT = CLEAN_TEXT.replace(ARCHIVE_EXEMPTION + "\n", "")
 
 
 def run_ignore_probe(gitignore_text: str, files: dict[str, str]) -> dict[str, str | None]:
@@ -101,6 +112,14 @@ class CalibrationTest(unittest.TestCase):
             "S2-MISSING-ANCHOR /tts/",
             "S2-UNANCHORED tts/（D19 原病：会把 butler/tts/ 这类源码目录吞掉）",
         ], got)
+
+    def test_archive_exemption_loss_bits(self):
+        """负控：豁免行被抹掉＝归档 json 静默回库外 ⇒ 尺必须只咬这一臂。"""
+        got = gitignore_problems(EXEMPTION_LOSS_TEXT)
+        self.assertEqual(len([g for g in got if g.startswith("S3-")]), 1,
+                         f"豁免行缺失本该咬 1 条 S3，实得 {got}")
+        self.assertEqual([g for g in got if not g.startswith("S3-")], [],
+                         f"其余臂不该连带误报：{got}")
 
     def test_mechanism_probe_distinguishes(self):
         """Arm E 的**尺的尺**：同一跑法必须能分出「被哪条吃掉」与「没被吃」。"""
@@ -150,6 +169,24 @@ class ProductionMechanismTest(unittest.TestCase):
         probe = run_ignore_probe(self.text, {"data/live.db": "", "data/sub/live.db": ""})
         for rel, src in probe.items():
             self.assertIsNotNone(src, f"{rel} 未被 /data/ 兜住")
+
+    def test_archive_exemption_is_one_step_not_a_hole(self):
+        """机制腿（10-13 现读真 .gitignore）：豁免只开归档区一条缝。
+
+        `data/roles/_archive/*.json` 入库（行为件）；`data/roles/` 下的**其他**运行期文件
+        与根下 sqlite 仍被兜住——豁免写成 `/data/roles/` 整条放开＝把数据卷放回库里。
+        """
+        probe = run_ignore_probe(self.text, {
+            "data/roles/_archive/caesar.json": "",
+            "data/roles/_archive/sub/luna.json": "",
+            "data/roles/live.json": "",
+            "data/live.db": "",
+        })
+        self.assertIsNone(probe["data/roles/_archive/caesar.json"],
+                          "归档角色件被忽略＝archived_ids() 的挡重播种件进不了库")
+        self.assertIsNone(probe["data/roles/_archive/sub/luna.json"], "子目录同样要放行")
+        self.assertIsNotNone(probe["data/roles/live.json"], "豁免过头：data/roles/ 整条放开了")
+        self.assertIsNotNone(probe["data/live.db"], "豁免过头：data/ 根下的运行库也放开了")
 
 
 if __name__ == "__main__":

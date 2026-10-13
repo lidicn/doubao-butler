@@ -1,5 +1,10 @@
 # 数据卷（运行时生成，不入库）
-/data/
+# 例外：data/roles/_archive/ 是行为件不是数据备份——roles/store.py:147 archived_ids()
+# 靠这批 json 挡住「已归档角色被重启重新播种」（决策 10）。删了这条例外＝归档会被静默撤销。
+/data/*
+!/data/roles/
+/data/roles/*
+!/data/roles/_archive/
 /tts/
 *.db
 *.db-wal
@@ -47,3 +52,14 @@ workorders/
 
 # 第三方依赖（如vendor是依赖目录）
 # vendor/
+
+# WO-OP-007 追加（NAS 面既有口径，并集搬入）：密钥备份与运行期后缀
+.env.bak*
+*.bak_*
+logs/
+*.log
+butler/_debug/
+
+# 覆盖率与量测产物（10-13 现读：盘上有 .coverage 未跟踪）
+.coverage
+_scratch_*/
