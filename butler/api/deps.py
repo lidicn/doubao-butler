@@ -13,6 +13,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from butler.config import get_settings
+from butler.core import data_paths
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
 
@@ -31,7 +32,6 @@ logger = get_logger("butler.auth")
 # 改后：token 由 CSPRNG 生成；盘上只落 sha256(token) -> 过期时间（读到文件也拿不到可用会话）；
 #      写入即清扫、条目有上限；Bearer 失败按来源计数刹车。
 _SESSION_TTL = 7 * 24 * 3600  # 7 天过期
-_SESSIONS_FILE = Path("/app/data/sessions.json")
 _SESSIONS_MAX = 200
 _active_sessions: dict[str, float] = {}  # sha256(token) -> 过期时间戳
 
@@ -45,6 +45,11 @@ def _session_hash(tok: str) -> str:
     return hashlib.sha256(tok.encode("utf-8")).hexdigest()
 
 
+def sessions_file() -> Path:
+    """批164 D5：会话档路径惰性现取（⛔ 模块级 `/app/data` 死值＝两个物理文件的那条腿）。"""
+    return data_paths.data_file("sessions.json")
+
+
 def _sessions_sweep(now: float) -> None:
     for k in [k for k, exp in _active_sessions.items() if exp <= now]:
         _active_sessions.pop(k, None)
@@ -52,18 +57,19 @@ def _sessions_sweep(now: float) -> None:
 
 def _sessions_save() -> None:
     try:
-        _SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        tmp = _SESSIONS_FILE.with_name("sessions.json.tmp")
+        target = sessions_file()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name("sessions.json.tmp")
         tmp.write_text(json.dumps(_active_sessions), encoding="utf-8")
         os.chmod(tmp, 0o600)
-        os.replace(tmp, _SESSIONS_FILE)
+        os.replace(tmp, target)
     except OSError as exc:  # 卷不可写时退回纯内存：行为等于改前，不会放行失败
         logger.warning("WO-ME-207 会话落盘失败，本轮退回内存会话：%s", type(exc).__name__)
 
 
 def _sessions_load() -> None:
     try:
-        raw = json.loads(_SESSIONS_FILE.read_text(encoding="utf-8"))
+        raw = json.loads(sessions_file().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return  # 没有 / 坏损 = 没有活会话：只会要求重新登录，绝不会放行
     now = time.time()
