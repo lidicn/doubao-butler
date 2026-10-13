@@ -171,15 +171,15 @@ ANCHORS = [
     ("integrations/tv.py", "TVClient", "notify", 54),
     ("bus/mqtt_client.py", "MQTTClient", "start", 149),  # 批138 re-anchor 149→146（will 腿并进 advertise）；1013-b207R2 re-anchor 146→149（`59a0beb` 补回 28310ab 删掉的三腿——**这枚 def 体自己也回了 LWT 两行注释**，锚点只撑 kind=sync，`def_at` 现读仍 sync⇒判定未变）
     ("bus/mqtt_client.py", "MQTTClient", "stop", 158),   # 批138 re-anchor 155→156；1013-b207R2 re-anchor 156→158（同上，`def_at` 现读 kind=sync）
-    ("integrations/ilink/bridge.py", "ILinkBridge", "start", 56),
-    ("integrations/ilink/bridge.py", "ILinkBridge", "stop", 67),
+    ("integrations/ilink/bridge.py", "ILinkBridge", "start", 59),  # 1013-b213 re-anchor 56→59（批213 会话档收编：顶部 `atomic_json` import 1 行＋`__init__` 里 `_unreadable_users` 名册 2 注释＋1 赋值，`def` 本体一字未动，`def_at` 现读 kind=sync）
+    ("integrations/ilink/bridge.py", "ILinkBridge", "stop", 70),   # 1013-b213 re-anchor 67→70（同上，净插 3 行整体下移）
     ("core/event_stream.py", "EventStream", "start", 97),   # 1011-b201 re-anchor 96→97（批201 DB47 顶部净插 1 行 import，def 本体一字未动，门自己现读报的数）
     # 批189 新锚两枚：关停腿 app.py:883／:888（1011-b190 重钉后；批197 后 :885／:890）的判定撑在这两个 def 的
     #   「同步」性质上，谁把它们翻成 `async def` 而不动调用点，这里当场红（`def_at` 现读均 kind=sync）。
     ("core/event_stream.py", "EventStream", "stop", 105),  # 1011-b201 re-anchor 104→105（批201 DB47 顶部净插 1 行 import，def 本体一字未动）
-    ("integrations/ha.py", "HAClient", "stop_xiaomi_token_refresh", 67),
+    ("integrations/ha.py", "HAClient", "stop_xiaomi_token_refresh", 84),  # 1013-b214 re-anchor 67→84（批211·V42/V43 在 `class HAClient` 上方净插模块级 `_forget_task_when_done()`＋`__init__` 里逐实例建表两行注释，`def` 本体一字未动，`def_at` 现读 kind=sync）
     # 批190 新锚一枚：`app.py:897`（`rt.ha.cancel_watch_tasks()`，批197 后 :899）同一条形状撑在 def 的同步性质上。
-    ("integrations/ha.py", "HAClient", "cancel_watch_tasks", 79),
+    ("integrations/ha.py", "HAClient", "cancel_watch_tasks", 96),  # 1013-b214 re-anchor 79→96（同上，整体下移 17 行；批211 只把 docstring 里「类属性」两句改成现形制，`def` 仍是同步体）
     # 批192 新锚一枚：`core/dialog.py:669`（`XiaomiEar.note_speak(...)`）撑在这枚 classmethod 的同步性质上。
     ("core/xiaomi_ear.py", "XiaomiEar", "note_speak", 134),  # 批194 A10 re-anchor 117→119（类体新入 ROLE_EXIT_WORDS 两行通用退出词）；批194 A9 re-anchor 119→133（模块级 AUDIOBOOK_COMMANDS 表＋两枚切段常量净插 14 行，def 本体一字未动，`def_at` 现读 kind=sync）
     ("core/xiaomi_ear.py", "XiaomiEar", "start", 45),   # 批166 re-anchor 29→30（件五乙：头注「点名才答」占两行）；批194 A9 re-anchor 30→44（同上，模块级净插 14 行）
