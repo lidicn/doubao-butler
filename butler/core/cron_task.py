@@ -21,6 +21,11 @@ from homesdk.time import house_now
 
 import httpx
 
+from butler.core.atomic_json import (read_json_object, write_json_atomic,
+                                     write_lines_atomic)
+# 批180（裁定 20261011 合并版 §二-3）：发送前复核用的判据。起名 url_guard 是为了让判据门
+# 能把它桩成确定性读数——⛔ 拿真 DNS 当执行腿的门，门自己会因网络抖动变红。
+from butler.core.cron_validator import validator as url_guard
 from butler.logging_setup import get_logger, warn_throttled
 
 logger = get_logger("butler.cron_task")
@@ -58,7 +63,6 @@ class CronTaskExecutor:
         self.wechat = wechat
         self.scheduler = scheduler
         self._api_registry: dict[str, dict] = {}  # api_id -> {url, headers, timeout}
-        self._apis_poisoned: bool = False  # DB65: 读失败标记，阻止空快照覆盖
         self._secrets: dict[str, str] = {}  # secret_name -> value（Secret Vault）
         self._execution_log: list[dict] = []  # 最近执行记录（内存缓存）
         self._max_log_size = 1000  # 磁盘保留上限
@@ -73,33 +77,44 @@ class CronTaskExecutor:
         self._apis_file = self._data_dir / "apis.json"
         self._secrets_file = self._data_dir / "secrets.json"
         self._log_file = self._data_dir / "execution_logs.jsonl"
+        # 批162（审计 D 族第一类）：这三枚标记的是「盘上有档、但这档我读不出来」——
+        # 内存态因此不完整，⛔ 再拿它做整份覆盖；缺档＝真没有，首次落盘照旧。
+        self._apis_unreadable = False
+        self._secrets_unreadable = False
+        self._logs_unreadable = False
         self._load_apis()
         self._load_secrets()
         self._load_logs()
     
+    @property
+    def _apis_poisoned(self) -> bool:
+        """DB65 那枚标记的名字保留（`b202` 的开关行名册按名点它），取值与批162 的
+        `_apis_unreadable` 同判——同一缺陷⛔ 留两套状态各写各的（谁 refuse 覆盖就说不清了）。"""
+        return self._apis_unreadable
+
     def _load_apis(self):
-        """从磁盘加载 API 注册信息。"""
-        try:
-            self._data_dir.mkdir(parents=True, exist_ok=True)
-            if self._apis_file.exists():
-                data = json.loads(self._apis_file.read_text(encoding="utf-8"))
-                self._api_registry = data.get("apis", {})
-                logger.info("cron_task APIs loaded: %d", len(self._api_registry))
-        except Exception as e:
-            # DB65: 读失败不静默清零——保留内存中已有值，阻止 _save_apis 用空快照覆盖
-            logger.error("failed to load cron_task APIs (保留内存值，不覆盖磁盘): %s", e)
-            self._apis_poisoned = True
-    
+        """从磁盘加载 API 注册信息。批162：坏档要标成「读不出来」，⛔ 当成「一条注册都没有」。"""
+        self._data_dir.mkdir(parents=True, exist_ok=True)
+        data, self._apis_unreadable = read_json_object(self._apis_file)
+        if self._apis_unreadable:
+            logger.error("cron_task apis.json unreadable: registry kept empty and every full "
+                         "overwrite will be refused to preserve the on-disk state: %s",
+                         self._apis_file)
+            return
+        if data:
+            self._api_registry = data.get("apis", {}) or {}
+            logger.info("cron_task APIs loaded: %d", len(self._api_registry))
+
     def _save_apis(self):
-        """保存 API 注册信息到磁盘。"""
-        # DB65: 读失败时阻止空快照覆盖磁盘
-        if getattr(self, "_apis_poisoned", False):
-            logger.error("apis.json 读取失败，拒绝写入（防止空快照覆盖）。请修复磁盘文件后重启。")
+        """保存 API 注册信息到磁盘。读不出的那一档⛔ 整份覆盖（新注册会把旧注册表顶掉）。"""
+        if self._apis_unreadable:
+            logger.error("cron_task apis.json unreadable, refusing full overwrite from "
+                         "incomplete in-memory registry: %s", self._apis_file)
             return
         try:
             self._data_dir.mkdir(parents=True, exist_ok=True)
             data = {"apis": self._api_registry, "updated_at": datetime.now().isoformat()}
-            self._apis_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            write_json_atomic(self._apis_file, data)
         except Exception as e:
             logger.warning("failed to save cron_task APIs: %s", e)
 
@@ -119,8 +134,12 @@ class CronTaskExecutor:
                             continue
                 logger.info("cron_task execution logs loaded: %d", len(self._execution_log))
         except Exception as e:
-            logger.warning("failed to load cron_task logs: %s", e)
+            # 批162 D9：整本读不出来≠「一条执行日志都没有」。内存态因此不完整，
+            # 超限那次 _rewrite_logs() 若拿它整份覆盖＝把盘上历史截掉。
+            logger.error("cron_task execution logs unreadable, append-only preserved and "
+                         "whole-file rewrite will be refused: %s", e)
             self._execution_log = []
+            self._logs_unreadable = True
 
     def _append_log(self, entry: dict):
         """追加一条日志到磁盘（JSONL）。"""
@@ -136,25 +155,23 @@ class CronTaskExecutor:
             logger.warning("failed to append cron_task log: %s", e)
 
     def _rewrite_logs(self):
-        """重写日志文件（裁剪后）。DB69b: 原子写，避免截断中途崩溃丢数据。"""
+        """重写日志文件（裁剪后）。批162 D9：读不出来那一档⛔ 整本覆盖，且截断写成原子写。"""
+        if self._logs_unreadable:
+            logger.error("cron_task execution logs unreadable, refusing whole-file rewrite "
+                         "from incomplete in-memory cache: %s", self._log_file)
+            return
         try:
-            import os
-            tmp = self._log_file.with_suffix(self._log_file.suffix + ".tmp")
-            with open(tmp, "w", encoding="utf-8") as f:
-                for entry in self._execution_log:
-                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            os.replace(tmp, self._log_file)
+            write_lines_atomic(self._log_file,
+                               [json.dumps(entry, ensure_ascii=False)
+                                for entry in self._execution_log])
         except Exception as e:
             logger.warning("failed to rewrite cron_task logs: %s", e)
-            try:
-                tmp.unlink(missing_ok=True)
-            except Exception:
-                pass
     
     def register_api(self, api_id: str, url: str, headers: dict | None = None,
                      timeout: int = 10, secret: str = "", secret_name: str = "token",
                      method: str = "GET", body: str = ""):
-        """注册 API。URL 中可用 {secret:xxx} 占位符引用密钥。"""
+        """注册 API。密钥优先放 headers（`{secret:xxx}` 在 header 值里也会被替换）；
+        URL 里的 `{secret:xxx}` 占位符只在 https 下允许——明文 URL 会进对方服务器的访问日志。"""
         # 如果传了 secret，存入 Vault
         if secret:
             self._secrets[secret_name] = secret
@@ -177,24 +194,27 @@ class CronTaskExecutor:
             logger.info("API unregistered: %s", api_id)
 
     def _load_secrets(self):
-        """从磁盘加载 Secret Vault。"""
-        try:
-            self._data_dir.mkdir(parents=True, exist_ok=True)
-            if self._secrets_file.exists():
-                self._secrets = json.loads(self._secrets_file.read_text(encoding="utf-8"))
-                logger.info("cron_task secrets loaded: %d keys", len(self._secrets))
-        except Exception as e:
-            logger.warning("failed to load secrets: %s", e)
-            self._secrets = {}
+        """从磁盘加载 Secret Vault。批162 D8：坏档＝「读不出来」，⛔ 当成「vault 是空的」。"""
+        self._data_dir.mkdir(parents=True, exist_ok=True)
+        data, self._secrets_unreadable = read_json_object(self._secrets_file)
+        if self._secrets_unreadable:
+            logger.error("cron_task secrets.json unreadable: vault kept empty and every full "
+                         "overwrite will be refused to preserve the on-disk vault: %s",
+                         self._secrets_file)
+            return
+        if data:
+            self._secrets = data
+            logger.info("cron_task secrets loaded: %d keys", len(self._secrets))
 
     def _save_secrets(self):
-        """保存 Secret Vault 到磁盘。"""
+        """保存 Secret Vault 到磁盘。读不出那一档⛔ 整份覆盖（会把旧凭据全顶掉）。"""
+        if self._secrets_unreadable:
+            logger.error("cron_task secrets.json unreadable, refusing full overwrite from "
+                         "incomplete in-memory vault: %s", self._secrets_file)
+            return
         try:
             self._data_dir.mkdir(parents=True, exist_ok=True)
-            self._secrets_file.write_text(
-                json.dumps(self._secrets, ensure_ascii=False, indent=2),
-                encoding="utf-8"
-            )
+            write_json_atomic(self._secrets_file, self._secrets)
         except Exception as e:
             logger.warning("failed to save secrets: %s", e)
 
@@ -205,6 +225,33 @@ class CronTaskExecutor:
             name = m.group(1)
             return self._secrets.get(name, m.group(0))
         return re.sub(r"\{secret:([^}]+)\}", replacer, url)
+
+    def _resolve_headers(self, headers: dict | None) -> dict:
+        """header 值里的 {secret:xxx} 同样替换（裁定 §4.2：不扩这一条，「密钥改走 headers」就是空话）。
+
+        返回**新** dict：⛔ 就地改注册表——那会把明文密钥写进 apis.json，等于换一条通道
+        再造一次泄露。未入库的名字照旧原样发出（由批180 的门钉住）。
+        """
+        resolved = {}
+        for key, value in (headers or {}).items():
+            resolved[key] = self._resolve_url(value) if isinstance(value, str) else value
+        return resolved
+
+    async def _recheck_url(self, api_config: dict) -> str:
+        """发送前复核一次（裁定 §二-3）：注册时点的校验挡不住 DNS 事后改指（rebinding）。
+
+        返回空串＝放行，否则为拒因，调用方落 `failed` 并记原因、⛔ 发出请求。
+        复核吃的是**注册模板**：⛔ 把替换后的成品喂进 DNS 查询与错误文本。
+        """
+        try:
+            valid, reason = await asyncio.to_thread(
+                url_guard.validate_api_url, api_config.get("url") or "")
+        except Exception as e:
+            # 复核器自己炸＝"没判出来"，⛔ 当成"判了放行"（fail-closed 口径与接线那腿一致）
+            return f"发送前复核异常，按 fail-closed 拒绝: {e}"
+        if not valid:
+            return f"发送前复核未通过：{reason}"
+        return ""
 
     def test_api(self, api_id: str) -> dict:
         """直接测试 API 连通性（不经过条件/动作）。同步方法：事件循环内的调用方须自行
@@ -217,6 +264,10 @@ class CronTaskExecutor:
         api_config = self._api_registry.get(api_id)
         if not api_config:
             return {"ok": False, "error": f"API {api_id} 未注册"}
+        denied = await self._recheck_url(api_config)
+        if denied:
+            logger.warning("cron_task test %s blocked before send: %s", api_id, denied)
+            return {"ok": False, "error": denied}
         try:
             resolved_url = self._resolve_url(api_config["url"])
             method = (api_config.get("method") or "GET").upper()
@@ -224,14 +275,14 @@ class CronTaskExecutor:
             if isinstance(body_raw, dict):
                 body_raw = json.dumps(body_raw)
             resolved_body = self._resolve_url(body_raw) if body_raw else None
+            req_headers = self._resolve_headers(api_config["headers"])
             async with httpx.AsyncClient(timeout=api_config["timeout"]) as client:
                 if method == "POST":
-                    req_headers = dict(api_config["headers"])
                     if resolved_body and "content-type" not in {k.lower() for k in req_headers}:
                         req_headers["Content-Type"] = "application/json"
                     resp = await client.post(resolved_url, headers=req_headers, content=resolved_body)
                 else:
-                    resp = await client.get(resolved_url, headers=api_config["headers"])
+                    resp = await client.get(resolved_url, headers=req_headers)
             return {
                 "ok": resp.status_code == 200,
                 "http_status": resp.status_code,
@@ -239,7 +290,6 @@ class CronTaskExecutor:
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
-
 
     def list_apis(self) -> list[dict]:
         """列出所有已注册 API（密钥脱敏）。"""
@@ -355,6 +405,16 @@ class CronTaskExecutor:
             result["reason"] = f"API {api_id} 未注册"
             self._log_execution(skill_id, result)
             return result
+
+        # 发送前复核（裁定 §二-3）：这一腿挡的是「注册之后 DNS 改指」，注册时点那道门管不到。
+        denied = await self._recheck_url(api_config)
+        if denied:
+            result["ok"] = False
+            result["status"] = "failed"
+            result["reason"] = denied
+            logger.warning("cron task %s blocked before send: %s", skill_id, denied)
+            self._log_execution(skill_id, result)
+            return result
         
         # 执行 HTTP 请求（单次，无重试，重试由上层调度器控制）
         # API 节流：同一 api_id 10s 内最多 1 次
@@ -372,6 +432,7 @@ class CronTaskExecutor:
             resolved_url = self._resolve_url(api_config["url"])
             method = (api_config.get("method") or "GET").upper()
             body_template = api_config.get("body", "")
+            req_headers = self._resolve_headers(api_config["headers"])
             async with httpx.AsyncClient(timeout=api_config["timeout"]) as client:
                 if method == "POST":
                     body_raw = api_config.get("body", "")
@@ -379,13 +440,12 @@ class CronTaskExecutor:
                         body_raw = json.dumps(body_raw)
                     resolved_body = self._resolve_url(body_raw) if body_raw else None
                     # 自动补 Content-Type（如果用户没设）
-                    req_headers = dict(api_config["headers"])
                     if resolved_body and "content-type" not in {k.lower() for k in req_headers}:
                         req_headers["Content-Type"] = "application/json"
                     resp = await client.post(resolved_url, headers=req_headers,
                                             content=resolved_body)
                 else:
-                    resp = await client.get(resolved_url, headers=api_config["headers"])
+                    resp = await client.get(resolved_url, headers=req_headers)
                 result["http_status"] = resp.status_code
                 if resp.status_code != 200:
                     result["ok"] = False
