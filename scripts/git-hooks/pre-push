@@ -7,6 +7,9 @@
 #
 # stdin 形如 `<local_ref> <local_oid> <remote_ref> <remote_oid>`（git 自己喂）：
 # remote_oid 全 0＝新分支，没有可比对的远端基底 ⇒ 退回 --all 只看要推的那枚树，并**明说**这是降级。
+# 判定用 `case *[^0]*)`（含非 0 字符＝真 sha）——⛔ 别写回 `[ -z "${oid##*[^0]}" ]`：那条剥的是**尾随 0 串**，
+# 真基底（尾字符非 0）判成空串＝「新分支」走降级，全 0 反而走 --range 喂进去 ⇒ 两腿都拿不到该拿的覆盖面
+# （10-13 现读，`tests/test_audit_1013_batch210_prepush_scope_leg.py` 两格盯住方向）。
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"
 PY=""
@@ -25,8 +28,8 @@ while read -r local_ref local_oid remote_ref remote_oid; do
     *[^0]*) : ;;              # 含非 0 字符＝正常 sha，继续
     *) continue ;;            # 全 0＝删除远端分支，没有内容要推
   esac
-  if [ -z "${remote_oid##*[^0]}" ]; then
-    echo "pre-push: $remote_ref 是新分支（无远端基底）⇒ 降级为只扫 $local_oid 的树，⛔ 覆盖整条历史"
+  if case "$remote_oid" in *[^0]*) false ;; *) true ;; esac; then
+    echo "pre-push: $remote_ref 无远端基底（remote_oid 全 0＝新分支）⇒ 降级为只扫 $local_oid 的树，⛔ 覆盖整条历史"
     "$PY" "$REPO/scripts/leak_gate.py" --all --repo "$REPO" || rc_total=1
     continue
   fi

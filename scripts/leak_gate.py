@@ -232,6 +232,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.range_:
         revs = [r for r in _git(repo, ["rev-list", args.range_]).splitlines() if r.strip()]
+        if not revs:
+            print(f"[scope] 待推区间 {args.range_} 取到 0 枚 commit ⇒ 本腿**未量**"
+                  f"（区间不存在的 40 个 0＝新分支被误传进来，或区间本就为空）")
+            print("[verdict] 未量：⛔ 记成绿（换一条有基底的区间，或 --all 看要推的那枚树）")
+            return 2
         print(f"[scope] 待推区间 {args.range_} 共 {len(revs)} 枚 commit（逐枚扫整棵树）")
         range_problems: list[str] = list(baseline_problems)
         for line in baseline_problems:
