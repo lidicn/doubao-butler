@@ -31,11 +31,71 @@ COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8").replace("\r\
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8").replace("\r\n", "\n")
 
 LAN_IP = "192.168.2.200"
+# 负控夹具用的合成凭据形（≥16 位、字母数字混排＝与真值同形制）；⛔ 从 `.env`／NAS 面抄真值
+SYNTH_BARK_LITERAL = "SYNTHbarkkey0123456789AB"
+SYNTH_WEBPASS_LITERAL = "SYNTHwebpass0123456789ab"
 SRC_MOUNT = "./butler:/app/butler"
 # 运行时确实要写的两枚挂载（现读证据：源码树自容器启动后被改文件=0，data/tts 是活写入面）
 WRITABLE_MOUNTS = ("/app/data", "/app/tts")
 
 HARDENING_KEYS = ("user:", "cap_drop:", "security_opt:", "pids_limit:", "read_only:", "tmpfs:")
+
+# `.env` 真值比对门的口径：长值门槛 10（短值做子串必假阳——`MQTT_USER` 的真值就是通用词，
+# 一次撞出 1845 处把真信号埋掉），占位形态直接跳过；作用域⛔ `doc/`（出资人的审计件，归轮换）。
+# 只拦**键名带凭据语义**的那批：`MQTT_HOST`/`HA_URL`/`DOUBAO_MODEL` 这类地址与型号名，
+# `butler/config.py` 的默认值本身就是它，拦下来是一把恒红尺＝没有闸。
+ENV_VALUE_MIN_LEN = 10
+ENV_PLACEHOLDER = ("changeme", "your-", "<", "${", "replace", "none", "false", "true")
+ENV_SECRET_KEY_RE = re.compile(
+    r"(?i)(token|password|passwd|secret|api_?key|credential|signature|\biv\b|\bsig\b|_key$|^key_|access_)")
+ENV_SCAN_DIRS = ("tests", "butler", "scripts")
+ENV_SCAN_ROOT_FILES = ("docker-compose.yml", "docker-compose.dev.yml", "Dockerfile", ".env.example")
+
+
+def _env_long_values():
+    """返回 `{键名: 真值}`（仅凭据语义键）；`.env` 不在位返回 None（调用方必须判成"未量"，⛔ 绿）。"""
+    path = ROOT / ".env"
+    if not path.exists():
+        return None
+    out = {}
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        key, _, val = s.partition("=")
+        key = key.strip()
+        val = val.strip().strip('"').strip("'")
+        if not ENV_SECRET_KEY_RE.search(key):
+            continue
+        if len(val) < ENV_VALUE_MIN_LEN or any(p in val.lower() for p in ENV_PLACEHOLDER):
+            continue
+        out[key] = val
+    return out
+
+
+def _env_literal_hits():
+    values = _env_long_values()
+    if values is None:
+        return None
+    targets = [ROOT / name for name in ENV_SCAN_ROOT_FILES]
+    for d in ENV_SCAN_DIRS:
+        base = ROOT / d
+        if base.exists():
+            targets += [p for p in base.rglob("*")
+                        if p.is_file() and "__pycache__" not in p.parts and p.suffix in {".py", ".sh", ".json", ".md"}]
+    hits = []
+    for p in targets:
+        if not p.exists():
+            continue
+        try:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        rel = p.relative_to(ROOT).as_posix()
+        for key, val in values.items():
+            if val in text:
+                hits.append((rel, key))
+    return hits
 
 
 def _mount_lines(text: str):
@@ -249,24 +309,55 @@ class DeployFaceGate(unittest.TestCase):
         self.assertEqual(offenders, [], f"受跟踪的部署面文件里带活凭据：{offenders}")
 
     def test_10_credential_ruler_bites_on_synthetic_literal(self):
-        """负控：同一把尺必须咬得住合成字面量，且在占位符/插值/用户名形态上不误报。"""
+        """负控：同一把尺必须咬得住合成字面量，且在占位符/插值/用户名形态上不误报。
+
+        夹具值⛔ 从 `.env` 或 NAS 面抄真值（本档 10-13 初版就是这么躺着两枚活凭据的，
+        由 test_11 收口）；合成值与真值同形制（≥12 位、字母数字混排），⛔ 只需同形、⛔ 需同值。
+        """
         sample = ("services:\n"
                   "  x:\n"
                   "    environment:\n"
-                  "      - BARK_KEY=«REDACTED-BARK-KEY·真值只在 .env»\n"
-                  "      - BUTLER_WEB_PASSWORD=e32xl1Pm1gMteXBjuXT\n"
+                  f"      - BARK_KEY={SYNTH_BARK_LITERAL}\n"
+                  f"      - BUTLER_WEB_PASSWORD={SYNTH_WEBPASS_LITERAL}\n"
                   "      - MQTT_PASSWORD=${MQTT_PASSWORD}\n"
                   "      - NEW_API_KEY=your_new_api_key_here\n"
                   "      - BUTLER_WEB_USER=admin\n"
-                  "      - MQTT_HOST=192.168.2.200\n")
+                  f"      - MQTT_HOST={LAN_IP}\n")
         hits = credential_literals(sample, "sample")
         self.assertEqual([h.split("@")[0] for h in hits], ["BARK_KEY", "BUTLER_WEB_PASSWORD"],
                          f"尺不咬或误报，实得 {hits}")
         for h in hits:
-            self.assertNotIn("tmLBK", h, "尺把凭据值本体打印出来了＝泄露面自己造了一枚")
+            for lit in (SYNTH_BARK_LITERAL[:8], SYNTH_WEBPASS_LITERAL[:8]):
+                self.assertNotIn(lit, h, "尺把凭据值本体打印出来了＝泄露面自己造了一枚")
         self.assertEqual(credential_literals(SYNTH_OK_SAMPLE, "sample"), [],
                          f"合规形态被误报：{credential_literals(SYNTH_OK_SAMPLE, 'sample')}")
 
+    # ---- 七、本仓码面⛔ 抄 `.env` 真值（10-13 现量到 test_10 的夹具里躺着两枚活凭据）----
+    def test_11_code_face_carries_no_env_literal(self):
+        """负控在同档 test_10：那把尺咬得住合成字面量；本格咬的是**真值被抄进码面**。
+
+        作用域＝`tests/`＋`butler/`＋`scripts/`＋仓库根四枚配置件；
+        ⛔ 覆盖 `doc/`（出资人的审计件与归档件，本席⛔ 改它内容，泄露面归轮换）。
+        """
+        hits = _env_literal_hits()
+        if hits is None:
+            self.skipTest(".env 不在位 ⇒ 本腿未量，⛔ 记成绿")
+        # 先证这把尺会咬：值程序化现读，⛔ 手敲凭据字面量（本档 test_10 的前科就是手敲）
+        values = _env_long_values()
+        if not values:
+            self.skipTest("凭据语义键的长值比对集为空 ⇒ 本腿未量，⛔ 记成绿")
+        probe_key = sorted(values)[0]
+        probe = ROOT / "tests" / "_b206_env_literal_selftest.py"
+        try:
+            probe.write_text(f"X = '{values[probe_key]}'\n", encoding="utf-8")
+            bitten = [(r, k) for r, k in _env_literal_hits() if r.endswith(probe.name)]
+            self.assertEqual(bitten, [(probe.relative_to(ROOT).as_posix(), probe_key)],
+                             "尺咬不住真值＝恒绿尺，⛔ 它判的 0 不作数")
+        finally:
+            probe.unlink(missing_ok=True)
+        offenders = [f"{k}@{r}" for r, k in _env_literal_hits()]
+        self.assertEqual(offenders, [],
+                         f"码面抄了 .env 真值（只出键名，⛔ 出值）：{offenders}")
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
