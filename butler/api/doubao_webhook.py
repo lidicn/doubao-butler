@@ -56,6 +56,20 @@ from butler.notifier.app import is_self_push
 logger = get_logger("butler.doubao_webhook")
 
 
+def _go2rtc_frame_url(rt, src: str) -> str | None:
+    """取帧地址一律照 `settings.go2rtc_base_url` 拼（批212·NAS 线 `cabac7c` 那条腿，同 `camera_vlm/engine.py` 的 rstrip 口径）。
+
+    未配置＝None，由调用方跳过并响一声。⛔ 在这里写死 IP＋端口：`.env` 里的 `GO2RTC_BASE_URL`
+    会变成看得到改不动的死键，换地址从「改一次 `.env`」变成「改码＋重建镜像」。
+    """
+    settings = getattr(rt, "settings", None)
+    base = (getattr(settings, "go2rtc_base_url", "") or "").rstrip("/")
+    if not base:
+        return None
+    from urllib.parse import quote
+    return f"{base}/api/frame.jpeg?src={quote(src)}"
+
+
 def role_state_file() -> Path:
     """批164 D5（本仓最重的一枚分叉）：这张档由 `roles/state.py` 与 `memory/feeder.py` 按
     `settings.data_dir` 写，读侧⛔ 再烤死 `/app/data`——两份物理文件 ⇒ 反向查角色恒为 None
@@ -764,8 +778,11 @@ async def handle_webhook(payload: dict) -> dict:
                             stream_map = {"客厅": "cam_客厅", "起居室": "cam_小黄人",
                                           "书房": "cam_书房", "厨房": "cam_厨房"}
                             src = stream_map.get(cam_room, f"cam_{cam_room}")
-                            from urllib.parse import quote
-                            frame_url = f"http://192.168.2.200:1984/api/frame.jpeg?src={quote(src)}"
+                            frame_url = _go2rtc_frame_url(rt, src)
+                            if frame_url is None:
+                                logger.warning("camera request skipped: go2rtc_base_url 未配置")
+                                return {"ok": False, "handled": "camera_request", "room": cam_room,
+                                        "error": "go2rtc_base_url 未配置"}
                             await rt.notifier.push_image(
                                 role_id, frame_url,
                                 prompt=f"我是安防专员顾安恒。这是{cam_room}的最新监控画面，"

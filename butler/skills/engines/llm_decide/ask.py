@@ -24,6 +24,16 @@ from homesdk.consent import NO, UNKNOWN, classify_answer  # WO-BUT-003 B1
 
 logger = logging.getLogger("butler.skills.ask")
 
+
+def _tv_base(rt) -> str:
+    """TV 基址取自 `settings.tvpilot_http_url`（批212·NAS 线 `cabac7c` 那条腿，同 `integrations/tv.py` 口径）。
+
+    未配置＝空串，调用方跳过两条 post 并响一声。⛔ 在这里写死 IP＋端口：那会让 `.env` 里的
+    `TVPILOT_HTTP_URL` 成看得到改不动的死键，换内网地址从「改一次 `.env`」变成「改码＋重建镜像」。
+    """
+    settings = getattr(rt, "settings", None)
+    return (getattr(settings, "tvpilot_http_url", "") or "").rstrip("/")
+
 # 批24（表行 8 RUF006 那族）：loop 对被调度任务只持弱引用⇒fire-and-forget 的 task 必须存进
 # 这张强引用注册表，跑完由 done_callback 自己摘掉（同批18 dialog._idle_tasks／批21 cron_task）。
 _BG_TASKS: set = set()
@@ -73,17 +83,20 @@ class PendingAskManager:
         # TVPilot: 播提示音 + 进入免唤醒聆听模式
         # 客厅场景都走 TV（room 可能不准，直接调）
         try:
-            import httpx
-            tv_base = "http://192.168.2.200:8090"
-            # 提示音
-            async with httpx.AsyncClient(timeout=5) as hc:
-                await hc.post(f"{tv_base}/api/ask/beep")
-                logger.info("TV ask beep sent")
-            # 进入聆听模式（免唤醒）
-            async with httpx.AsyncClient(timeout=5) as hc:
-                await hc.post(f"{tv_base}/api/ask/listen",
-                              json={"duration": int(timeout), "room": room})
-                logger.info("TV ask listen started (%.0fs)", timeout)
+            tv_base = _tv_base(rt)
+            if not tv_base:
+                logger.warning("TV ask beep/listen skipped: tvpilot_http_url 未配置")
+            else:
+                import httpx
+                # 提示音
+                async with httpx.AsyncClient(timeout=5) as hc:
+                    await hc.post(f"{tv_base}/api/ask/beep")
+                    logger.info("TV ask beep sent")
+                # 进入聆听模式（免唤醒）
+                async with httpx.AsyncClient(timeout=5) as hc:
+                    await hc.post(f"{tv_base}/api/ask/listen",
+                                  json={"duration": int(timeout), "room": room})
+                    logger.info("TV ask listen started (%.0fs)", timeout)
         except Exception as e:
             logger.warning("TV ask beep/listen failed: %s", e)
 
