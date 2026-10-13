@@ -341,8 +341,8 @@ def _raise_if_ha_failed(resp) -> None:
         raise HACommandRejected("http %s: %s" % (resp.status_code, str(resp.text)[:120]))
 
 
-async def execute_device_command(params: dict) -> None:
-    """执行设备控制命令"""
+async def execute_device_command(params: dict) -> bool:
+    """执行设备控制命令。返回**设备真的动了没有**——调用方据此记账，⛔ 再「失败报成功」（P0-A／V45，批44 组2 的续腿）。"""
     device_name = params.get("device", "")
     action = params.get("action", "")
     entity_id = params.get("entity_id", "")
@@ -430,7 +430,9 @@ async def execute_device_command(params: dict) -> None:
                 if ok:
                     logger.info("TV zap success: %s", channel)
                 else:
-                    logger.warning("TV zap failed: %s", result)
+                    # 批44 组2 的续腿：`rt.tv.zap` 走的是 MQTT 不是 HTTP，`_raise_if_ha_failed`
+                    # 那把门管不到它——不抛＝这条失败永远只留一行 warning，成功账照记。
+                    raise HACommandRejected("TV zap failed: %s" % result)
 
             elif action == "设定温度":
                 temp = params.get("temperature")
@@ -487,6 +489,7 @@ async def execute_device_command(params: dict) -> None:
         except Exception as push_err:
             # P2-9 ②类（批42 组3）：这里吞掉的正是**失败告警本身**⇒ 设备没动、手机永远不知道，⛔ 再无声
             logger.warning("bark push failed (device command): %s %s: %s", device_name, action, push_err)
+        return False
     else:
         # 成功也记录
         try:
@@ -498,6 +501,7 @@ async def execute_device_command(params: dict) -> None:
                 })
         except Exception:
             pass
+        return True
 
 
 async def handle_webhook(payload: dict) -> dict:
@@ -717,6 +721,9 @@ async def handle_webhook(payload: dict) -> dict:
 
         # 解析豆包的回复，提取设备控制命令
         device_cmds = parse_device_command_from_reply(doubao_reply or content)
+        # 无条件初始化：⛔ 只在 `if device_cmds:` 分支里置零——空命令时下面 chat_logs 那段会读到
+        # 未定义变量，被它自己的 `except` 吞成一条「chat_logs insert failed」⇒ 记账整条静默消失。
+        device_cmds_ok = 0
 
         # ---- 自愈检测：豆包回复里有【设备】标签但格式不对 ----
         known_actions = {"打开", "关闭", "换台", "设定温度", "设模式", "设风速"}
@@ -747,7 +754,8 @@ async def handle_webhook(payload: dict) -> dict:
         if device_cmds:
             logger.info("device commands detected: %s", device_cmds)
             for cmd in device_cmds:
-                await execute_device_command(cmd)
+                if await execute_device_command(cmd):
+                    device_cmds_ok += 1
         else:
             # v1.4 检测【场景：XXX】标签
             scene_id = parse_scene_from_reply(doubao_reply or content)
@@ -836,7 +844,7 @@ async def handle_webhook(payload: dict) -> dict:
                     role_id,
                     "mobile_app",
                     json.dumps(tools_called, ensure_ascii=False),
-                    1 if device_cmds else 0,
+                    1 if device_cmds and device_cmds_ok == len(device_cmds) else 0,
                     json.dumps({"conversation_id": conversation_id}, ensure_ascii=False),
                 )
             )
@@ -850,6 +858,7 @@ async def handle_webhook(payload: dict) -> dict:
             "role": role_id,
             "conversation_id": conversation_id,
             "device_commands": len(device_cmds),
+            "device_commands_ok": device_cmds_ok,
         }
     except BaseException:
         _recent_msgs.pop(msg_hash, None)

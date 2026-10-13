@@ -57,9 +57,13 @@ SITES = [
     # 1013-b214-REANCHOR 809→826（本节口径覆盖批181 的落点登记）：批212 在
     #   `logger = get_logger(...)` 下方净插 `_go2rtc_frame_url()` 助手，`conn.execute(...)`
     #   那条腿本体一字未动 ⇒ 仍是 EXTERNAL_SYNC。
+    # 1013-b216-REANCHOR: 826→834（批216 在 `execute_device_command`／`handle_webhook` 里给设备命令
+    #   补真值腿——返回 bool、换台失败改抛、chat_logs 成功位吃计数器；`conn.execute(` 本体一字未动，
+    #   全文件现读该符号恰 1 枚命中，点开确认仍是同一枚调用。⚠ 净行数⛔ 能从 diff 反推：本笔 +14/−5
+    #   口算落 835，尺现读落 834 ⇒ 本钉按现读，⛔ 按算术。）
     # （上一注：1011-b181 re-anchor 802→809，批181 在 `_conversation_to_role()` 与 `DEVICE_MAP`
     #   之间净插 7 行 `_role_system()`（P1-10 角色缺席兜底）。）
-    ("api/doubao_webhook.py", 826, "execute"),
+    ("api/doubao_webhook.py", 834, "execute"),
     # 1009-b6-REANCHOR (2026-10-10): app.py 生命周期 9 枚随批135/homesdk0.3.2 接线漂移，已重钉。
     # run 槽＝已裁退役（PM 裁 1009）：原 `subprocess.run`（EXTERNAL 族）已被重构进
     #   `await ensure_wake_ding`（startup_assets），app.py 再无未 await 的外部 run；名册 30→29，
@@ -169,7 +173,10 @@ SITES = [
     # 1010-b169-REANCHOR: 429→435（批169 在 run() 的当日额度腿净插 6 行，_push_tv 本体一字未动；
     #   全文件现读 489 行、`rt.tv.notify` 恰 1 枚命中，点开确认仍是同一枚调用）。
     ("skills/runner.py", 435, "notify"),
-    ("tools/registry.py", 1074, "notify"),
+    # 1013-b216-REANCHOR: 1074→1075（批215 在 `dispatch_tool` 的 `get_weather` 分支净插 1 行
+    #   `from butler.config import get_settings`，`agent.tv.notify` 本体一字未动；全文件现读该枚
+    #   落在 1075，点开确认同一枚。**漂移本该在批215 收口时重钉——那一笔没跑本门，账记在 1013 回执偏差栏。）
+    ("tools/registry.py", 1075, "notify"),
     ("tools/schedule.py", 105, "notify"),
     # 1009-b6-REANCHOR: triggers 两枚 write_failures.record（async def _record_evaluation / _fire
     #   里的 census 腿）175→217、434→483；同文件另有 3 枚同名 record 在同步冷却写路径，未在册。
