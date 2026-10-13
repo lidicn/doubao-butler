@@ -25,6 +25,18 @@ if [ ! -f "$REPO/.gates.toml" ]; then
   exit 2
 fi
 
+echo "══ 泄露闸（值比对＋用户数据路径，批208）═══════════════════════"
+# 这条腿放在 homesdk 之前：它只吃 python＋git，而「key 有没有跟着上公开仓」⛔ 排在
+# 装没装 homesdk 后面。10-13 现读：本仓 remote 是公开仓（private=False），而此前
+# `.git/hooks/` 零枚钩子、gates.sh 三道门里没有一道看内容。
+if [ -f "$REPO/scripts/leak_gate.py" ]; then
+  "$PYTHON" "$REPO/scripts/leak_gate.py" --all --repo "$REPO"
+  leak_rc=$?
+else
+  echo "  缺 $REPO/scripts/leak_gate.py —— 泄露闸没尺子可跑，判 2（⛔ 当绿）。"
+  leak_rc=2
+fi
+
 echo "══ AST 门禁（不含冒烟）═══════════════════════════════════════"
 "$PYTHON" -m homesdk.gates "$REPO" --no-smoke
 ast_rc=$?
@@ -50,6 +62,10 @@ else
 fi
 
 echo
+if [ $leak_rc -ne 0 ]; then
+  echo "结论：泄露闸红或没跑到（exit=$leak_rc）。1＝上面列出的键名/路径命中；2＝这条腿此刻量不到（取不到 .env）。两种都⛔ 当绿。"
+  exit $leak_rc
+fi
 if [ $ast_rc -ne 0 ]; then
   echo "结论：AST 门禁红（exit=$ast_rc）。修，或在 .gates-baseline.txt 里逐条写明放行理由。"
   exit $ast_rc

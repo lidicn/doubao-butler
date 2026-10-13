@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# 提交前泄露闸（批208，2026-10-13）——装法：bash scripts/git-hooks/install-hooks.sh
+#
+# 为什么要有这一枚：`.git/hooks/` 里此前除 `.sample` 外一枚钩子都没有，`gates.sh` 三道门
+# （AST／冒烟／契约）里没有一道看内容 ⇒ 「key 有没有跟着上去」全靠某个人记得去跑一把尺。
+#
+# rc=2（本腿未量：取不到 .env 或 git）也**照拦**——「此刻量不到」⛔ 等于「干净」。
+# 真要先提交：`git commit --no-verify`，那是明着绕闸，验收单里得写清绕的是哪条。
+set -uo pipefail
+REPO="$(git rev-parse --show-toplevel)"
+# 解释器名各面不同（本机现读：`python3` 不在 PATH，只有 `python`；容器里反之）。
+# ⛔ 拿一个探不到的解释器当"没有泄露"——探不到就是量不到，照拦。
+PY=""
+for cand in "${GATES_PYTHON:-}" python3 python py; do
+  [ -n "$cand" ] || continue
+  if "$cand" -c "import sys" >/dev/null 2>&1; then PY="$cand"; break; fi
+done
+if [ -z "$PY" ]; then
+  echo "泄露闸：python3/python/py 三枚都探不到 ⇒ 本腿未量，照拦（⛔ 当绿）。"
+  exit 1
+fi
+"$PY" "$REPO/scripts/leak_gate.py" --staged --repo "$REPO"
+rc=$?
+if [ $rc -ne 0 ]; then
+  echo
+  echo "↑ 泄露闸拦下这次提交（rc=$rc）。1＝命中上面列出的键名/路径；2＝这条腿此刻量不到。"
+  exit 1
+fi
+exit 0
