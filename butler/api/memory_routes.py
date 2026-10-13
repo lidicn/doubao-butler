@@ -8,6 +8,7 @@ from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
 from butler.logging_setup import get_logger
+from butler.roles.store import ALL_ROLE_IDS
 from butler.runtime import get_runtime
 from butler.store import repo
 
@@ -332,7 +333,7 @@ async def fact_set_role(request):
     except Exception:
         return err("invalid json")
     role = str(body.get("target_role", "")).strip()
-    if role not in ("butler", "jarvis", "caesar", "luna", "gu_anheng", "xiaoyue"):
+    if role not in ALL_ROLE_IDS:
         return err("invalid target_role")
     from butler.store.db import get_conn
     c = get_conn()
