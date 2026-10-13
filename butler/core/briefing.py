@@ -13,6 +13,7 @@ from pathlib import Path
 
 import aiohttp
 
+from butler.config import get_settings
 from butler.store.db import get_conn
 from butler.logging_setup import get_logger
 
@@ -95,7 +96,8 @@ def _build_report() -> dict:
 async def _fetch_weather() -> str:
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("http://192.168.2.200:3000/api/weather", timeout=aiohttp.ClientTimeout(total=10)) as r:
+            async with session.get(get_settings().weather_api_url,
+                                   timeout=aiohttp.ClientTimeout(total=10)) as r:
                 data = await r.json()
                 if data.get("status") == "ok":
                     rt = data.get("result", {}).get("realtime", {})

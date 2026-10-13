@@ -924,10 +924,11 @@ async def dispatch_tool(name: str, args: dict, agent) -> str:
 
         if name == "get_weather":
             import httpx
+            from butler.config import get_settings
             wtype = args.get("type", "realtime")
             try:
                 async with httpx.AsyncClient(timeout=10) as client:
-                    r = await client.get("http://192.168.2.200:3000/api/weather")
+                    r = await client.get(get_settings().weather_api_url)
                     data = r.json()
                     result = data.get("result", {})
                     rt = result.get("realtime", {})

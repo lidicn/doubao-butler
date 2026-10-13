@@ -112,15 +112,16 @@ class NoHardcodedLanUrlInCode(unittest.TestCase):
     # 其余登记为债＝af_bridge／bark_routes／app(2)／briefing／deskpilot(文档行)／
     # autoflow_propose(2)／registry。名册**冻结**＝再多一处或同档多一行都要红，
     # 这样这把尺既有牙又⛔ 一出生就恒绿／恒红（判据旁写正则原文：HARD_LAN）。
+    # 1013-b215 更新本节口径：批215（NAS 线 `2292b0e` 天气基址收编）销掉
+    #   `core/briefing.py`(1)＋`tools/registry.py`(1) 两行写死的 `…:3000/api/weather`
+    #   ⇒ 名册 9→7 行、档数 9→7（两档从名册**整条移除**，⛔ 留 0 值占位）。
     ROSTER = {"butler/af_bridge.py": 1,
               "butler/api/bark_routes.py": 1,
               "butler/api/doubao_webhook.py": 1,
               "butler/app.py": 2,
-              "butler/core/briefing.py": 1,
               "butler/integrations/deskpilot.py": 1,
               "butler/skills/engines/autoflow_propose/engine.py": 2,
-              "butler/skills/engines/llm_decide/ask.py": 1,
-              "butler/tools/registry.py": 1}
+              "butler/skills/engines/llm_decide/ask.py": 1}
 
     def _hits(self, text):
         return [ln.strip() for ln in text.split("\n") if HARD_LAN.search(ln)

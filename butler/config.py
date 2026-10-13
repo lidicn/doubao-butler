@@ -195,6 +195,9 @@ class Settings:
     go2rtc_user: str = ""
     go2rtc_pass: str = ""
 
+    # 天气服务（`core/briefing.py` 与 `tools/registry.py` 两枚调用点共用；键在 .env.example:81 在册）
+    weather_api_url: str = "http://192.168.2.200:3000/api/weather"
+
     # HA
     ha_url: str = "http://192.168.2.200:8123"
     ha_token: str = ""
@@ -306,6 +309,7 @@ class Settings:
             go2rtc_base_url=_env("GO2RTC_BASE_URL", "http://192.168.2.200:1984"),
             go2rtc_user=_env("GO2RTC_USER"),
             go2rtc_pass=_env("GO2RTC_PASS"),
+            weather_api_url=_env("WEATHER_API_URL", "http://192.168.2.200:3000/api/weather"),
             ha_url=_env("HA_URL", "http://192.168.2.200:8123"),
             ha_token=_env("HA_TOKEN"),
             xiaomi_service_token=_env("XIAOMI_SERVICE_TOKEN"),
