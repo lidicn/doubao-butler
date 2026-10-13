@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# 推送前泄露闸（批208 C 臂）——装法：bash scripts/git-hooks/install-hooks.sh
+#
+# 为什么 pre-commit 不够：pre-commit 只看**这一枚**提交要变成什么，而 push 推的是**整条 range**——
+# 「后一笔把真值涂销」⛔ 抹掉前一笔 blob 里的真值。10-13 现读：本仓 HEAD 跑 --all＝0 命中，
+# 同一条尺逐枚跑 origin/main..HEAD＝12 枚里 10 枚带真值（56 处）。
+#
+# stdin 形如 `<local_ref> <local_oid> <remote_ref> <remote_oid>`（git 自己喂）：
+# remote_oid 全 0＝新分支，没有可比对的远端基底 ⇒ 退回 --all 只看要推的那枚树，并**明说**这是降级。
+set -uo pipefail
+REPO="$(git rev-parse --show-toplevel)"
+PY=""
+for cand in "${GATES_PYTHON:-}" python3 python py; do
+  [ -n "$cand" ] || continue
+  if "$cand" -c "import sys" >/dev/null 2>&1; then PY="$cand"; break; fi
+done
+if [ -z "$PY" ]; then
+  echo "泄露闸：python3/python/py 三枚都探不到 ⇒ 本腿未量，照拦（⛔ 当绿）。"
+  exit 1
+fi
+rc_total=0
+while read -r local_ref local_oid remote_ref remote_oid; do
+  [ -n "${local_oid:-}" ] || continue
+  case "$local_oid" in
+    *[^0]*) : ;;              # 含非 0 字符＝正常 sha，继续
+    *) continue ;;            # 全 0＝删除远端分支，没有内容要推
+  esac
+  if [ -z "${remote_oid##*[^0]}" ]; then
+    echo "pre-push: $remote_ref 是新分支（无远端基底）⇒ 降级为只扫 $local_oid 的树，⛔ 覆盖整条历史"
+    "$PY" "$REPO/scripts/leak_gate.py" --all --repo "$REPO" || rc_total=1
+    continue
+  fi
+  echo "pre-push: $remote_ref 逐枚扫 $remote_oid..$local_oid"
+  "$PY" "$REPO/scripts/leak_gate.py" --range "$remote_oid..$local_oid" --repo "$REPO" || rc_total=1
+done
+if [ $rc_total -ne 0 ]; then
+  echo
+  echo "↑ 泄露闸拦下这次推送。命中列在上方（只出键名与长度，⛔ 出值）。"
+  exit 1
+fi
+exit 0

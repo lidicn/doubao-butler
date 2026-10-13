@@ -54,6 +54,14 @@ class GateFileTest(unittest.TestCase):
         for cand in ("python3", "python"):
             self.assertIn(cand, text, f"钩子没给解释器留退路（缺 {cand}）")
 
+    def test_prepush_hook_is_shipped_and_wired(self):
+        """C 臂的落点：`--range` 天然属于 pre-push——pre-commit 只看得到一枚提交，看不到整条待推线。"""
+        hook = TREE / "scripts" / "git-hooks" / "pre-push"
+        self.assertTrue(hook.is_file(), "pre-push 钩子不在位 ⇒ 整条 range 没人逐枚看")
+        text = hook.read_text(encoding="utf-8")
+        self.assertIn("--range", text, "pre-push 没接 C 臂（⛔ 只跑 --all＝只看 HEAD）")
+        self.assertIn("leak_gate.py", text)
+
     def test_gates_sh_has_a_leak_leg(self):
         text = (TREE / "gates.sh").read_text(encoding="utf-8")
         self.assertIn("leak_gate.py", text,
