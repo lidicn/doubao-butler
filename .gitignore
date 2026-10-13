@@ -37,7 +37,9 @@ butler.local_backup/
 *.local_backup/
 
 # 本地调试产物
-*.png
+# 10-13 收窄：裸 `*.png` 曾把 butler/static/**（图标/头像 11 枚）与 dashboard_pwa/icons（2 枚）
+# 一起吞掉——这些是要入库的真资源。兜调试件用「根下散落图＋screenshot 前缀」两条窄腿。
+/*.png
 screenshot*.png
 _scratch_*/
 _wt2/

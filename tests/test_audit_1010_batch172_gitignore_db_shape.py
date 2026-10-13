@@ -40,6 +40,12 @@ ANCHORED_FORMS = {"/data/": ("/data/", "/data/*"), "/tts/": ("/tts/",)}
 # 10-13 丙案：`data/roles/_archive/*.json` 是行为件（`roles/store.py:147 archived_ids()` 靠它
 # 挡「已归档角色被重启重新播种」），豁免行一旦被人抹掉，这五枚 json 会**静默**回到不入库。
 ARCHIVE_EXEMPTION = "!/data/roles/_archive/"
+# 10-13 现读：`.gitignore:40:*.png` 把**真资源**一起吞了——十三枚图标/头像
+# （`butler/static/icons` 4＋`butler/static/avatars` 6＋`butler/static/images` 1＋
+#  `butler/dashboard_pwa/icons` 2，全部 .png）在 NAS 线受跟踪、
+# 我这侧 0 枚，b206f 整树尺里落在「只NAS」桶。病同 D19：兜调试产物的模式⛔ 用裸图型
+# 一网打，收窄到「根下的散落图＋screenshot 前缀」才只咬调试件。
+BLANKET_IMAGE_FORBIDDEN = ("*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp")
 
 
 def gitignore_problems(text: str) -> list[str]:
@@ -59,14 +65,20 @@ def gitignore_problems(text: str) -> list[str]:
     if "/data/*" in lines and ARCHIVE_EXEMPTION not in lines:
         problems.append(f"S3-ARCHIVE-EXEMPTION-MISSING {ARCHIVE_EXEMPTION}"
                         "（根锚定改的是 /data/*，豁免行不在位＝归档角色件静默回库外）")
+    for pat in BLANKET_IMAGE_FORBIDDEN:
+        if pat in lines:
+            problems.append(f"S4-BLANKET-IMAGE {pat}（裸图型吞静态资源：图标/头像进不了库＝D19 同病）")
     return problems
 
 
 CLEAN_TEXT = "\n".join(["# x", "/data/*", "!/data/roles/", "/data/roles/*",
-                        ARCHIVE_EXEMPTION, "/tts/", "*.db", "*.db-wal", "*.db-shm", "tmp/"]) + "\n"
+                        ARCHIVE_EXEMPTION, "screenshot*.png", "/*.png", "/tts/",
+                        "*.db", "*.db-wal", "*.db-shm", "tmp/"]) + "\n"
 PRESCRIPTION_TEXT = CLEAN_TEXT.replace("*.db", "/*.db")
 D19_REGRESS_TEXT = CLEAN_TEXT.replace("/tts/", "tts/")
 EXEMPTION_LOSS_TEXT = CLEAN_TEXT.replace(ARCHIVE_EXEMPTION + "\n", "")
+# 我这侧 10-13 落地前的真实形制（`*.png` 裸着、根锚定那半条也没有）
+IMAGE_BLANKET_TEXT = CLEAN_TEXT.replace("/*.png", "*.png")
 
 
 def run_ignore_probe(gitignore_text: str, files: dict[str, str]) -> dict[str, str | None]:
@@ -121,6 +133,13 @@ class CalibrationTest(unittest.TestCase):
         self.assertEqual([g for g in got if not g.startswith("S3-")], [],
                          f"其余臂不该连带误报：{got}")
 
+    def test_image_blanket_bits_the_shape_arm(self):
+        """负控：把 `/*.png` 换回裸 `*.png`＝我这侧 10-13 前的真形制 ⇒ 只咬 S4 一条。"""
+        got = gitignore_problems(IMAGE_BLANKET_TEXT)
+        self.assertEqual(got, [
+            "S4-BLANKET-IMAGE *.png（裸图型吞静态资源：图标/头像进不了库＝D19 同病）",
+        ], got)
+
     def test_mechanism_probe_distinguishes(self):
         """Arm E 的**尺的尺**：同一跑法必须能分出「被哪条吃掉」与「没被吃」。"""
         probe = run_ignore_probe("*.zzz\n/keep/\n", {
@@ -169,6 +188,25 @@ class ProductionMechanismTest(unittest.TestCase):
         probe = run_ignore_probe(self.text, {"data/live.db": "", "data/sub/live.db": ""})
         for rel, src in probe.items():
             self.assertIsNotNone(src, f"{rel} 未被 /data/ 兜住")
+
+    def test_static_image_assets_are_tracked_and_debug_pngs_are_not(self):
+        """机制腿（10-13 现读真 .gitignore）：裸 `*.png` 收窄后只咬调试件。
+
+        十三枚图标/头像（NAS 线受跟踪、我这侧被 `*.png` 吞过）必须⛔ 被忽略；
+        根下散落的 `shot.png` 与 `screenshot-1013.png` 仍要兜住——收窄⛔ 等于放开。
+        """
+        assets = {
+            "butler/static/icons/icon-192.png": "",
+            "butler/static/icons/apple-touch-icon.png": "",
+            "butler/static/avatars/xiaoai.png": "",
+            "butler/static/images/doubao.png": "",
+            "butler/dashboard_pwa/icons/icon-512.png": "",
+        }
+        probe = run_ignore_probe(self.text, dict(assets, **{"shot.png": "", "screenshot-1013.png": ""}))
+        for rel in assets:
+            self.assertIsNone(probe[rel], f"{rel} 被 {probe[rel]} 吞掉＝静态资源进不了库")
+        for rel in ("shot.png", "screenshot-1013.png"):
+            self.assertIsNotNone(probe[rel], f"{rel} 没兜住：调试截图会堆进库里")
 
     def test_archive_exemption_is_one_step_not_a_hole(self):
         """机制腿（10-13 现读真 .gitignore）：豁免只开归档区一条缝。
