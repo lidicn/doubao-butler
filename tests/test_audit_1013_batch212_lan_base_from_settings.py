@@ -109,14 +109,16 @@ class NoHardcodedLanUrlInCode(unittest.TestCase):
     """形状尺两格：⛔ 本批两处回退；⛔ 全树**新增**写死地址（其余 9 处按名册冻结）。"""
 
     # 现读名册（2026-10-13 09:47Z，同一把 `_hits` 尺跑出来的，⛔ 手抄）：本批只收两处，
-    # 其余登记为债＝af_bridge／bark_routes／app(2)／briefing／deskpilot(文档行)／
-    # autoflow_propose(2)／registry。名册**冻结**＝再多一处或同档多一行都要红，
+    # 其余登记为债＝af_bridge／app(2)／deskpilot(文档行)／autoflow_propose(2)／registry。
+    # 名册**冻结**＝再多一处或同档多一行都要红，
     # 这样这把尺既有牙又⛔ 一出生就恒绿／恒红（判据旁写正则原文：HARD_LAN）。
     # 1013-b215 更新本节口径：批215（NAS 线 `2292b0e` 天气基址收编）销掉
     #   `core/briefing.py`(1)＋`tools/registry.py`(1) 两行写死的 `…:3000/api/weather`
     #   ⇒ 名册 9→7 行、档数 9→7（两档从名册**整条移除**，⛔ 留 0 值占位）。
+    # 1013-b220 更新本节口径：批220（NAS 线 `15eeab5` Bark 头像基址收编）销掉
+    #   `api/bark_routes.py`(1) 那行 `os.environ.get("BUTLER_BASE_URL", "http://…:8095")`
+    #   ⇒ 名册 7→6 行、档数 7→6（本尺 10:53:11Z 先咬过一回：树面 6 vs 名册 7＝少＝名册该同步）。
     ROSTER = {"butler/af_bridge.py": 1,
-              "butler/api/bark_routes.py": 1,
               "butler/api/doubao_webhook.py": 1,
               "butler/app.py": 2,
               "butler/integrations/deskpilot.py": 1,

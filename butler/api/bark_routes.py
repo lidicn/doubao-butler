@@ -84,13 +84,14 @@ async def bark_push(request):
     if not icon and role:
         icon = ROLE_ICONS.get(role)
 
-    # 相对路径转完整 URL（Bark 服务端需要拉取图片）
-    if icon and icon.startswith("/"):
-        import os
-        base = os.environ.get("BUTLER_BASE_URL", "http://192.168.2.200:8095")
-        icon = base.rstrip("/") + icon
-
     rt = get_runtime()
+
+    # 相对路径转完整 URL（Bark 服务端需要拉取图片）：前缀只取注入的 Settings.base_url
+    if icon and icon.startswith("/"):
+        base = getattr(rt.settings, "base_url", "") or ""
+        if base:
+            icon = base.rstrip("/") + icon
+
     if rt.bark is None:
         return ok({"pushed": False, "reason": "bark_not_configured"})
 
