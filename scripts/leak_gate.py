@@ -127,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="推送前泄露闸（值比对＋用户数据路径两臂）")
     ap.add_argument("--staged", action="store_true", help="扫索引里的暂存件（钩子用这条）")
     ap.add_argument("--all", action="store_true", help="扫 HEAD 的整份名册（gates.sh 用这条）")
+    ap.add_argument("--range", dest="range_", metavar="A..B",
+                    help="逐枚扫这段区间的每一笔 commit（push 前必跑：涂销只改最新一枚，"
+                         "中间 blob 一个字节没动，而推的是整条 range）")
     ap.add_argument("--repo", default=".", help="仓库根（默认当前目录）")
     ap.add_argument("--min-len", type=int, default=MIN_VALUE_LEN)
     args = ap.parse_args(argv)
@@ -139,8 +142,8 @@ def main(argv: list[str] | None = None) -> int:
     if not env_path.exists():
         print("[GATE-UNTRUSTWORTHY] 取不到 .env ⇒ 值比对腿未量，⛔ 记成绿")
         return 2
-    if not (args.staged or args.all):
-        print("[USAGE] 要选一条腿：--staged（索引）或 --all（HEAD 全量）")
+    if not (args.staged or args.all or args.range_):
+        print("[USAGE] 要选一条腿：--staged（索引）／--all（HEAD 全量）／--range A..B（逐枚 commit）")
         return 2
 
     values, short, nonsecret = split_env_values(
@@ -148,6 +151,23 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[denominator] .env 入比对集 {len(values)} 枚（凭据语义键名＋长度≥{args.min_len} 且非占位）")
     print(f"[blind-spot] 凭据语义但值短（子串必假阳）{len(short)} 枚：{sorted(k for k, _ in short)}")
     print(f"[登记不拦] 地址/型号类键 {len(nonsecret)} 枚：{sorted(nonsecret)}")
+
+    if args.range_:
+        revs = [r for r in _git(repo, ["rev-list", args.range_]).splitlines() if r.strip()]
+        print(f"[scope] 待推区间 {args.range_} 共 {len(revs)} 枚 commit（逐枚扫整棵树）")
+        range_problems: list[str] = []
+        for rev in revs:
+            paths = [p for p in _git(repo, ["ls-tree", "-r", "--name-only", rev]).splitlines() if p.strip()]
+            problems = userdata_problems([f"{rev[:7]}:{p}" for p in paths])
+            for path, lineno, line in _candidate_lines(repo, rev, values):
+                problems += value_problems(line, path, values,
+                                           label=f"{rev[:7]} {path}:{lineno}")
+            for line in problems:
+                print("  " + line)
+            range_problems += problems
+        print("[verdict] " + (f"⛔ 待推区间命中 {len(range_problems)} 处"
+                              if range_problems else "待推区间逐枚 0 命中"))
+        return 1 if range_problems else 0
 
     listing = ("diff", "--cached", "--name-only") if args.staged else ("ls-tree", "-r", "--name-only", "HEAD")
     paths = [p for p in _git(repo, list(listing)).splitlines() if p.strip()]

@@ -24,6 +24,7 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import subprocess
+import sys
 import unittest
 
 TREE = pathlib.Path(__file__).resolve().parents[1]
@@ -199,6 +200,46 @@ class StagedScanTest(unittest.TestCase):
             self.assertEqual(out.returncode, 2,
                              f"取不到 .env 时⛔ 判绿（rc 应为 2＝本腿未量）\n{out.stdout}{out.stderr}")
             self.assertIn("未量", out.stdout)
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+
+class RangeArmTest(unittest.TestCase):
+    """C 臂：`--range A..B` 撞**待推的每一笔 blob**。
+
+    为什么 HEAD 两臂不够：涂销只改最新那一枚，中间 commit 的 blob 一个字节没动，
+    而 push 推的是**整条 range**——10-13 现读：本仓 HEAD 跑 --all＝0 命中，
+    同一条尺跑 `origin/main..HEAD` 逐枚＝12 枚里 10 枚带真值。⛔ 这一臂的尺等于没有。
+    """
+
+    def test_range_helper_reports_which_commit_carries_the_value(self):
+        import shutil
+        import subprocess
+        import tempfile
+        td = pathlib.Path(tempfile.mkdtemp(prefix="b208_range_"))
+        try:
+            gate = _load_gate()
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=td, capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.email", "t@t"], cwd=td, capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.name", "t"], cwd=td, capture_output=True, check=True)
+            (td / ".env").write_text("BARK_KEY=SYNTHbarkkey0123456789AB\n", encoding="utf-8")
+            (td / "readme.md").write_text("起点\n", encoding="utf-8")
+            subprocess.run(["git", "add", "readme.md"], cwd=td, capture_output=True, check=True)
+            subprocess.run(["git", "commit", "-qm", "起点"], cwd=td, capture_output=True, check=True)
+            base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=td,
+                                  capture_output=True, text=True).stdout.strip()
+            (td / "note.md").write_text("key: SYNTHbarkkey0123456789AB\n", encoding="utf-8")
+            subprocess.run(["git", "add", "note.md"], cwd=td, capture_output=True, check=True)
+            subprocess.run(["git", "commit", "-qm", "带真值那笔"], cwd=td, capture_output=True, check=True)
+            (td / "note.md").write_text("key: 已涂销\n", encoding="utf-8")
+            subprocess.run(["git", "commit", "-qam", "涂销那笔"], cwd=td, capture_output=True, check=True)
+            out = subprocess.run([sys.executable, str(GATE), "--range", f"{base}..HEAD",
+                                  "--repo", str(td)],
+                                 capture_output=True, text=True)
+            self.assertEqual(out.returncode, 1,
+                             f"HEAD 干净但待推面带真值 ⇒ 该拦没拦 rc={out.returncode}\n{out.stdout}")
+            self.assertIn("BARK_KEY", out.stdout)
+            self.assertNotIn("SYNTHbark", out.stdout)
         finally:
             shutil.rmtree(td, ignore_errors=True)
 
