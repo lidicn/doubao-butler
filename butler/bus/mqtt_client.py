@@ -10,9 +10,8 @@ import json
 import logging
 import time
 
-import paho.mqtt.client as mqtt
-from paho.mqtt.client import CallbackAPIVersion
-
+from homesdk.adm.status import decode_status
+from homesdk.mqtt import broker_settings, get_client, resolve_credentials
 from homesdk.presence import advertise
 
 from butler import __version__
@@ -37,28 +36,27 @@ class MQTTClient:
         self.on_result = None  # 由 app 注入 (payload)->None；zap-tv 回执短路通道
         self.connected = asyncio.Event()
         self.dropped = 0                  # P1-3：队列满丢件计数（⛔ 只打日志＝丢了多少不可查）
-        self._client = mqtt.Client(
-            callback_api_version=CallbackAPIVersion.VERSION2,
-            client_id=settings.mqtt_client_id,
-            clean_session=False,
-        )
-        self._client.username_pw_set(settings.mqtt_user, settings.mqtt_password)
+        # 模块4（批137）：凭据与地址的取值收编 homesdk.mqtt——缺凭据/半对（只带用户名）
+        # 都在**构造期**抛 MqttCredentialsMissing，⛔ 匿名回退（匿名接入＝拿到这套网络
+        # 就能指挥全屋）。client_id 仍随 settings.mqtt_client_id（库内 default_client_id 不顶替）。
+        creds = resolve_credentials(peer="butler")
+        self._mqtt_user = creds[0]
+        self._client = get_client(client_id=settings.mqtt_client_id, peer="butler")
         # ADM_STATUS 心跳周期。caps 里的 hb/stale 两格、以及心跳协程实际睡的时长，
         # 都由这一枚派生——⛔ 三处各写一个 60（下发的是 60、实际跳 90 那类自相矛盾）。
         self.adm_hb_interval = 60.0
         # LWT／在线／下线三条腿在 start()／_publish_adm_online()／stop() 经 presence.advertise 落地
         # （paho 的遗嘱随 CONNECT 报文注册，⛔ 拖到连接之后；心跳每轮重挂 will 只是本地更新，
         # 对 wire 无副作用）。载荷＝契约 v2.0 §7.1 的 encode_status JSON，⛔ 字面量。
-        # ⚠ 本文件的**消费**腿此刻仍走字面量分支（`_on_message` 里 `text.strip()`，属批137/138
-        #   未授权恢复的范围）——判读单点在 `butler/bus/topics.py::adm_status_is_online`，
-        #   它旧字面量与新 JSON 都读得懂，所以在线判定不受影响（DB-02 回执 五 登记）。
+        # 消费腿走 decode_status（批207 按判例三恢复被 28310ab 删掉的行）；在线判定的
+        # 单点仍在 `butler/bus/topics.py::adm_status_is_online`——旧字面量与新 JSON 都读得懂。
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.on_message = self._on_message
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
-            logger.info("MQTT connected as %s", self.s.mqtt_user)
+            logger.info("MQTT connected as %s", self._mqtt_user)
             for t in SUB_TOPICS:
                 client.subscribe(t, qos=1)
             self._publish(PUB_STATUS, {"online": True, "ts": time.time()}, qos=1, retain=True)
@@ -109,11 +107,15 @@ class MQTTClient:
             text = raw.decode("utf-8", "replace")  # 行为不变：仍然尽力解，只是从此有声
         if "\ufffd" in text:
             self._note_bad_payload(msg.topic, raw, "含替换符U+FFFD")
-        # ADM 生态链约定：adm/<成员>/status 载荷是字面量 online/offline（非 JSON）。
-        # 契约表 §1.1 + homesdk.presence.is_online 同式——这里必须跳过 JSON 解析，
-        # 否则字面量在 json.loads 阶段就被丢弃，adm_peers 永远空（MA联动收尾附带发现）。
+        # ADM 生态链约定（契约 v2.0 §7.1／homesdk 0.3.2）：adm/<成员>/status 载荷是 JSON，
+        # 消费一律过 decode_status——它同时兼容旧字面量 online/offline（不丢弃、不抛错），
+        # 过渡期对端没升级也不会丢件；真正解不开的才记坏件并丢弃。
         if msg.topic.startswith("adm/") and msg.topic.endswith("/status"):
-            payload = text.strip()
+            try:
+                payload = decode_status(text)
+            except ValueError:
+                self._note_bad_payload(msg.topic, raw, "ADM status载荷不可解")
+                return
         else:
             try:
                 payload = json.loads(text)
@@ -148,7 +150,9 @@ class MQTTClient:
         # LWT 必须在 CONNECT 之前随 advertise 注册（paho 把遗嘱装进 CONNECT 报文）；
         # 这条只挂 LWT＋首发在线，caps 腿在 _on_connect→_publish_adm_online（连接确立后）。
         advertise(self._client, ADM_MEMBER, version=ADM_PLAN_VERSION)
-        self._client.connect_async(self.s.mqtt_host, self.s.mqtt_port, keepalive=60)
+        # 地址不内置：MQTT_HOST 缺失当场 MissingEnv，connect 根本不发（库内零私网地址）。
+        host, port, keepalive = broker_settings()
+        self._client.connect_async(host, port, keepalive=keepalive)
         self._client.loop_start()
 
     def stop(self) -> None:

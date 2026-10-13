@@ -114,10 +114,16 @@ class PublishLegBehaviour(unittest.TestCase):
 
     def setUp(self):
         _FakePahoClient.instances = []
-        p = mock.patch.object(mqtt_client_mod.mqtt, "Client",
-                              lambda *a, **kw: _FakePahoClient())
-        p.start()
-        self.addCleanup(p.stop)
+        # 构造腿走 homesdk.mqtt 三入口（批137 收编，批207 按判例三恢复）⇒ 替身钉在入口上，
+        # ⛔ 再钉 `mqtt.Client`（那读的是 28310ab 造出来的手写形状；夹具与批138 同形）。
+        for target, stub in (
+            ("get_client", lambda *a, **kw: _FakePahoClient()),
+            ("resolve_credentials", lambda *a, **k: ("u", "p")),
+            ("broker_settings", lambda *a, **k: ("h", 1883, 60)),
+        ):
+            p = mock.patch.object(mqtt_client_mod, target, stub)
+            p.start()
+            self.addCleanup(p.stop)
         self.mc = mqtt_client_mod.MQTTClient(_fake_settings(), mock.MagicMock())
         self.paho = _FakePahoClient.instances[-1]
 
