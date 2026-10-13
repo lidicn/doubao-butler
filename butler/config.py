@@ -4,12 +4,13 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from butler.core.atomic_json import read_json_object
 
 logger = logging.getLogger("butler.config")
 
@@ -414,17 +415,21 @@ class Settings:
         return s
 
     def _load_persona(self) -> None:
-        """从 DATA_DIR/config.json 读取人格/成员/规则覆盖（不覆盖环境变量里的连接配置）。"""
+        """从 DATA_DIR/config.json 读取人格/成员/规则覆盖（不覆盖环境变量里的连接配置）。
+
+        读法走批70b 的共用尺子 `read_json_object`（「读不出来≠没有」那把唯一判定）：原先这里自带
+        一套 `json.loads(read_text())` ＋ 顶层判别，与那把尺子逐字重复——全仓每多一把自开的 JSON
+        读尺，「坏档被当成出厂状态」这类判定就多一处要各修各的地方。
+        """
         cfg_path = Path(self.data_dir) / "config.json"
-        if not cfg_path.exists():
-            return
-        try:
-            raw = json.loads(cfg_path.read_text(encoding="utf-8"))
-        except Exception as e:
-            logger.error("config.json persona load failed, keeping defaults: %s (path=%s)", e, cfg_path)
-            return
-        if not isinstance(raw, dict):
-            logger.error("config.json top-level is %s, not an object — ignoring persona overrides", type(raw).__name__)
+        raw, unreadable = read_json_object(cfg_path)
+        if unreadable:
+            logger.error(
+                "config.json exists but will not parse (corrupt, undecodable, or its top level "
+                "is not an object): %s - persona and members keep their built-in defaults, the "
+                "file on disk is left untouched for manual recovery",
+                cfg_path,
+            )
             return
         pc = self.persona
         if isinstance(raw.get("system"), str):
