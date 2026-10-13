@@ -16,6 +16,8 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from pathlib import Path as _Path
 
+from homesdk.time import house_tz_name
+
 from butler.api import (
     agent_routes,
     audiobook_routes,
@@ -377,7 +379,7 @@ def _build_app() -> Starlette:
             try:
                 from butler.core.tts_baidu import BaiduTTS
                 rt.baidu_tts = BaiduTTS(api_key=_baidu_key, secret_key=_baidu_secret)
-                logger.info("baidu tts initialized")
+                logger.info("baidu tts object built — 未接入发声名册（DCD 20261009 裁丙：待接线登记，不静默当在役）")
             except Exception as e:
                 logger.warning("baidu tts init failed: %s", e)
                 rt.baidu_tts = None
@@ -602,7 +604,7 @@ def _build_app() -> Starlette:
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-            sched = AsyncIOScheduler(timezone="Asia/Shanghai")
+            sched = AsyncIOScheduler(timezone=house_tz_name())
             _tts_cleanup_job = reg.wrap_scheduler_job("sched:tts_cleanup", lambda: asyncio.run_coroutine_threadsafe(tts.cleanup_old(7), _main_loop))
             reg.register("sched:tts_cleanup", "scheduler", "TTS 旧音频清理", expected_interval_sec=86400, description="每天 04:10 清理 7 天前的 TTS 缓存")
             safe_add_job(sched, scheduler_job_failures, _tts_cleanup_job, "cron", hour=4, minute=10, id="tts_cleanup")
@@ -745,7 +747,7 @@ def _build_app() -> Starlette:
                 await push_briefing(rt, "evening")
             safe_add_job(sched, scheduler_job_failures, _morning_briefing, "cron", hour=7, minute=10, id="morning_briefing", max_instances=1)
             safe_add_job(sched, scheduler_job_failures, _evening_briefing, "cron", hour=22, minute=0, id="evening_briefing", max_instances=1)
-            logger.info("LLM briefing scheduled: 7:10 morning, 22:00 evening (Asia/Shanghai)")
+            logger.info(f"LLM briefing scheduled: 7:10 morning, 22:00 evening ({house_tz_name()})")
 
             # v1.7 感知自进化：凌晨 4:00 分析事件流发现行为模式
             async def _perception_learn_job():
@@ -840,6 +842,17 @@ def _build_app() -> Starlette:
             yield
         finally:
             consumer.cancel()
+            # 批190·P1-11（合并行 #11 最后两条腿之一）：`_consume` 的 except 只兜 `queue.get()`
+            # 那一眼（`:106`），分发腿兜的是 `except Exception`（`:178`）——CancelledError 在 3.8+
+            # 是 BaseException，会从正在 `await rt.inbox.handle(...)`／`await rt.dialog.on_event(...)`
+            # 的那一轮逃出去。所以裸 `cancel()` 之后不 await，分发腿就可能压在 `mqtt.stop()` 与
+            # `close()` 之后回头往已关的通道里写。`CancelledError` 要一起兜：它正是上面那条形状
+            # 的产物，漏了它整条关停序列会从这一枚炸出去。
+            try:
+                await asyncio.wait_for(consumer, timeout=2.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as e:
+                consumer.cancel()      # 超时没收回＝再钉一次取消标志，⛔ 让收尾卡在这里
+                logger.warning("consumer shutdown wait failed: %s", e)
             # P1-5 后半：定位轮询⛔ 是 consumer 的下属，它有独立的退出闩与收尾，
             # 且必须排在 close() 之前（晚一步就是往已关闭的连接里写）。
             _stop = getattr(rt, "_stop_event", None)
@@ -852,6 +865,48 @@ def _build_app() -> Starlette:
                     await asyncio.wait_for(_pt, timeout=2.0)
                 except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
                     _pt.cancel()          # 超时没收回＝再钉一次取消标志，⛔ 让收尾卡在这里
+            # 归档《缺陷汇总》合并行 #11「关停不收尾」的三条腿（批177）：
+            # 三条都排在 mqtt.stop() 与 close() 之前——晚一步就是往已关的通道里写。
+            # 每条各自吞异常并记 WARNING：关停腿⛔ 因为一个收尾失败而卡死后面的收尾。
+            try:
+                from butler import af_bridge  # 关停腿自带导入：⛔ 依赖启动腿那一次是否走到
+                await asyncio.wait_for(af_bridge.stop(), timeout=2.0)
+            except Exception as e:
+                logger.warning("af_bridge stop failed: %s", e)
+            try:
+                if getattr(rt, "ilink_bridge", None) is not None:
+                    rt.ilink_bridge.stop()
+            except Exception as e:
+                logger.warning("ilink bridge stop failed: %s", e)
+            try:
+                if getattr(rt, "tts", None) is not None:
+                    await asyncio.wait_for(rt.tts.queue.shutdown(), timeout=2.0)
+            except Exception as e:
+                logger.warning("playback queue shutdown failed: %s", e)
+            # 批189·P1-11：起了后台循环却没人停的两条腿。`rt.event_stream`（`app.py:817` 起，
+            # 释放腿 `core/event_stream.py:104` 早就在、此前全仓 0 调用者）与小米换票循环
+            # （`integrations/ha.py:64` 起 `while True` 每 2h 一次，此前连停止 API 都没有）。
+            # 两条都排在 mqtt.stop() 与 close() 之前——event_stream 的持久化腿往 `store.db`
+            # 写 `home_events`、失败还落 `write_failures` 台账，而那两枚正是本函数最后收的连接。
+            try:
+                if getattr(rt, "event_stream", None) is not None:
+                    rt.event_stream.stop()
+            except Exception as e:
+                logger.warning("event_stream stop failed: %s", e)
+            try:
+                if getattr(rt, "ha", None) is not None:
+                    rt.ha.stop_xiaomi_token_refresh()
+            except Exception as e:
+                logger.warning("xiaomi token refresh stop failed: %s", e)
+            # 批190·P1-11（合并行 #11 最后一条腿）：两张「播完该停」的 watch 表（`ha.py` 的
+            # `_xiaomi_watch_tasks` 实例级／`_media_stop_tasks` 类级）此前只有起腿：每 0.2s 读一次
+            # HA 状态、到点连发 5 次 `media_pause`——进程收摊时再发一帧＝往正在拆的 httpx 客户端与
+            # HA token 里写。
+            try:
+                if getattr(rt, "ha", None) is not None:
+                    rt.ha.cancel_watch_tasks()
+            except Exception as e:
+                logger.warning("media stop watch tasks cancel failed: %s", e)
             mqtt.stop()
             try:
                 if hasattr(rt, "xiaomi_ear"):
@@ -865,6 +920,36 @@ def _build_app() -> Starlette:
             from butler.store.db import close
 
             close()
+            # 批186·P1-11：关停此前只关 `store.db` 一枚，另外八枚进程级缓存连接（各自一条
+            # `sqlite3.connect`，同一把 `singleton` 锁）没人收，只能等进程退出由 OS 回收——
+            # 换 DATA_DIR／重建时旧句柄占着 WAL 与 db 文件。释放腿真身在 `core/singleton.release`。
+            from butler.core import decision_store, notification_store, pwa_chat_store, user_location
+            from butler.ha_tools import whitelist
+            from butler.proactive import engine as proactive_engine
+            from butler.store import task_store
+            from butler.timeseries import store as timeseries_store
+
+            for _m in (decision_store, notification_store, pwa_chat_store, user_location,
+                       whitelist, proactive_engine, task_store, timeseries_store):
+                try:
+                    _m.close_conn()
+                except Exception as e:
+                    logger.warning("store conn release failed: %s %s", _m.__name__, e)
+
+            # 批188·P1-11：上面八枚是模块级 `_conn`。另有三条腿收在同一个形制下——
+            # 台账连接 `store/write_failures.py`（模块级，释放腿早就有 `_reset_conn` 却没接进关停）
+            # 与两枚进程级单例 `rt.presence_store`／`rt.inbox` 的实例级 `self._conn`。
+            from butler.store import write_failures
+
+            _rest = [write_failures] + [getattr(rt, _n, None) for _n in ("presence_store", "inbox")]
+            for _m in _rest:
+                if _m is None:
+                    continue          # 启动未到那一行就被关停：没建过的单例⛔ 当成失败
+                try:
+                    _m.close_conn()
+                except Exception as e:
+                    logger.warning("store conn release failed: %s %s",
+                                   getattr(_m, "__name__", type(_m).__name__), e)
 
     app = Starlette(
         routes=routes,

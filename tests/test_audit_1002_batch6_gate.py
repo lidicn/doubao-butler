@@ -169,8 +169,8 @@ class ProductionRosterTest(unittest.TestCase):
 
 ANCHORS = [
     ("integrations/tv.py", "TVClient", "notify", 54),
-    ("bus/mqtt_client.py", "MQTTClient", "start", 146),  # 批138 re-anchor 149→146（will 腿并进 advertise）
-    ("bus/mqtt_client.py", "MQTTClient", "stop", 156),   # 批138 re-anchor 155→156
+    ("bus/mqtt_client.py", "MQTTClient", "start", 149),  # 批138 re-anchor 149→146（will 腿并进 advertise）；1013-b207R2 re-anchor 146→149（`59a0beb` 补回 28310ab 删掉的三腿——**这枚 def 体自己也回了 LWT 两行注释**，锚点只撑 kind=sync，`def_at` 现读仍 sync⇒判定未变）
+    ("bus/mqtt_client.py", "MQTTClient", "stop", 158),   # 批138 re-anchor 155→156；1013-b207R2 re-anchor 156→158（同上，`def_at` 现读 kind=sync）
     ("integrations/ilink/bridge.py", "ILinkBridge", "start", 56),
     ("integrations/ilink/bridge.py", "ILinkBridge", "stop", 67),
     ("core/event_stream.py", "EventStream", "start", 97),   # 1011-b201 re-anchor 96→97（批201 DB47 顶部净插 1 行 import，def 本体一字未动，门自己现读报的数）
@@ -185,8 +185,8 @@ ANCHORS = [
     ("core/xiaomi_ear.py", "XiaomiEar", "start", 45),   # 批166 re-anchor 29→30（件五乙：头注「点名才答」占两行）；批194 A9 re-anchor 30→44（同上，模块级净插 14 行）
     ("core/xiaomi_ear.py", "XiaomiEar", "stop", 52),    # 批166 re-anchor 36→37（同上）；批194 A9 re-anchor 37→51（同上）
     ("core/aliases.py", "AliasStore", "delete_alias", 99),  # 批164 re-anchor 93→99（D5：别名路径改成惰性 alias_file()）
-    ("core/cron_task.py", "CronTaskExecutor", "register_api", 143),  # 批180 re-anchor 140→143（顶部导入 url_guard 净插 3 行，def 本体一字未动）
-    ("core/cron_task.py", "CronTaskExecutor", "unregister_api", 162),  # 批180 re-anchor 159→162（同上；批179 那次是 docstring 变两行）
+    ("core/cron_task.py", "CronTaskExecutor", "register_api", 170),  # 批180 re-anchor 140→143（顶部导入 url_guard 净插 3 行，def 本体一字未动）；1013-b207R3 re-anchor 143→170（`c5a3c3a` 按 parent 文本重建＋补回 `_resolve_headers`/`_recheck_url` 两枚，两条 def 本体回到批180 那遍的形制，`def_at` 现读 kind=sync）
+    ("core/cron_task.py", "CronTaskExecutor", "unregister_api", 189),  # 批180 re-anchor 159→162（同上；批179 那次是 docstring 变两行）；1013-b207R3 re-anchor 162→189（同上）
     ("store/write_failures.py", "", "record", 93),  # 批188 re-anchor 87→93（新增 `close_conn` 释放腿 6 行；def 本体一字未动，`def_at` 现读 kind=sync）
 ]
 

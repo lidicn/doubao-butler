@@ -83,11 +83,27 @@ SITES = [
     #   905=`rt.xiaomi_ear.stop()`、909=`rt._sched.shutdown(False)`⇒判定与重钉前一致。
     #   同文件另有 2 枚同名调用未在册（L541 `await af_bridge.start()`＝WRAPPED、
     #   L1114 `t.start()`＝`def _start_evolution_scheduler` 里的 threading.Thread）。
-    ("app.py", 506, "start"),
-    ("app.py", 583, "start"),
-    ("app.py", 796, "start"),
-    ("app.py", 811, "start"),
+    # 1013-b207R1-REANCHOR app.py 11 枚全部重钉：**本节口径覆盖批197／批189／批190 的落点登记**。
+    #   漂移源＝`28310ab` 把批152／批177／批186／批188／批189／批190 的生产腿整段删走，R1 按判例三
+    #   逐块补回（`workorders/根因单-R1-关停腿与批6点名册-20261013.md`）：lifespan 上方补回
+    #   `from homesdk.time import house_tz_name`（+2），`finally` 里补回 consumer await 腿（+11）、
+    #   批177/189/190 五枚关停腿（+42）、批186/188 九枚 `close_conn`（+30）。五枚 start 只受上方
+    #   +2 影响、六枚 stop 另受 `finally` 内插段影响⇒**位移不等（+5 与 +7/+8）**，这正是⛔ 靠算术、
+    #   必须逐枚现读的原因。探针与读数：`workorders/tmp/b213_r1_b6_relocate.py`
+    #   →`workorders/readings/1013/b213_r1_b6_relocate_1013.txt`（AST 按「接收者＋叶名」取点，
+    #   包围函数 11/11 现读均为 `lifespan`，原文逐枚与上一节注释同名）。逐枚点开：
+    #   511=`rt.ilink_bridge.start()`、588=`mqtt.start()`、804=`sched.start()`、
+    #   819=`rt.xiaomi_ear.start()`、827=`rt.event_stream.start()`、893=`rt.event_stream.stop()`、
+    #   898=`rt.ha.stop_xiaomi_token_refresh()`、907=`rt.ha.cancel_watch_tasks()`、
+    #   910=`mqtt.stop()`、913=`rt.xiaomi_ear.stop()`、917=`rt._sched.shutdown(False)`
+    #   ⇒判定与重钉前一致（前五枚＋907/910/913 SYNC_OK，804/917 EXTERNAL_SYNC）。
+    #   同文件另有 2 枚同名调用未在册（现读 L546 `await af_bridge.start()`＝WRAPPED、
+    #   L1122 `t.start()`＝`def _start_evolution_scheduler` 里的 threading.Thread）。
+    ("app.py", 511, "start"),
+    ("app.py", 588, "start"),
+    ("app.py", 804, "start"),
     ("app.py", 819, "start"),
+    ("app.py", 827, "start"),
     # 1011-b190-REANCHOR 872→883 / 877→888 / 880→900 / 883→903 / 887→907：**本节口径覆盖批189
     #   的落点登记**——漂移源＝批190（合并行 #11 最后两条腿）在 `finally` 里净插两段：
     #   `consumer.cancel()` 之后补 `await asyncio.wait_for(consumer, timeout=2.0)`（+11 行，
@@ -99,12 +115,12 @@ SITES = [
     #   ⇒ 前五枚 SYNC_OK、末枚 APScheduler 外部同步 EXTERNAL_SYNC，判定与重钉前一致。
     #   历史（批189 那遍的读数，已被上面覆盖）：865→880 / 868→883 / 872→887，
     #   新入册两枚 872／877 ⇒ 名册 29→31、SYNC_OK 20→22。
-    ("app.py", 885, "stop"),
-    ("app.py", 890, "stop_xiaomi_token_refresh"),
-    ("app.py", 899, "cancel_watch_tasks"),
-    ("app.py", 902, "stop"),
-    ("app.py", 905, "stop"),
-    ("app.py", 909, "shutdown"),
+    ("app.py", 893, "stop"),
+    ("app.py", 898, "stop_xiaomi_token_refresh"),
+    ("app.py", 907, "cancel_watch_tasks"),
+    ("app.py", 910, "stop"),
+    ("app.py", 913, "stop"),
+    ("app.py", 917, "shutdown"),
     # 批195 re-anchor 513→527 / 655→669：`_observe_presence` 助手在 `__init__` 下方净插 14 行，
     #   两条调用点本体一字未动（⛔ 加减行号，按符号 `self.tv.notify` / `XiaomiEar.note_speak` 重钉）。
     # 批194 A1 re-anchor 527→550 / 643→666：`match_role_by_text` 改锚定版在两条调用点**上方**净插 23 行
