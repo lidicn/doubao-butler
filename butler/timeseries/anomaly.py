@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from butler.config import get_settings
 from butler.logging_setup import get_logger, warn_throttled
 from butler.timeseries import store as ts
 
@@ -165,20 +166,21 @@ class AnomalyDetector:
         if current_mode != "sleep":
             return events
 
-        # 检查定位引擎：lidicn 是否在主卧且无活动
+        # 检查定位引擎：主成员是否在主卧且无活动
         if self.rt and hasattr(self.rt, "presence_engine"):
             try:
+                member = get_settings().primary_member
                 snapshot = self.rt.presence_engine.snapshot()
-                lidicn_loc = snapshot.get("users", {}).get("lidicn", {})
-                room = lidicn_loc.get("room", "")
-                confidence = lidicn_loc.get("confidence", 0)
+                loc = snapshot.get("users", {}).get(member, {})
+                room = loc.get("room", "")
+                confidence = loc.get("confidence", 0)
                 if "主卧" in room and confidence >= 0.6:
                     events.append(AnomalyEvent(
-                        key=f"no_activity_lidicn_{time.strftime('%Y%m%d')}",
-                        entity_id="person.lidicn",
+                        key=f"no_activity_{member}_{time.strftime('%Y%m%d')}",
+                        entity_id=f"person.{member}",
                         anomaly_type="abnormal",
                         severity="info",
-                        message=f"工作日 {hour}:00 后 lidicn 仍在主卧（睡眠模式），可能起床异常，建议关怀提醒。",
+                        message=f"工作日 {hour}:00 后 {member} 仍在主卧（睡眠模式），可能起床异常，建议关怀提醒。",
                         recoverable=False,  # 窗口型规则：11:00 窗闭≠起床异常恢复，⛔ 发恢复条
                     ))
             except Exception as e:
