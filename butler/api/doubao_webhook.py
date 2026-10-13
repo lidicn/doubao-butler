@@ -50,6 +50,7 @@ from starlette.responses import JSONResponse
 from butler.core import data_paths
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
+from butler.roles.state import read_role_state
 from butler.store import repo
 from butler.notifier.app import is_self_push
 
@@ -78,17 +79,18 @@ def role_state_file() -> Path:
 
 
 def _conversation_to_role(conversation_id: str) -> str | None:
-    """根据 conversation_id 反向查找角色 ID（读 role_state.json）。"""
-    state_path = role_state_file()
-    if not state_path.exists():
-        return None
-    try:
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-        for role_id, state in data.items():
-            if state.get("conversation_id") == conversation_id:
-                return role_id
-    except Exception as e:
-        logger.warning("read role_state failed: %s", e)
+    """根据 conversation_id 反向查找角色 ID。
+
+    读侧一律走 `roles.state.read_role_state`（批70b 收敛尺子 `read_json_object` 的读者壳，缺档与
+    坏档都兜底空 dict、⛔ 抛穿）。原先这里自带一套 `json.loads(path.read_text())`：① 这张档已有
+    两枚写手（`roles/state.py`、`memory/feeder.py`），读侧再开一把口径＝批164 D5 同一族分叉；
+    ② 遍历前⛔ `isinstance(state, dict)` 判别，盘上任一枚坏值（写手崩在半路、人工修档把值写成
+    裸字符串）第一次 `.get` 就抛 `AttributeError`，被同一个 `except Exception` 吞成一行 warning ⇒
+    **后面本来能命中的角色整批看不见**，手机端表现为消息静默丢弃。
+    """
+    for role_id, state in read_role_state(role_state_file()).items():
+        if isinstance(state, dict) and state.get("conversation_id") == conversation_id:
+            return role_id
     return None
 
 
