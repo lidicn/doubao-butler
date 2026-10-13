@@ -185,8 +185,12 @@ SITES = [
     # 1010-b170-REANCHOR: 217→223、483→490（批151 `92ede7a` 在 handle_event 之前净插 6 行，
     #   两枚 record 本体一字未动；现读包围函数 `async def _record_evaluation:209-225`、
     #   `async def _fire:365-493`，同步冷却写路径那 3 枚仍在 72/106/128，照旧未在册）。
-    ("triggers/engine.py", 223, "record"),
-    ("triggers/engine.py", 490, "record"),
+    # 1013-b219-REANCHOR: 223→225、490→496（批219 给 `_in_time_range` 换家庭墙钟：文件头 +2 行
+    #   `from homesdk.time import house_now`，`_in_time_range` 的 docstring 在两枚之间再 +4 行，
+    #   故前一枚只走 2、后一枚走 6。两枚 record 本体一字未动，现读 `grep -n record(` 恰这五枚：
+    #   在册两枚落 225/496，同步冷却那三枚同批漂到 74/108/130（照旧未在册）。行号按现读⛔ 算术。）
+    ("triggers/engine.py", 225, "record"),
+    ("triggers/engine.py", 496, "record"),
 ]
 
 WRAPPERS = ("create_task", "ensure_future", "run_coroutine_threadsafe",

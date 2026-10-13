@@ -14,6 +14,8 @@ import time
 import uuid
 from datetime import datetime
 
+from homesdk.time import house_now
+
 from butler.core.trace_ctx import current_trace_id
 from butler.logging_setup import get_logger
 from butler.store import repo, write_failures
@@ -317,12 +319,16 @@ class TriggerEngine:
 
     @staticmethod
     def _in_time_range(time_range: str) -> bool:
-        """判断当前时间是否在 HH:MM-HH:MM 范围内（支持跨午夜，如 22:00-06:00）。"""
+        """判断家庭墙钟此刻是否在 HH:MM-HH:MM 范围内（支持跨午夜，如 22:00-06:00）。
+
+        钟源＝`homesdk.time.house_now()`：容器 `TZ` 只写在 `docker-compose.yml` 一行里，
+        那行没了或被改成 UTC 时裸钟会把所有时段窗口整体平移，且零日志（批153）。
+        """
         m = re.match(r"^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$", time_range.strip())
         if not m:
             return True
         h1, m1, h2, m2 = map(int, m.groups())
-        now = datetime.now()
+        now = house_now()
         cur = now.hour * 60 + now.minute
         start = h1 * 60 + m1
         end = h2 * 60 + m2
