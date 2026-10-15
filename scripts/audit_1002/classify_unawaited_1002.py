@@ -134,11 +134,31 @@ SITES = [
     #   L879 `await asyncio.wait_for(af_bridge.stop())`＝WRAPPED、
     #   L889 `await asyncio.wait_for(rt.tts.queue.shutdown())`＝WRAPPED、
     #   L1128 `t.start()`＝`def _start_evolution_scheduler` 里的 threading.Thread。
-    ("app.py", 517, "start"),
-    ("app.py", 594, "start"),
-    ("app.py", 810, "start"),
-    ("app.py", 825, "start"),
-    ("app.py", 833, "start"),
+    #   ⚠ 本节的行号（517／594／810／825／833／899／904／913／916／919／923）
+    #   已被 1015-b224-REANCHOR 覆盖 ⇒ 现读落点见下面那一节。
+    # 1015-b224-REANCHOR 本文件 11 枚全部重钉：**本节口径覆盖批221 的落点登记**。
+    #   漂移源＝批224（DB127 tri-state）两处净插都在全部 11 枚上方：档顶 import 组 +1
+    #   （`from homesdk.adm.errors import ...` 一枚，`adm_status_is_online` 那行换成三枚符号但
+    #   行本身没增）＋ `_consume` 里 adm status 判读段 +6（diff +14/−7＝净 +7，⛔ 靠 +7 算术）。
+    #   逐枚按「接收者链＋叶名」现读点开（探针 `workorders/tmp/b419_b6_relocate.py` →
+    #   `workorders/readings/1015/b547_b6_relocate_face_1015.txt`；同叶名候选 `start` 7 枚／
+    #   `stop` 5 枚／`shutdown` 2 枚，靠接收者区分，⛔ 靠行号顺序猜）：
+    #   524=`rt.ilink_bridge.start()`、601=`mqtt.start()`、817=`sched.start()`、
+    #   832=`rt.xiaomi_ear.start()`、840=`rt.event_stream.start()`、906=`rt.event_stream.stop()`、
+    #   911=`rt.ha.stop_xiaomi_token_refresh()`、920=`rt.ha.cancel_watch_tasks()`、
+    #   923=`mqtt.stop()`、926=`rt.xiaomi_ear.stop()`、930=`rt._sched.shutdown(False)`
+    #   ⇒ 名册 33、SYNC_OK 24、EXTERNAL_SYNC 9 **计数未动**，判定逐枚不变。
+    #   未在册同名调用（同探针现读，本批⛔ 动过）：L559 `await af_bridge.start()`＝WRAPPED、
+    #   L886 `await asyncio.wait_for(af_bridge.stop())`＝WRAPPED、
+    #   L891 `rt.ilink_bridge.stop()`（锚点现读 kind=sync⇒本就不是漏 await）、
+    #   L896 `await asyncio.wait_for(rt.tts.queue.shutdown())`＝WRAPPED、
+    #   L1135 `t.start()`＝`def _start_evolution_scheduler` 里的 threading.Thread。
+    ("app.py", 524, "start"),
+    ("app.py", 601, "start"),
+    ("app.py", 817, "start"),
+    ("app.py", 832, "start"),
+    ("app.py", 840, "start"),
+
     # 1011-b190-REANCHOR 872→883 / 877→888 / 880→900 / 883→903 / 887→907：**本节口径覆盖批189
     #   的落点登记**——漂移源＝批190（合并行 #11 最后两条腿）在 `finally` 里净插两段：
     #   `consumer.cancel()` 之后补 `await asyncio.wait_for(consumer, timeout=2.0)`（+11 行，
@@ -152,12 +172,14 @@ SITES = [
     #   新入册两枚 872／877 ⇒ 名册 29→31、SYNC_OK 20→22。
     #   ⚠ 上面两节的行号（883／888／897／900／903／907 与 893／898／907／910／913／917）
     #   已被 1015-b221-REANCHOR 覆盖 ⇒ 现读落点见那一节，⛔ 按本节的旧行号找码。
-    ("app.py", 899, "stop"),
-    ("app.py", 904, "stop_xiaomi_token_refresh"),
-    ("app.py", 913, "cancel_watch_tasks"),
-    ("app.py", 916, "stop"),
-    ("app.py", 919, "stop"),
-    ("app.py", 923, "shutdown"),
+    #   ⚠ 1015-b221 那六枚（899／904／913／916／919／923）又已被 1015-b224-REANCHOR 覆盖
+    #   （见本档上面那段：落点 906／911／920／923／926／930，接收者逐枚现读）。
+    ("app.py", 906, "stop"),
+    ("app.py", 911, "stop_xiaomi_token_refresh"),
+    ("app.py", 920, "cancel_watch_tasks"),
+    ("app.py", 923, "stop"),
+    ("app.py", 926, "stop"),
+    ("app.py", 930, "shutdown"),
     # 批195 re-anchor 513→527 / 655→669：`_observe_presence` 助手在 `__init__` 下方净插 14 行，
     #   两条调用点本体一字未动（⛔ 加减行号，按符号 `self.tv.notify` / `XiaomiEar.note_speak` 重钉）。
     # 批194 A1 re-anchor 527→550 / 643→666：`match_role_by_text` 改锚定版在两条调用点**上方**净插 23 行

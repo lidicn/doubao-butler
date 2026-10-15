@@ -46,6 +46,13 @@ B. **现网点开的调用点名单**：`gate(butler/, SITES)` 必须 0 枚 ASYN
    `agent_routes.py` 159→160），逐枚按「接收者链＋叶名」现读点开（探针 `workorders/tmp/b419_b6_relocate.py`
    →`workorders/tmp/b419_b6_relocate_face.txt`；`start`／`stop` 两族同名候选 5／7 枚，⛔ 靠行号顺序猜），
    app.py 11 枚包围函数现读均为 `lifespan` ⇒ 名册 33、SYNC_OK 24、锚点 16 **计数未动**，判定逐枚不变。
+   **1015-b224 更新本节口径**：批224（DB127 tri-state）在 `butler/app.py` 档顶 import 组净插 1 行
+   （`from homesdk.adm.errors import ...`）＋`_consume` 的 adm status 判读段净插 6 行（diff +14/−7），
+   两处都在 11 枚上方⇒整体下移；逐枚按「接收者链＋叶名」现读点开（探针 `workorders/tmp/b419_b6_relocate.py`
+   →`workorders/readings/1015/b547_b6_relocate_face_1015.txt`；⛔ 靠 +7 算术、⛔ 靠行号顺序猜，
+   `start` 族同叶名候选 7 枚／`stop` 5 枚／`shutdown` 2 枚）
+   ⇒ 名册 33、SYNC_OK 24、锚点 16 **计数未动**，判定逐枚不变。锚点侧另有 `bus/mqtt_client.py`
+   两枚 149→150／158→159（`__init__` 里那段指针注释改两行，def 本体一字未动）。
 C. **锚点**：判定所依赖的 16 处 `def` 仍是**同步体**且仍在登记的行号上
    ⇒ 谁把 `TVClient.notify` 改成 `async def` 而不动 5 个调用点，这里当场红。
 
@@ -176,8 +183,8 @@ class ProductionRosterTest(unittest.TestCase):
 
 ANCHORS = [
     ("integrations/tv.py", "TVClient", "notify", 54),
-    ("bus/mqtt_client.py", "MQTTClient", "start", 149),  # 批138 re-anchor 149→146（will 腿并进 advertise）；1013-b207R2 re-anchor 146→149（`59a0beb` 补回 28310ab 删掉的三腿——**这枚 def 体自己也回了 LWT 两行注释**，锚点只撑 kind=sync，`def_at` 现读仍 sync⇒判定未变）
-    ("bus/mqtt_client.py", "MQTTClient", "stop", 158),   # 批138 re-anchor 155→156；1013-b207R2 re-anchor 156→158（同上，`def_at` 现读 kind=sync）
+    ("bus/mqtt_client.py", "MQTTClient", "start", 150),  # 批138 re-anchor 149→146（will 腿并进 advertise）；1013-b207R2 re-anchor 146→149（`59a0beb` 补回 28310ab 删掉的三腿——**这枚 def 体自己也回了 LWT 两行注释**，锚点只撑 kind=sync，`def_at` 现读仍 sync⇒判定未变）；1015-b224 re-anchor 149→150（批224 把 `__init__` 里那段「单点仍在 adm_status_is_online」的注释改成两行，def 本体一字未动，`def_at` 现读 kind=sync）
+    ("bus/mqtt_client.py", "MQTTClient", "stop", 159),   # 批138 re-anchor 155→156；1013-b207R2 re-anchor 156→158（同上，`def_at` 现读 kind=sync）；1015-b224 re-anchor 158→159（同上，那段注释净 +1 整体下移）
     ("integrations/ilink/bridge.py", "ILinkBridge", "start", 59),  # 1013-b213 re-anchor 56→59（批213 会话档收编：顶部 `atomic_json` import 1 行＋`__init__` 里 `_unreadable_users` 名册 2 注释＋1 赋值，`def` 本体一字未动，`def_at` 现读 kind=sync）
     ("integrations/ilink/bridge.py", "ILinkBridge", "stop", 70),   # 1013-b213 re-anchor 67→70（同上，净插 3 行整体下移）
     ("core/event_stream.py", "EventStream", "start", 97),   # 1011-b201 re-anchor 96→97（批201 DB47 顶部净插 1 行 import，def 本体一字未动，门自己现读报的数）

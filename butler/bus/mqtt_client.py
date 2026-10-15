@@ -49,7 +49,8 @@ class MQTTClient:
         # （paho 的遗嘱随 CONNECT 报文注册，⛔ 拖到连接之后；心跳每轮重挂 will 只是本地更新，
         # 对 wire 无副作用）。载荷＝契约 v2.0 §7.1 的 encode_status JSON，⛔ 字面量。
         # 消费腿走 decode_status（批207 按判例三恢复被 28310ab 删掉的行）；在线判定的
-        # 单点仍在 `butler/bus/topics.py::adm_status_is_online`——旧字面量与新 JSON 都读得懂。
+        # 单点在 `butler/bus/topics.py::adm_status_state`（批224 DB127 起返回四形，bool 面
+        # 由它派生）——旧字面量与新 JSON 都读得懂。
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.on_message = self._on_message

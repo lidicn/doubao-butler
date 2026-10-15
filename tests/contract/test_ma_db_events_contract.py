@@ -116,7 +116,8 @@ class PeerStatusLiteralTest(unittest.TestCase):
         src = APP_SRC.read_text(encoding="utf-8-sig")
         self.assertEqual(src.count('payload.get("online")'), 0,
                          "str 载荷上 .get(\"online\") 会抛 AttributeError＝对端在线缓存永远空")
-        self.assertGreaterEqual(src.count("adm_status_is_online("), 1, "消费侧没走单点 helper")
+        # 批224 DB127：单点从 bool 腿换成状态腿（四形），消费侧仍⛔ 自己判载荷
+        self.assertGreaterEqual(src.count("adm_status_state("), 1, "消费侧没走单点 helper")
 
 
 if __name__ == "__main__":

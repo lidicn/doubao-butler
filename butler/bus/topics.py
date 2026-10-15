@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Final
 
 from butler.logging_setup import get_logger
 from butler.param import ParamError, to_bool, to_float
@@ -42,31 +42,58 @@ ADM_CAPS = "adm/doubao-butler/caps"          # retained 能力摘要（契约表
 SUB_ADM_MA_STATUS = "adm/memory-agent/status"
 SUB_ADM_AF_STATUS = "adm/autoforge/status"
 
+#: 判读第四形（DB127）：载荷我读不懂 ≠ 对端确实下线。homesdk 的三值是契约里的载荷值，
+#: 这枚只在消费侧产生，⛔ 出现在任何 encode 载荷里。
+ADM_STATE_UNPARSABLE: Final = "unparsable"
 
-def adm_status_is_online(payload: Any) -> bool:
-    """`adm/<成员>/status` 消费侧的判读单点（契约 v2.0 §7.1，homesdk.adm.status.decode_status）。
 
-    0.3.2 起载荷是 JSON {"state": online|offline|degraded, ...}；decode_status 同时兼容
-    旧字面量 "online"/"offline"（过渡期不得丢弃、不得抛错）。判读只在这一个函数里做，
-    ⛔ 在每个消费点各写一份（此前 MA 发字面量、DB 按 dict 取 "online" 键永远读空就是这个 bug）。
-    dict 分支兼容直接传进来的对象：优先认 `state`，没有 state 才回退旧 `online` 布尔字段。
-    degraded 视为在场（能力降档≠离线），不可解/空载荷 fail-closed 记离线。
+def adm_status_state(payload: Any) -> str:
+    """`adm/<成员>/status` 消费侧的判读单点（契约 v2.0 §7.1）。
+
+    0.3.2 起载荷是 JSON，`state` 三值 online|offline|degraded；本函数兼容旧字面量
+    `online`/`offline` 与旧 dict 缓存形（过渡期不得丢弃、不得抛错）。判读只在这一个
+    函数里做，⛔ 在每个消费点各写一份（此前 MA 发字面量、DB 按 dict 取 "online" 键
+    永远读空就是这个 bug）。
+
+    第四形 `ADM_STATE_UNPARSABLE`＝「我读不懂」，与「对端确实下线」分开报（DB127）。
+    现网可达的是 dict 分支：`mqtt_client._on_message` 已把解不开的载荷拦在入口处丢弃，
+    走进 `_consume` 的永远是 dict ⇒ 合法 JSON 但不带任何状态字段（`{"ts": 1}`）、
+    `state` 值不在契约三值内，都是载荷缺陷，⛔ 指着邻居说「你下线了」。
     """
-    from homesdk.adm.status import STATE_DEGRADED, STATE_ONLINE, decode_status
+    from homesdk.adm.status import STATE_DEGRADED, STATE_OFFLINE, STATE_ONLINE, decode_status
 
     if isinstance(payload, (bytes, bytearray, str)):
         try:
             payload = decode_status(payload)
         except ValueError:
-            # 「读不懂」与「对端确实离线」同形：消费侧据此报 PEER_OFFLINE（DB127）。留一行才分得开。
-            logger.warning("adm status 载荷不可解，按离线计（非「确实离线」，⛔ 回显原值）")
-            return False
+            logger.warning("adm status 载荷不可解，按「读不懂」计（⛔ 回显原值）")
+            return ADM_STATE_UNPARSABLE
     if isinstance(payload, dict):
-        state = payload.get("state")
-        if state is not None:
-            return state in (STATE_ONLINE, STATE_DEGRADED)
-        return _flag(payload, "online", False)
-    return False
+        if "state" in payload:
+            state = payload.get("state")
+            if isinstance(state, str) and state in (STATE_ONLINE, STATE_OFFLINE, STATE_DEGRADED):
+                return state
+            return ADM_STATE_UNPARSABLE
+        if "online" in payload:
+            # 旧 dict 缓存形的布尔字段：值非法＝读不懂（⛔ 借 _flag 的默认值把它判成下线）
+            try:
+                present = to_bool(payload.get("online"), "online", default=False)
+            except ParamError as exc:
+                logger.warning("adm status 旧 online 字段不可解，按「读不懂」计：%s", exc)
+                return ADM_STATE_UNPARSABLE
+            return STATE_ONLINE if present else STATE_OFFLINE
+    return ADM_STATE_UNPARSABLE
+
+
+def adm_state_is_present(state: str) -> bool:
+    """在场判定的唯一定义：online／degraded 算在场（能力降档≠离线），offline／unparsable 都不算。"""
+    from homesdk.adm.status import STATE_DEGRADED, STATE_ONLINE
+    return state in (STATE_ONLINE, STATE_DEGRADED)
+
+
+def adm_status_is_online(payload: Any) -> bool:
+    """`adm_status_state()` 的 bool 面（fail-closed：读不懂记离线）；判定⛔ 有第二份。"""
+    return adm_state_is_present(adm_status_state(payload))
 
 # AF 自动化上报（契约表 §1.2 行 57-58）：fired {trace_id, ts, automation_id, ref}；
 # failed 多带 error。QoS1 非 retained。DCD 2026-10-08 采纳走 MQTT 订阅（替代 HTTP 轮询获知自动化结果）；

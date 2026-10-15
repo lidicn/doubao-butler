@@ -66,7 +66,8 @@ from butler.api.deps import err, is_login_locked, login, ok
 from butler.bus.mqtt_client import MQTTClient
 from butler.bus.topics import (PUB_DIALOG, SUB_MA_PRESENCE, SUB_MA_DEVICE_HEALTH,
                         SUB_MA_INSIGHTS, SUB_AF_AUTOMATION_FIRED, SUB_AF_AUTOMATION_FAILED,
-                        adm_status_is_online)
+                        ADM_STATE_UNPARSABLE, adm_state_is_present, adm_status_state)
+from homesdk.adm.errors import ADM_ERR_PAYLOAD_INVALID, ADM_ERR_PEER_OFFLINE
 from butler.bus.af_events import handle_af_automation_event
 from butler.config import get_settings, set_settings
 from butler.core.dedup import DedupChecker
@@ -166,16 +167,22 @@ async def _consume(rt) -> None:
                 if getattr(rt, "inbox", None) is not None:
                     await rt.inbox.handle(topic, payload)
             elif topic in ("adm/memory-agent/status", "adm/autoforge/status"):
-                # 契约表 §1.1：这条主题的载荷是字面量，判读走 topics 的单点 helper
-                online = adm_status_is_online(payload)
+                # 契约表 §1.1：判读走 topics 的单点 helper；DB127 起单点返回四形，
+                # 「我读不懂」与「对端确实下线」分开记码，⛔ 把载荷缺陷报成邻居故障。
+                state = adm_status_state(payload)
+                online = adm_state_is_present(state)
                 peers = getattr(rt, "adm_peers", None)
                 if isinstance(peers, dict):
                     prev = peers.get(topic)
                     peers[topic] = online
-                    # 离线边沿（online→offline）记录 ADM_ERR_PEER_OFFLINE，禁止静默降级
-                    if prev is True and online is False:
-                        logger.error("ADM_ERR_PEER_OFFLINE peer=%s (LWT/心跳超时)", topic)
-                logger.info("ADM peer status %s online=%s", topic, online)
+                    if state == ADM_STATE_UNPARSABLE:
+                        # 读不懂每来一条都要有声（⛔ 只在 online→offline 边沿才记＝首次到货即静默）
+                        logger.error("%s peer=%s adm status 读不懂，fail-closed 记离线（非「确实下线」）",
+                                     ADM_ERR_PAYLOAD_INVALID, topic)
+                    elif prev is True and online is False:
+                        # 离线边沿（online→offline）记录对端下线，禁止静默降级
+                        logger.error("%s peer=%s (LWT/心跳超时)", ADM_ERR_PEER_OFFLINE, topic)
+                logger.info("ADM peer status %s online=%s state=%s", topic, online, state)
             elif topic.startswith("butler/trigger/"):
                 # 技能 MQTT 触发入口（兼容通道）：butler/trigger/{skill_id}
                 if rt.runner:

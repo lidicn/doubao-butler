@@ -164,10 +164,12 @@ class TestSingleDecoderRuler(unittest.TestCase):
         cls.src = (REPO / "butler" / "bus" / "topics.py").read_text(encoding="utf-8")
 
     def test_topics_uses_the_library_single_point(self):
-        body = _function_segment(self.src, "adm_status_is_online")
+        # 批224 DB127：判读单点拆成 adm_status_state（解码＋四形）与 adm_status_is_online（bool 派生），
+        # 库解码器仍只有一枚，锚点跟着挪到状态腿。整文件的手写解码器腿在下一条测试里，那条一字未动。
+        body = _function_segment(self.src, "adm_status_state")
         self.assertNotEqual(body, "", "判读单点函数不见了")
         self.assertIn("decode_status", body,
-                      "adm_status_is_online 没挂 homesdk.adm.status.decode_status")
+                      "adm_status_state 没挂 homesdk.adm.status.decode_status")
 
     def test_topics_has_no_handwritten_json_decoder(self):
         sites = handwritten_decoder_sites(self.src)
