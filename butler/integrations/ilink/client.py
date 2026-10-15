@@ -216,8 +216,10 @@ class ILinkClient:
 
             return {"ok": True, "messages": msgs, "next_buf": next_buf}
         except httpx.TimeoutException:
-            # 长轮询超时是正常的（无消息）
-            return {"ok": True, "messages": [], "next_buf": get_updates_buf}
+            # 长轮询 35s、客户端读超时 40s：到点没答＝服务端没活，不是「本轮无消息」。
+            # 改前回 ok:True ⇒ bridge 的连续失败阶梯与 10 次停桥护栏永不触发（DB134）。
+            logger.warning("ilink get_updates 读超时，本轮按失败计（buf 不推进，消息不丢）")
+            return {"ok": False, "error": "timeout", "messages": [], "next_buf": get_updates_buf}
         except Exception as e:
             logger.debug("ilink get_updates error: %s", e)
             return {"ok": False, "error": str(e), "messages": [], "next_buf": get_updates_buf}

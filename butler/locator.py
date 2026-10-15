@@ -15,6 +15,7 @@ import asyncio
 from datetime import datetime
 
 from butler.logging_setup import get_logger
+from butler.param import soft_num
 
 logger = get_logger("butler.locator")
 
@@ -116,7 +117,12 @@ class MemberLocator:
                 if nm and (nm in names or nm.lower() in names):
                     ts = str(it.get("last_seen") or "")
                     if best is None or ts > best[1]:
-                        best = (room, ts, float(it.get("confidence") or 0.5))
+                        # DB109：改前 `float(it.get("confidence") or 0.5)` 裸铸形——MA 回一枚
+                        # `"很高"`／`"abc"` 就抛穿 `asyncio.gather`，被 find_member 外层收成一行
+                        # debug ⇒ 整个 presence 通道无声下线，与「全屋没找到」逐字同形。
+                        conf = soft_num(it.get("confidence"), "presence confidence",
+                                        default=0.5, integer=False)
+                        best = (room, ts, conf)
             return best
 
         results = await asyncio.gather(*[probe(r) for r in rooms])

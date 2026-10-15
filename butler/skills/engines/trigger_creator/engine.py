@@ -8,14 +8,21 @@ brain 配置：
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 
 from butler.logging_setup import get_logger
+from butler.param import soft_num
 from butler.skills.runner_types import SkillContext, SkillResult
 from butler.triggers.schema import validate_trigger
 
 logger = get_logger("butler.skills.engines.trigger_creator")
+
+
+def _retry_backoff(attempt: int) -> float:
+    """第 attempt 次失败后再试之前睡多久：1s、2s、4s…封顶 8s（DB97：改前零退避，三次打在同一个故障上）。"""
+    return min(2.0 ** attempt, 8.0)
 
 # 事件类型与说明（供 LLM 参考）
 _EVENT_DOC = """可用事件类型（event）：
@@ -104,9 +111,14 @@ class TriggerCreatorEngine:
 
         # 4. 调用 LLM 生成（带重试）
         brain = ctx.skill.get("brain") or {}
-        max_retry = int(brain.get("max_retry", 2))
+        max_retry = soft_num(brain.get("max_retry"), "max_retry", default=2, minimum=0, maximum=5)
         trigger_json = None
         last_err = ""
+
+        async def _space_before_retry(attempt: int) -> None:
+            """两次尝试之间留间隔；末次失败⛔ 再睡（那次之后就直接返回失败文案了）。"""
+            if attempt < max_retry:
+                await asyncio.sleep(_retry_backoff(attempt))
 
         for attempt in range(max_retry + 1):
             try:
@@ -119,6 +131,7 @@ class TriggerCreatorEngine:
             except Exception as e:
                 last_err = f"LLM 调用失败: {e}"
                 logger.warning("trigger_creator LLM call %d failed: %s", attempt, e)
+                await _space_before_retry(attempt)
                 continue
 
             # 5. 解析 JSON（容错：去掉 markdown 代码块、提取第一个 {...}）
@@ -138,6 +151,7 @@ class TriggerCreatorEngine:
             if trigger_json is None:
                 last_err = f"LLM 输出不是有效 JSON: {raw[:200]}"
                 logger.warning("trigger_creator attempt %d JSON parse failed: %s", attempt, raw[:200])
+                await _space_before_retry(attempt)
                 continue
 
             # LLM 可能返回 {"error":"..."}
@@ -156,6 +170,7 @@ class TriggerCreatorEngine:
                 # 把校验错误反馈给 LLM 重试
                 prompt += f"\n\n上一次输出校验失败：{verr}\n请修正后重新输出 JSON。"
                 trigger_json = None
+                await _space_before_retry(attempt)
                 continue
             trigger_json = normalized
             break

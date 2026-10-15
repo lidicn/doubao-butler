@@ -40,14 +40,50 @@ DB53b 病根（原 :63 / :168）：
 from __future__ import annotations
 
 import ast
+import importlib.util
 import pathlib
 import tempfile
+import time
 import unittest
+from datetime import datetime
 
 from butler.skills import quarantine as q
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 QUARANTINE_PY = ROOT / "butler" / "skills" / "quarantine.py"
+
+FOLD_LINE = "self._quarantined_at[sid] = time.monotonic() - elapsed"
+
+
+def _fold_error(rebuilt_ts: float, iso_on_disk: str) -> float:
+    """盘上 ISO 墙钟龄期 与 单调域差值 的背离量；生产码折对了就≈0。
+
+    判「有没有折回单调域」只能看**差值**：monotonic 域没有全局零点（Windows＝开机时刻），
+    隔离时刻越早／开机越短，`monotonic() - elapsed` 越是合法负数——拿绝对值当判据会把
+    正常机器判成缺陷（1015-b222 现读一台开机 22 小时的机器打出 -289669.4 s）。
+    `max(0.0, ...)` 与生产侧同一语义（ISO 落在未来＝按刚隔离算），⛔ 让夹具日期自己变成假红源。
+    """
+    elapsed = max(0.0, time.time() - datetime.fromisoformat(str(iso_on_disk)).timestamp())
+    return elapsed - (time.monotonic() - rebuilt_ts)
+
+
+def _quarantine_variant(old: str, new: str) -> str:
+    """把生产模块源码里那一腿换成失败形制，返回**副本**源码（⛔ 生产码一字不动）。"""
+    src = QUARANTINE_PY.read_text(encoding="utf-8")
+    n = src.count(old)
+    if n != 1:
+        raise AssertionError("变异腿锚点不唯一（命中 %d 枚）：%s" % (n, old))
+    return src.replace(old, new)
+
+
+def _load_variant(text: str):
+    with tempfile.TemporaryDirectory() as td:
+        p = pathlib.Path(td) / "q_variant.py"
+        p.write_text(text, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("q_variant", p)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
 
 
 class _FakeStore:
@@ -190,9 +226,32 @@ class TestBatch201Db53bRebuildLeg(unittest.TestCase):
         self.assertIn("t1", mgr2._quarantined_at,
                       "重启后 _quarantined_at 为空⇒盘上 quarantined 技能永不自动恢复")
         ts = mgr2._quarantined_at["t1"]
-        self.assertLessEqual(ts, __import__("time").monotonic(),
+        self.assertLessEqual(ts, time.monotonic(),
                              "重建值在未来⇒24h 比较会立刻判过界")
-        self.assertGreater(ts, 0.0, "重建值非正⇒像是没算")
+        # 1015-b222 更正本格判据：**本节口径覆盖批201 的落点登记**。
+        #   改前这一腿写的是 `assertGreater(ts, 0.0)`，它测的不是「有没有折回单调域」，
+        #   而是「本机 monotonic 起点到现在的秒数 > 夹具那条硬编码 ISO 的墙钟年龄」——
+        #   monotonic 域⛔ 有全局零点（Windows＝开机时刻），于是这枚判据把「开机 22 小时的笔记本」
+        #   判成生产码坏了：现读 -289669.4 s（＝夹具 2026-10-11T00:00:00 距今 4.27 天 − 开机 22 小时）。
+        #   真正要证的是**差值**：`monotonic() - ts` 必须等于墙钟 elapsed（⛔ 换绝对值）。
+        gap = _fold_error(ts, store.get("t1")["quarantined_at"])
+        self.assertLess(abs(gap), 2.0,
+                        "重建值与墙钟 elapsed 不等⇒要么没折回单调域，要么把 ISO 串当 float 用了（误差=%s s）" % gap)
+
+    def test_11b_fold_ruler_bites_on_unfolded_rebuild(self):
+        """负控（打在**临时副本**上）：抹掉「折回单调域」那一腿，上一格的差值判据必须红。
+
+        ⛔ 只跑绿侧的判据等于没测——上一格刚被改过一次形制，这格证它还会咬。
+        """
+        mod = _load_variant(_quarantine_variant(
+            FOLD_LINE, "self._quarantined_at[sid] = time.monotonic()"))
+        store = _FakeStore([_skill()])
+        store.quarantine("t1", "连续 3 次执行失败自动隔离")
+        mgr = mod.QuarantineManager(store, tempfile.mkdtemp(prefix="q53_"))
+        ts = mgr._quarantined_at["t1"]
+        err = _fold_error(ts, store.get("t1")["quarantined_at"])
+        self.assertGreater(err, 60.0,
+                           "没折叠仍被放行⇒差值判据是摆设（误差=%s s）" % err)
 
     def test_12_catches_path_that_bypasses_the_manager(self):
         """`runner._record_failure` 直调 `store.quarantine()`（runner.py:105）

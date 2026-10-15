@@ -20,9 +20,21 @@ import time
 from datetime import datetime
 
 from butler.logging_setup import get_logger
+from butler.param import soft_num
 from butler.roles.store import ALL_ROLE_IDS
 
 logger = get_logger("butler.memory.extractor")
+
+
+def _fact_confidence(value) -> float:
+    """LLM 给的 confidence：不可解就记一行按 0.5 走，越界夹回 [0,1]（DB106）。
+
+    改前形制是 `float(...)` 套在 `except (TypeError, ValueError): conf = 0.5` 里，
+    「模型给了个看不懂的分」与「模型真给 0.5」逐字同形；0.5 又卡在 0.6 门槛之下，
+    等于一条坏值静默把这条事实判成不提审。
+    """
+    conf = soft_num(value, "fact confidence", default=0.5, integer=False)
+    return max(0.0, min(1.0, conf))
 
 
 # 提取 prompt：要求 LLM 稳定输出 JSON，不猜测，只提取有依据的事实
@@ -279,11 +291,7 @@ class MemoryExtractor:
                 content = (item.get("content") or "").strip()
                 if not content or len(content) < 3:
                     continue
-                try:
-                    conf = float(item.get("confidence", 0.5))
-                except (TypeError, ValueError):
-                    conf = 0.5
-                conf = max(0.0, min(1.0, conf))
+                conf = _fact_confidence(item.get("confidence"))
                 target_role = str(item.get("target_role") or "butler").strip()
                 if target_role not in ALL_ROLE_IDS:
                     target_role = "butler"

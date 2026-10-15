@@ -58,6 +58,8 @@ def adm_status_is_online(payload: Any) -> bool:
         try:
             payload = decode_status(payload)
         except ValueError:
+            # 「读不懂」与「对端确实离线」同形：消费侧据此报 PEER_OFFLINE（DB127）。留一行才分得开。
+            logger.warning("adm status 载荷不可解，按离线计（非「确实离线」，⛔ 回显原值）")
             return False
     if isinstance(payload, dict):
         state = payload.get("state")

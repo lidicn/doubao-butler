@@ -131,7 +131,10 @@ class TVClient:
                     try:
                         return r.json()
                     except Exception:
-                        return {"ok": True, "name": name, "message": "已提交飞牛TV播放请求"}
+                        # 200 但 body 不是 JSON＝TV 端到底收没收到无从判断（反代页／HTML 错误页都走进来）
+                        logger.warning("tv play_fongmi 返回非 JSON，按失败计：body_len=%d",
+                                       len(r.text or ""))
+                        return {"ok": False, "error": "non_json_response"}
                 return {"ok": False, "error": f"http_{r.status_code}", "detail": r.text[:200]}
         except Exception as e:
             logger.warning("tv play_fongmi failed: %s", e)

@@ -15,6 +15,7 @@ from starlette.responses import JSONResponse
 from butler.config import get_settings
 from butler.core import data_paths
 from butler.logging_setup import get_logger
+from butler.param import ParamError
 from butler.runtime import get_runtime
 
 logger = get_logger("butler.auth")
@@ -318,6 +319,29 @@ def guard(request: Request):
     if not check_auth(request):
         return err("未登录", 401)
     return None
+
+
+async def json_body(request: Request) -> dict:
+    """请求体取 JSON 对象；**发了但不是对象**一律 `ParamError`（→400），⛔ 当成「什么都没发」。
+
+    改前形制是 `try: body = await request.json() / except Exception: body = {}`：
+    一条发错的请求与一条空请求在下游同形，于是必填参数拿到兜底文案（DB113）、
+    指令被标成「已完成、结果为空」（DB121）。
+
+    两种形制分开判：`Content-Length` 为 0／纯空白＝调用方**没带 body**（TP/DP 的 `accept`、
+    PWA 的 `cancel` 这类只点一下的调用是这一形），按 `{}` 走；带了却解不出对象＝发错了 ⇒ 400。
+    把前者一并判红是我给跨仓调用方新加的约束，⛔ 未经与对面核对就加。
+    """
+    raw = await request.body()
+    if not raw.strip():
+        return {}
+    try:
+        body = json.loads(raw)
+    except Exception:
+        raise ParamError("body", "不是合法 JSON") from None
+    if not isinstance(body, dict):
+        raise ParamError("body", "不是 JSON 对象")
+    return body
 
 
 # WO-ME-215：任务板上报钥匙（TASK_REPORT_TOKEN）的失败刹车。

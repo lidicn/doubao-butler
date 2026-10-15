@@ -140,6 +140,10 @@ class TTSManager:
                 result = await self.nowvoice.synthesize(text, voice, speed)
             else:
                 result = await self.kokoro.synthesize(text, voice, speed)
+            if result is None:
+                # 「跑完了什么也没给」不是成功：改前把它当结果 return ⇒ 熔断不记失败、
+                # synthesize 的备引擎与 Bark 整条降级链被绕过（DB94）。
+                raise RuntimeError(f"engine returned nothing: {engine}")
             if cb:
                 cb.record_success()
             return result

@@ -71,7 +71,12 @@ SITES = [
     #   之间净插 7 行 `_role_system()`（P1-10 角色缺席兜底）。）
     # 1013-b217-REANCHOR: 834→836（批217 把 `_conversation_to_role` 收进共用 reader `read_role_state`，
     #   函数体上方净移 2 行＋一枚 import；`conn.execute(` 本体一字未动，全文件现读恰 1 枚命中。）
-    ("api/doubao_webhook.py", 836, "execute"),
+    # 1015-b222-REANCHOR: 836→846（**本节口径覆盖批217 的落点登记**）：批222（DB126 温度铸形）在
+    #   `parse_device_command_from_reply` 里把 `int(value)` 换成 `soft_num` 分支＋档顶 import 一枚，
+    #   两处都在本行上方⇒整体下移；`conn.execute(` 本体一字未动，全文件现读该符号恰 1 枚命中
+    #   （`grep -n "\.execute(" api/doubao_webhook.py` 现读 846 单条），接收者仍是
+    #   `conn = get_conn()`（:845）⇒EXTERNAL_SYNC 不变。
+    ("api/doubao_webhook.py", 846, "execute"),
     # 1009-b6-REANCHOR (2026-10-10): app.py 生命周期 9 枚随批135/homesdk0.3.2 接线漂移，已重钉。
     # run 槽＝已裁退役（PM 裁 1009）：原 `subprocess.run`（EXTERNAL 族）已被重构进
     #   `await ensure_wake_ding`（startup_assets），app.py 再无未 await 的外部 run；名册 30→29，

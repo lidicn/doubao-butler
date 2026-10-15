@@ -53,6 +53,7 @@ from butler.runtime import get_runtime
 from butler.roles.state import read_role_state
 from butler.store import repo
 from butler.notifier.app import is_self_push
+from butler.param import soft_num
 
 logger = get_logger("butler.doubao_webhook")
 
@@ -175,7 +176,16 @@ def parse_device_command_from_reply(reply: str) -> list[dict]:
             elif label == "模式":
                 current_cmd["mode"] = value
             elif label == "温度":
-                current_cmd["temperature"] = int(value)
+                # DB126：改前 `int(value)` 一枚 `【温度：26.5】`／`【温度：二十六】` 直接抛穿
+                # 整条解析——同一条回复里后面的设备全部不执行。坏值只废它自己那一块命令：
+                # ⛔ 只把温度省了照做「打开」（用户要的是 26℃，执行成别的动作＝假绿）。
+                temp_value = soft_num(value, "温度", default=None)
+                if temp_value is None:
+                    logger.warning("温度值不可解，丢弃该条命令：%s",
+                                   current_cmd.get("device", ""))
+                    current_cmd = None
+                else:
+                    current_cmd["temperature"] = temp_value
             elif label == "频道":
                 current_cmd["channel"] = value
             elif label == "风速":

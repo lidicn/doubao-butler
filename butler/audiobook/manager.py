@@ -353,7 +353,14 @@ class AudiobookManager:
                 return
             try:
                 pos, dur, status = await self.rt.ha._xiaomi_play_status(xiaoai_id)
-            except Exception:
+            except Exception as e:
+                # 抛＝云端/设备根本没答，与下面 status=None 是同一件事。改前只 sleep+continue
+                # ⇒ unknown_count 永远归不了账，一路空转到烧满 timeout（DB114）。
+                unknown_count += 1
+                logger.warning("audiobook: 播放状态查询异常（device=%s，连续第 %d 次）：%s",
+                               xiaoai_id, unknown_count, e)
+                if unknown_count >= 3:
+                    return
                 await asyncio.sleep(0.5)
                 continue
 

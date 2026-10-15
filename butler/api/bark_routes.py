@@ -6,7 +6,7 @@ from starlette.routing import Route
 from butler.api.deps import err, guard, ok
 from butler.integrations.bark import BARK_SOUNDS
 from butler.logging_setup import get_logger
-from butler.param import body_bool
+from butler.param import body_bool, body_num
 from butler.runtime import get_runtime
 
 logger = get_logger("butler.api.bark")
@@ -49,32 +49,15 @@ async def bark_push(request):
     subtitle = str(body.get("subtitle", "")).strip() or None
     level = str(body.get("level", "active")).strip()
     sound = str(body.get("sound", "")).strip() or None
-    volume = body.get("volume")
-    if volume is not None:
-        try:
-            volume = int(volume)
-        except (ValueError, TypeError):
-            volume = None
+    volume = body_num(body, "volume", default=None, minimum=0, maximum=10)
     url = str(body.get("url", "")).strip() or None
     group = str(body.get("group", "")).strip() or None
     icon = str(body.get("icon", "")).strip() or None
     image = str(body.get("image", "")).strip() or None
-    badge = body.get("badge")
-    if badge is not None:
-        try:
-            badge = int(badge)
-        except (ValueError, TypeError):
-            badge = None
+    badge = body_num(body, "badge", default=None, minimum=0)
     call = body_bool(body, "call", default=False)
-    is_archive = body.get("is_archive")
-    if is_archive is not None:
-        is_archive = bool(is_archive)
-    ttl = body.get("ttl")
-    if ttl is not None:
-        try:
-            ttl = int(ttl)
-        except (ValueError, TypeError):
-            ttl = None
+    is_archive = body_bool(body, "is_archive", default=None)
+    ttl = body_num(body, "ttl", default=None, minimum=0)
 
     # 角色标题前缀
     if role and not title.startswith("【"):

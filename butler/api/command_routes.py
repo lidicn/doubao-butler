@@ -27,6 +27,11 @@ def _ok(data, **extra):
     return ok(data, **extra)
 
 
+async def _json_body(request: Request) -> dict:
+    from butler.api.deps import json_body
+    return await json_body(request)
+
+
 def _err(msg, code=400):
     return JSONResponse({"ok": False, "error": msg}, status_code=code)
 
@@ -74,10 +79,7 @@ async def command_accept(request: Request):
     if g:
         return g
     cmd_id = request.path_params.get("cmd_id", "")
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
+    body = await _json_body(request)
     reporter = (body.get("reporter") or "").strip()
     result = await asyncio.to_thread(cmd.accept_command, cmd_id, reporter=reporter)
     if result is None:
@@ -91,10 +93,7 @@ async def command_complete(request: Request):
     if g:
         return g
     cmd_id = request.path_params.get("cmd_id", "")
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
+    body = await _json_body(request)
     result_text = (body.get("result") or "").strip()
     reporter = (body.get("reporter") or "").strip()
     result = await asyncio.to_thread(cmd.complete_command, cmd_id, result=result_text, reporter=reporter)
@@ -109,10 +108,7 @@ async def command_fail(request: Request):
     if g:
         return g
     cmd_id = request.path_params.get("cmd_id", "")
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
+    body = await _json_body(request)
     error = (body.get("error") or "").strip()
     reporter = (body.get("reporter") or "").strip()
     result = await asyncio.to_thread(cmd.fail_command, cmd_id, error=error, reporter=reporter)
@@ -127,10 +123,7 @@ async def command_cancel(request: Request):
     if g:
         return g
     cmd_id = request.path_params.get("cmd_id", "")
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
+    body = await _json_body(request)
     reason = (body.get("reason") or "").strip()
     result = await asyncio.to_thread(cmd.cancel_command, cmd_id, reason=reason)
     if result is None:

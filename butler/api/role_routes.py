@@ -7,8 +7,9 @@ from __future__ import annotations
 from starlette.requests import Request
 from starlette.routing import Route
 
-from butler.api.deps import err, guard, ok
+from butler.api.deps import err, guard, json_body, ok
 from butler.logging_setup import get_logger
+from butler.param import ParamError
 from butler.runtime import get_runtime
 
 logger = get_logger("butler.role_routes")
@@ -128,11 +129,10 @@ async def push_role(request):
     if g:
         return g
     rid = request.path_params.get("id", "")
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    scene = body.get("scene") or body.get("text") or "测试推送"
+    body = await json_body(request)
+    scene = str(body.get("scene") or body.get("text") or "").strip()
+    if not scene:
+        raise ParamError("scene", "缺少必填值")
     direct = body.get("direct_text")
     rt = get_runtime()
     if rt.notifier is None:
