@@ -5,6 +5,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 
 from butler.api.deps import ok, err, guard
+from butler.param import query_num
 from butler.runtime import get_runtime
 
 
@@ -47,7 +48,7 @@ async def guard_audit(request: Request):
     pg = getattr(rt, "push_guard", None)
     if pg is None:
         return err("push_guard not initialized", 503)
-    limit = int(request.query_params.get("limit", 50))
+    limit = query_num(request, "limit", default=50, minimum=0)
     group = request.query_params.get("group", "")
     action = request.query_params.get("action", "")
     logs = pg.get_audit(limit=limit, group=group, action=action)

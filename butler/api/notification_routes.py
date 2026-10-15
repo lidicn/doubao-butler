@@ -7,6 +7,7 @@ from starlette.routing import Route
 from butler.api.deps import err, guard, ok
 from butler.core import notification_store
 from butler.logging_setup import get_logger
+from butler.param import path_num, query_num
 
 logger = get_logger("butler.notification_api")
 
@@ -15,8 +16,8 @@ async def notification_list(request: Request):
     g = guard(request)
     if g:
         return g
-    limit = int(request.query_params.get("limit", 50))
-    offset = int(request.query_params.get("offset", 0))
+    limit = query_num(request, "limit", default=50, minimum=0)
+    offset = query_num(request, "offset", default=0, minimum=0)
     unread_only = request.query_params.get("unread") == "1"
     items = notification_store.list_notifications(limit=limit, offset=offset, unread_only=unread_only)
     unread = notification_store.get_unread_count()
@@ -27,7 +28,7 @@ async def notification_read(request: Request):
     g = guard(request)
     if g:
         return g
-    nid = int(request.path_params.get("id", 0))
+    nid = path_num(request, "id", default=0, minimum=1)
     notification_store.mark_read(nid)
     return ok({"id": nid, "is_read": True})
 

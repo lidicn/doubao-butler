@@ -20,6 +20,7 @@ from starlette.routing import Route
 from butler.api.deps import err, guard, note_report_failure, ok, report_locked
 from butler.config import get_settings
 from butler.logging_setup import get_logger
+from butler.param import ParamError, query_num
 from butler.store import task_store
 
 logger = get_logger("butler.task_api")
@@ -54,11 +55,13 @@ async def task_list(request: Request):
         status = request.query_params.get("status") or None
         assignee = request.query_params.get("assignee") or None
         priority = request.query_params.get("priority") or None
-        limit = int(request.query_params.get("limit", 50))
-        offset = int(request.query_params.get("offset", 0))
+        limit = query_num(request, "limit", default=50, minimum=0)
+        offset = query_num(request, "offset", default=0, minimum=0)
         tasks = task_store.list_tasks(status=status, assignee=assignee,
                                        priority=priority, limit=limit, offset=offset)
         return ok({"tasks": tasks, "count": len(tasks)})
+    except ParamError:
+        raise
     except Exception as e:
         logger.exception("task_list failed")
         return err(str(e), 500)

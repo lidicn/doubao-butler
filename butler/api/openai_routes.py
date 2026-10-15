@@ -17,6 +17,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from butler.api.deps import err, guard
+from butler.param import body_bool
 from butler.runtime import get_runtime
 
 
@@ -61,7 +62,7 @@ async def chat_completions(request):
             break
     if not text:
         return err("no user message")
-    stream = bool(body.get("stream"))
+    stream = body_bool(body, "stream", default=False)
     history = [
         {
             "role": ("user" if m["role"] == "user" else "assistant"),

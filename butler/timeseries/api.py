@@ -5,6 +5,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.param import path_num, query_num
 from butler.logging_setup import get_logger
 from butler.timeseries import store as ts
 
@@ -17,8 +18,8 @@ async def mode_list(request: Request):
     if g:
         return g
     mode = request.query_params.get("mode") or None
-    limit = int(request.query_params.get("limit", 100))
-    offset = int(request.query_params.get("offset", 0))
+    limit = query_num(request, "limit", default=100, minimum=0)
+    offset = query_num(request, "offset", default=0, minimum=0)
     transitions = ts.get_mode_transitions(mode=mode, limit=limit, offset=offset)
     current = ts.get_current_mode()
     return ok({"transitions": transitions, "current_mode": current, "count": len(transitions)})
@@ -53,8 +54,8 @@ async def anomaly_list(request: Request):
     resolved_param = request.query_params.get("resolved")
     resolved = None if resolved_param is None else resolved_param.lower() in ("1", "true", "yes")
     severity = request.query_params.get("severity") or None
-    limit = int(request.query_params.get("limit", 100))
-    offset = int(request.query_params.get("offset", 0))
+    limit = query_num(request, "limit", default=100, minimum=0)
+    offset = query_num(request, "offset", default=0, minimum=0)
     anomalies = ts.get_device_anomalies(resolved=resolved, severity=severity, limit=limit, offset=offset)
     unresolved_count = len(ts.get_device_anomalies(resolved=False, limit=1000))
     return ok({"anomalies": anomalies, "unresolved_count": unresolved_count, "count": len(anomalies)})
@@ -65,7 +66,7 @@ async def anomaly_resolve(request: Request):
     g = guard(request)
     if g:
         return g
-    anomaly_id = int(request.path_params.get("id", 0))
+    anomaly_id = path_num(request, "id", default=0, minimum=1)
     ts.resolve_anomaly(anomaly_id)
     return ok({"id": anomaly_id, "resolved": True})
 
@@ -76,7 +77,7 @@ async def appliance_runtime(request: Request):
     if g:
         return g
     entity_id = request.query_params.get("entity_id", "").strip()
-    days = int(request.query_params.get("days", 7))
+    days = query_num(request, "days", default=7, minimum=1)
     if not entity_id:
         return err("entity_id is required", 400)
     records = ts.get_appliance_runtime(entity_id, days=days)

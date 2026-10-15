@@ -6,6 +6,7 @@ from starlette.routing import Route
 from butler.api.deps import err, guard, ok
 from butler.integrations.bark import BARK_SOUNDS
 from butler.logging_setup import get_logger
+from butler.param import body_bool
 from butler.runtime import get_runtime
 
 logger = get_logger("butler.api.bark")
@@ -64,7 +65,7 @@ async def bark_push(request):
             badge = int(badge)
         except (ValueError, TypeError):
             badge = None
-    call = bool(body.get("call", False))
+    call = body_bool(body, "call", default=False)
     is_archive = body.get("is_archive")
     if is_archive is not None:
         is_archive = bool(is_archive)

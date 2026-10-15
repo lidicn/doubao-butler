@@ -17,6 +17,7 @@ from pathlib import Path
 
 from butler.core.atomic_json import write_json_atomic
 from butler.logging_setup import get_logger
+from butler.param import to_bool
 
 logger = get_logger("butler.roles")
 
@@ -62,12 +63,12 @@ class Role:
     def from_dict(cls, d: dict) -> "Role":
         return cls(
             id=str(d.get("id", "")), name=str(d.get("name", "")), gender=str(d.get("gender", "女")),
-            is_primary=bool(d.get("is_primary", False)), voice=str(d.get("voice", "zh-CN-XiaoxiaoNeural")),
+            is_primary=to_bool(d.get("is_primary"), "is_primary", default=False), voice=str(d.get("voice", "zh-CN-XiaoxiaoNeural")),
             tts_backend=str(d.get("tts_backend", "nowvoice")), nowvoice_voice=str(d.get("nowvoice_voice", "")),
             presence_rooms=list(d.get("presence_rooms", ["*"]) or ["*"]),
             output_devices=list(d.get("output_devices", []) or []),
             system=str(d.get("system", "")), skills=list(d.get("skills", []) or []),
-            enabled=bool(d.get("enabled", True)), fallback=str(d.get("fallback", "bark")),
+            enabled=to_bool(d.get("enabled"), "enabled", default=True), fallback=str(d.get("fallback", "bark")),
             wake_words=list(d.get("wake_words", []) or []),
             bound_rooms=list(d.get("bound_rooms", []) or []),
             scope=str(d.get("scope", "family")), member=str(d.get("member", "")),

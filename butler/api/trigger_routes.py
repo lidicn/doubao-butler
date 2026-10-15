@@ -12,6 +12,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.param import body_bool, query_num
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
 from butler.triggers.schema import validate_trigger
@@ -174,7 +175,7 @@ async def trigger_set_enabled(request: Request):
         body = await request.json()
     except Exception:
         body = {}
-    enabled = bool(body.get("enabled", True))
+    enabled = body_bool(body, "enabled", default=True)
     trigger = eng.store.get(tid)
     if trigger is None:
         return err("trigger not found", 404)
@@ -211,7 +212,7 @@ async def trigger_runs(request: Request):
     if g:
         return g
     tid = request.path_params.get("trigger_id", "")
-    limit = int(request.query_params.get("limit", "50"))
+    limit = query_num(request, "limit", default=50, minimum=0)
     rows = await asyncio.to_thread(_repo_recent, tid, limit)
     return ok({"items": rows})
 
@@ -236,7 +237,7 @@ async def trigger_test(request: Request):
     try:
         body = await request.json()
         payload = body.get("payload", {})
-        dry_run = bool(body.get("dry_run", True))
+        dry_run = body_bool(body, "dry_run", default=True)
     except Exception:
         payload = {}
     trig = None

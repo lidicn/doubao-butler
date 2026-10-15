@@ -39,6 +39,13 @@ B. **现网点开的调用点名单**：`gate(butler/, SITES)` 必须 0 枚 ASYN
    两枚都在 `async def lifespan` 上方⇒app.py 11 枚落点整体下移 2，逐枚按接收者现读点开
    （504→506／581→583／794→796／809→811／817→819／883→885／888→890／897→899／900→902／903→905／907→909）
    ⇒ 名册 33、SYNC_OK 24、锚点 16 **计数未动**，判定逐枚不变。
+   **1015-b221 更新本节口径**：批221（DB138／DB139 参数族收编）在 `butler/app.py` 的 lifespan 上方
+   净插 6 行（档顶 `from butler.param import ParamError` 1 行＋`_param_exc` 处理器 5 行），
+   `api/agent_routes.py` 档顶 import 组净插 1 行 ⇒ 名册 12 枚行号漂移（app.py 11 枚 511→517／588→594／
+   804→810／819→825／827→833／893→899／898→904／907→913／910→916／913→919／917→923；
+   `agent_routes.py` 159→160），逐枚按「接收者链＋叶名」现读点开（探针 `workorders/tmp/b419_b6_relocate.py`
+   →`workorders/tmp/b419_b6_relocate_face.txt`；`start`／`stop` 两族同名候选 5／7 枚，⛔ 靠行号顺序猜），
+   app.py 11 枚包围函数现读均为 `lifespan` ⇒ 名册 33、SYNC_OK 24、锚点 16 **计数未动**，判定逐枚不变。
 C. **锚点**：判定所依赖的 16 处 `def` 仍是**同步体**且仍在登记的行号上
    ⇒ 谁把 `TVClient.notify` 改成 `async def` 而不动 5 个调用点，这里当场红。
 
@@ -174,11 +181,13 @@ ANCHORS = [
     ("integrations/ilink/bridge.py", "ILinkBridge", "start", 59),  # 1013-b213 re-anchor 56→59（批213 会话档收编：顶部 `atomic_json` import 1 行＋`__init__` 里 `_unreadable_users` 名册 2 注释＋1 赋值，`def` 本体一字未动，`def_at` 现读 kind=sync）
     ("integrations/ilink/bridge.py", "ILinkBridge", "stop", 70),   # 1013-b213 re-anchor 67→70（同上，净插 3 行整体下移）
     ("core/event_stream.py", "EventStream", "start", 97),   # 1011-b201 re-anchor 96→97（批201 DB47 顶部净插 1 行 import，def 本体一字未动，门自己现读报的数）
-    # 批189 新锚两枚：关停腿 app.py:883／:888（1011-b190 重钉后；批197 后 :885／:890）的判定撑在这两个 def 的
+    # 批189 新锚两枚：关停腿 app.py:883／:888（1011-b190 重钉后；批197 后 :885／:890；1015-b221 后
+    #   现读 :899／:904，见 `classify_unawaited_1002.py` 的 1015-b221-REANCHOR 注）的判定撑在这两个 def 的
     #   「同步」性质上，谁把它们翻成 `async def` 而不动调用点，这里当场红（`def_at` 现读均 kind=sync）。
     ("core/event_stream.py", "EventStream", "stop", 105),  # 1011-b201 re-anchor 104→105（批201 DB47 顶部净插 1 行 import，def 本体一字未动）
     ("integrations/ha.py", "HAClient", "stop_xiaomi_token_refresh", 84),  # 1013-b214 re-anchor 67→84（批211·V42/V43 在 `class HAClient` 上方净插模块级 `_forget_task_when_done()`＋`__init__` 里逐实例建表两行注释，`def` 本体一字未动，`def_at` 现读 kind=sync）
-    # 批190 新锚一枚：`app.py:897`（`rt.ha.cancel_watch_tasks()`，批197 后 :899）同一条形状撑在 def 的同步性质上。
+    # 批190 新锚一枚：`app.py:897`（`rt.ha.cancel_watch_tasks()`，批197 后 :899；1015-b221 后现读 :913）
+    #   同一条形状撑在 def 的同步性质上。
     ("integrations/ha.py", "HAClient", "cancel_watch_tasks", 96),  # 1013-b214 re-anchor 79→96（同上，整体下移 17 行；批211 只把 docstring 里「类属性」两句改成现形制，`def` 仍是同步体）
     # 批192 新锚一枚：`core/dialog.py:669`（`XiaomiEar.note_speak(...)`）撑在这枚 classmethod 的同步性质上。
     ("core/xiaomi_ear.py", "XiaomiEar", "note_speak", 134),  # 批194 A10 re-anchor 117→119（类体新入 ROLE_EXIT_WORDS 两行通用退出词）；批194 A9 re-anchor 119→133（模块级 AUDIOBOOK_COMMANDS 表＋两枚切段常量净插 14 行，def 本体一字未动，`def_at` 现读 kind=sync）

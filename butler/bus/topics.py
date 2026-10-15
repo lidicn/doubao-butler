@@ -11,6 +11,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from butler.logging_setup import get_logger
+from butler.param import ParamError, to_bool, to_float
+
+logger = get_logger("butler.bus.topics")
+
 TV_PREFIX = "tv/livingroom"
 BUTLER_ROOT = "butler"
 MA_PREFIX = "ma"  # memory-agent MQTT 推送前缀
@@ -58,7 +63,7 @@ def adm_status_is_online(payload: Any) -> bool:
         state = payload.get("state")
         if state is not None:
             return state in (STATE_ONLINE, STATE_DEGRADED)
-        return bool(payload.get("online"))
+        return _flag(payload, "online", False)
     return False
 
 # AF 自动化上报（契约表 §1.2 行 57-58）：fired {trace_id, ts, automation_id, ref}；
@@ -113,15 +118,44 @@ class ButlerEvent:
     ts: float = field(default_factory=time.time)
 
 
+def _flag(payload: dict, key: str, default: bool) -> bool:
+    """载荷侧布尔：`"false"`／`0`／`null` 各按其本义读（DB139：`bool("false") is True`）。"""
+    try:
+        return to_bool(payload.get(key), key, default=default)
+    except ParamError as exc:
+        logger.warning("载荷布尔字段不可解，按默认值处理：%s", exc)
+        return default
+
+def _num(payload: dict, key: str, default: float,
+         minimum: float | None = 0.0, maximum: float | None = 1.0) -> float:
+    """MQTT 载荷侧的宽容数字读：非数字记一行并按默认值走，⛔ 让一条坏消息打断整条事件链。
+
+    默认夹在 [0,1]：confidence 类字段越界即失义（DB101／DB141）。
+    时间戳类字段走 `maximum=None`（epoch 恒大于 1，套同一把夹子会把好值读成坏值）。
+    """
+    try:
+        return to_float(payload.get(key), key, default=default, minimum=minimum, maximum=maximum)
+    except ParamError as exc:
+        logger.warning("载荷数字字段不可解，按默认值处理：%s", exc)
+        return default
+
+def _ts_of(payload: dict) -> float:
+    """`ts` 与 `timestamp` 两种拼法都认（DB103：此前只有本支读 `timestamp`，键名分叉）。"""
+    for key in ("ts", "timestamp"):
+        if key in payload:
+            return _num(payload, key, time.time(), minimum=None, maximum=None)
+    return time.time()
+
+
 def parse_face(topic: str, payload: dict) -> ButlerEvent:
     name = (payload.get("name") or payload.get("member") or "").strip()
     return ButlerEvent(
         kind="face",
         room="客厅",
         member=name or "stranger",
-        confidence=float(payload.get("confidence") or 0.0),
+        confidence=_num(payload, "confidence", 0.0),
         payload=payload,
-        ts=float(payload.get("ts") or time.time()),
+        ts=_ts_of(payload),
     )
 
 
@@ -131,7 +165,7 @@ def parse_tv_status(topic: str, payload: dict) -> ButlerEvent:
         room="客厅",
         member=str(payload.get("state") or payload.get("status") or ""),
         payload=payload,
-        ts=float(payload.get("ts") or time.time()),
+        ts=_ts_of(payload),
     )
 
 
@@ -142,9 +176,9 @@ def parse_event(topic: str, payload: dict) -> ButlerEvent:
         kind=kind,
         room=str(payload.get("room") or "客厅"),
         member=str(payload.get("member") or payload.get("name") or ""),
-        confidence=float(payload.get("confidence") or 0.0),
+        confidence=_num(payload, "confidence", 0.0),
         payload=payload,
-        ts=float(payload.get("ts") or time.time()),
+        ts=_ts_of(payload),
     )
 
 
@@ -158,7 +192,7 @@ def parse_experiment(topic: str, payload: dict) -> ButlerEvent:
     """
     etype = str(payload.get("type") or "")
     text = str(payload.get("recognized_text") or "")
-    interrupted = bool(payload.get("interrupted", False))
+    interrupted = _flag(payload, "interrupted", False)
     return ButlerEvent(
         kind="tv_voice",
         room="客厅",
@@ -166,5 +200,5 @@ def parse_experiment(topic: str, payload: dict) -> ButlerEvent:
         confidence=0.0,
         payload={"exp_type": etype, "text": text, "interrupted": interrupted,
                  "skip_reason": payload.get("skip_reason", "")},
-        ts=float(payload.get("timestamp") or time.time()),
+        ts=_ts_of(payload),
     )

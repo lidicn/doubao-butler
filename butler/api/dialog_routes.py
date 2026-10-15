@@ -6,6 +6,7 @@ import asyncio
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.param import query_num
 from butler.runtime import get_runtime
 from butler.store import repo
 
@@ -31,7 +32,7 @@ async def recent(request):
     g = guard(request)
     if g:
         return g
-    limit = int(request.query_params.get("limit", "50"))
+    limit = query_num(request, "limit", default=50, minimum=0)
     turns = await asyncio.to_thread(repo.recent_turns, limit)
     return ok({"turns": turns})
 

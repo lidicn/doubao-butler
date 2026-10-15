@@ -27,6 +27,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol, runtime_checkable
 
+from butler.param import ParamError, to_int
+
 try:  # 复用现网日志封装；缺失时退回 stdlib logging，保证本模块可独立导入/测试
     from butler.logging_setup import get_logger
 except Exception:  # pragma: no cover
@@ -97,8 +99,13 @@ def _band(priority: int) -> int:
 
 
 def _parse_hhmm(value: str) -> int:
-    hh, mm = str(value).strip().split(":")
-    return int(hh) * 60 + int(mm)
+    """`HH:MM` → 当日分钟数。坏值抛 `ParamError`（点名原因），⛔ 让 unpack／ValueError 裸穿到 `/api/tts`。"""
+    parts = str(value).strip().split(":")
+    if len(parts) != 2:
+        raise ParamError("quiet_start/quiet_end", "必须是 HH:MM 两段")
+    hh = to_int(parts[0], "小时", minimum=0, maximum=23)
+    mm = to_int(parts[1], "分钟", minimum=0, maximum=59)
+    return hh * 60 + mm
 
 
 @dataclass
@@ -199,7 +206,12 @@ class TTSQueueConfig:
 
     def is_quiet(self, minutes_of_day: int) -> bool:
         """真 = 静默（在 quiet_start-quiet_end 之外）。"""
-        start, end = _parse_hhmm(self.quiet_start), _parse_hhmm(self.quiet_end)
+        try:
+            start, end = _parse_hhmm(self.quiet_start), _parse_hhmm(self.quiet_end)
+        except ParamError as exc:
+            # 静默窗配坏 ⇒ 按「不静默」走并留痕：全屋静音与整条 TTS 崩，都不是调用方要的。
+            logger.error("TTS 静默时段配置不可解，本窗按不静默处理：%s", exc)
+            return False
         if start == end:
             return False                      # 起止相同 = 全天可播
         if start < end:

@@ -7,6 +7,7 @@ from starlette.routing import Route
 from butler.api.deps import err, guard, ok
 from butler.logging_setup import get_logger
 from butler.modes.engine import MODES, MODE_NAMES
+from butler.param import query_num
 from butler.runtime import get_runtime
 
 logger = get_logger("butler.modes.api")
@@ -78,8 +79,8 @@ async def mode_history(request: Request):
         return g
     from butler.timeseries import store as ts
     mode = request.query_params.get("mode") or None
-    limit = int(request.query_params.get("limit", 50))
-    offset = int(request.query_params.get("offset", 0))
+    limit = query_num(request, "limit", default=50, minimum=0)
+    offset = query_num(request, "offset", default=0, minimum=0)
     transitions = ts.get_mode_transitions(mode=mode, limit=limit, offset=offset)
     return ok({"transitions": transitions, "count": len(transitions)})
 

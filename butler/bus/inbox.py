@@ -34,6 +34,7 @@ from pathlib import Path
 from butler.config import get_settings
 from butler.logging_setup import get_logger
 from butler.notify.singleton import get_router as get_notify_router
+from butler.param import soft_flag, soft_num
 from butler.tts.helper import enqueue_tts
 from homesdk.adm.errors import ADM_ERR_INTERNAL, ADM_ERR_PAYLOAD_INVALID
 
@@ -224,10 +225,7 @@ class InboxGate:
             return False, "trace_id 缺失或超长", {}
         # source 非契约字段，但限流/预算需要维度——兼容旧投递方，无则 DEFAULT_SOURCE
         source = str(payload.get("source", "") or DEFAULT_SOURCE).strip()[:MAX_FIELD_LEN]
-        try:
-            priority = min(5, max(1, int(payload.get("priority", 3))))
-        except (TypeError, ValueError):
-            priority = 3
+        priority = min(5, max(1, soft_num(payload.get("priority"), "priority", default=3)))
         room = str(payload.get("room", "")).strip()[:32]
 
         if channel == "speak":
@@ -239,7 +237,7 @@ class InboxGate:
             return True, "", {
                 "text": text, "source": source, "trace_id": trace,
                 "title": "", "priority": priority, "room": room,
-                "override_quiet": bool(payload.get("override_quiet", False)),
+                "override_quiet": soft_flag(payload.get("override_quiet"), "override_quiet", default=False),
             }
         if channel == "notify":
             title = str(payload.get("title", "")).strip()
@@ -253,7 +251,7 @@ class InboxGate:
             return True, "", {
                 "text": body or title, "source": source, "trace_id": trace,
                 "title": title, "priority": priority, "room": room,
-                "override_quiet": bool(payload.get("override_quiet", False)),
+                "override_quiet": soft_flag(payload.get("override_quiet"), "override_quiet", default=False),
             }
         if channel == "tv":
             content = str(payload.get("content", "")).strip()
@@ -265,7 +263,7 @@ class InboxGate:
             return True, "", {
                 "text": content, "source": source, "trace_id": trace,
                 "title": "", "priority": priority, "room": room,
-                "override_quiet": bool(payload.get("override_quiet", False)),
+                "override_quiet": soft_flag(payload.get("override_quiet"), "override_quiet", default=False),
                 "duration_s": duration_s,
             }
         return False, f"未知通道 {channel}", {}

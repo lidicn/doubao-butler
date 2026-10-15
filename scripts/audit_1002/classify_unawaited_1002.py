@@ -48,12 +48,18 @@ PKG = "butler"
 
 # 批5 之后普查在册的 30 枚（原样抄自台账 §6；行号漂了我自己报 DRIFT，⛔ 手改名单）
 SITES = [
-    ("api/agent_routes.py", 159, "delete_alias"),
+    # 1015-b221-REANCHOR 159→160：批221（DB138／DB139 参数族收编）在档顶 import 组净插
+    #   `from butler.param import body_bool, path_num, query_num` 一行，`store.delete_alias(alias)`
+    #   本体一字未动。全文件现读叶名 `delete_alias` 恰 1 枚命中＝L160，接收者仍 `store`
+    #   （`AliasStore`，`def_at` 现读同步体）⇒ 判定 SYNC_OK 不变（⛔ 靠 +1 算术，按符号点开）。
+    ("api/agent_routes.py", 160, "delete_alias"),
     # 1010-b179-REANCHOR 58→66 / 72→80：批179（DCD 合并裁定 §一.2 接线）在 register_api 的
     #   `executor.register_api(...)` 上方净插 8 行 URL 判据，两条调用点本体一字未动
     #   （CronTaskExecutor.register_api/unregister_api 仍是同步体 ⇒ 判定不变）。
-    ("api/cron_task_routes.py", 66, "register_api"),
-    ("api/cron_task_routes.py", 80, "unregister_api"),
+    # 1015-b221-REANCHOR2 66→67 / 80→81：批221 全仓清扫在同文件 import 组净插 1 行
+    #   （`from butler.param import query_num`），两条调用点本体一字未动。
+    ("api/cron_task_routes.py", 67, "register_api"),
+    ("api/cron_task_routes.py", 81, "unregister_api"),
     # 1013-b214-REANCHOR 809→826（本节口径覆盖批181 的落点登记）：批212 在
     #   `logger = get_logger(...)` 下方净插 `_go2rtc_frame_url()` 助手，`conn.execute(...)`
     #   那条腿本体一字未动 ⇒ 仍是 EXTERNAL_SYNC。
@@ -106,11 +112,28 @@ SITES = [
     #   ⇒判定与重钉前一致（前五枚＋907/910/913 SYNC_OK，804/917 EXTERNAL_SYNC）。
     #   同文件另有 2 枚同名调用未在册（现读 L546 `await af_bridge.start()`＝WRAPPED、
     #   L1122 `t.start()`＝`def _start_evolution_scheduler` 里的 threading.Thread）。
-    ("app.py", 511, "start"),
-    ("app.py", 588, "start"),
-    ("app.py", 804, "start"),
-    ("app.py", 819, "start"),
-    ("app.py", 827, "start"),
+    #   ⚠ 本节的行号（511／588／804／819／827／893／898／907／910／913／917）
+    #   已被 1015-b221-REANCHOR 覆盖 ⇒ 现读落点见下面那一节。
+    # 1015-b221-REANCHOR 本文件 11 枚全部重钉：**本节口径覆盖批207R1 的落点登记**。
+    #   漂移源＝批221（DB138／DB139 参数族收编）在 lifespan 上方净插 6 行（档顶 `from butler.param
+    #   import ParamError` 1 行＋`_param_exc` 处理器 5 行，⛔ 靠 +6 算术）。逐枚按「接收者链＋叶名」
+    #   现读点开（探针 `workorders/tmp/b419_b6_relocate.py` →
+    #   `workorders/tmp/b419_b6_relocate_face.txt`；同名候选 5／7 枚的 `start`／`stop` 两族
+    #   靠接收者区分，⛔ 靠行号顺序猜）：517=`rt.ilink_bridge.start()`、594=`mqtt.start()`、
+    #   810=`sched.start()`、825=`rt.xiaomi_ear.start()`、833=`rt.event_stream.start()`、
+    #   899=`rt.event_stream.stop()`、904=`rt.ha.stop_xiaomi_token_refresh()`、
+    #   913=`rt.ha.cancel_watch_tasks()`、916=`mqtt.stop()`、919=`rt.xiaomi_ear.stop()`、
+    #   923=`rt._sched.shutdown(False)`；包围函数 11/11 现读均为 `lifespan`
+    #   ⇒ 判定与重钉前一致（前五枚＋913/916/919 SYNC_OK，810/923 EXTERNAL_SYNC）。
+    #   未在册同名调用（同探针现读，⛔ 本批动过）：L552 `await af_bridge.start()`＝WRAPPED、
+    #   L879 `await asyncio.wait_for(af_bridge.stop())`＝WRAPPED、
+    #   L889 `await asyncio.wait_for(rt.tts.queue.shutdown())`＝WRAPPED、
+    #   L1128 `t.start()`＝`def _start_evolution_scheduler` 里的 threading.Thread。
+    ("app.py", 517, "start"),
+    ("app.py", 594, "start"),
+    ("app.py", 810, "start"),
+    ("app.py", 825, "start"),
+    ("app.py", 833, "start"),
     # 1011-b190-REANCHOR 872→883 / 877→888 / 880→900 / 883→903 / 887→907：**本节口径覆盖批189
     #   的落点登记**——漂移源＝批190（合并行 #11 最后两条腿）在 `finally` 里净插两段：
     #   `consumer.cancel()` 之后补 `await asyncio.wait_for(consumer, timeout=2.0)`（+11 行，
@@ -122,23 +145,28 @@ SITES = [
     #   ⇒ 前五枚 SYNC_OK、末枚 APScheduler 外部同步 EXTERNAL_SYNC，判定与重钉前一致。
     #   历史（批189 那遍的读数，已被上面覆盖）：865→880 / 868→883 / 872→887，
     #   新入册两枚 872／877 ⇒ 名册 29→31、SYNC_OK 20→22。
-    ("app.py", 893, "stop"),
-    ("app.py", 898, "stop_xiaomi_token_refresh"),
-    ("app.py", 907, "cancel_watch_tasks"),
-    ("app.py", 910, "stop"),
-    ("app.py", 913, "stop"),
-    ("app.py", 917, "shutdown"),
+    #   ⚠ 上面两节的行号（883／888／897／900／903／907 与 893／898／907／910／913／917）
+    #   已被 1015-b221-REANCHOR 覆盖 ⇒ 现读落点见那一节，⛔ 按本节的旧行号找码。
+    ("app.py", 899, "stop"),
+    ("app.py", 904, "stop_xiaomi_token_refresh"),
+    ("app.py", 913, "cancel_watch_tasks"),
+    ("app.py", 916, "stop"),
+    ("app.py", 919, "stop"),
+    ("app.py", 923, "shutdown"),
     # 批195 re-anchor 513→527 / 655→669：`_observe_presence` 助手在 `__init__` 下方净插 14 行，
     #   两条调用点本体一字未动（⛔ 加减行号，按符号 `self.tv.notify` / `XiaomiEar.note_speak` 重钉）。
     # 批194 A1 re-anchor 527→550 / 643→666：`match_role_by_text` 改锚定版在两条调用点**上方**净插 23 行
     #   （+28/−5），调用点本体一字未动；`notify` 那枚的判定（sync 的 `TVClient.notify`）⛔ 因此变。
-    ("core/dialog.py", 550, "notify"),
+    # 1015-b221-REANCHOR2 550→551 / 666→667：批221 全仓清扫在同文件 import 组净插 1 行
+    #   （`from butler.param import soft_flag, soft_num`），两条调用点本体一字未动；
+    #   现读同叶名候选 1 枚／3 枚，落点按「接收者链＋叶名」取（⛔ 加减行号）。
+    ("core/dialog.py", 551, "notify"),
     # 1011-b192-NEW：批192 把冷却腿从「裸改别的模块的类属性」改成走 API，新调用点
     #   `XiaomiEar.note_speak(d.id, hold_s=…)`是同步 classmethod ⇒ 按名册规矩入册，
     #   ⛔ 让普查漏掉新腿（同批190 `cancel_watch_tasks` 那枚的先例）。
     # 1011-b194 re-anchor 669→643：批194 A6＋A7① 把那枚写腿从 `speak_as_role` 下沉到 `_emit_devices`
     #   （三条调用路共用汇聚点，且只登记回执 ok 的小爱），调用点本体一字未动（按符号现读重钉）。
-    ("core/dialog.py", 666, "note_speak"),
+    ("core/dialog.py", 667, "note_speak"),
     # 批165 re-anchor 245→260 / 253→268：形状分支在它们上方净插 15 行，调用点本体一字未动
     # （sqlite3 Connection.execute 与 write_failures.record 仍是原那两条腿）。
     # 1011-b201 re-anchor 260→261 / 268→269：批201 DB47 在 event_stream.py 顶部净插 1 行 import

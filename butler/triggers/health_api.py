@@ -9,6 +9,7 @@ import logging
 import time
 
 from butler.api.deps import ok, err, guard
+from butler.param import query_num
 from butler.runtime import get_runtime
 
 logger = logging.getLogger("butler.triggers.health")
@@ -162,9 +163,8 @@ async def trigger_audit_query(request: Request):
 
     source_id = request.query_params.get("source_id", "") or None
     result = request.query_params.get("result", "") or None
-    limit = int(request.query_params.get("limit", "100"))
-    offset = int(request.query_params.get("offset", "0"))
-    limit = min(limit, 500)
+    limit = min(query_num(request, "limit", default=100, minimum=0), 500)
+    offset = query_num(request, "offset", default=0, minimum=0)
 
     now = time.time()
     since_ts = now - since_hours * 3600.0 if since_hours > 0 else None

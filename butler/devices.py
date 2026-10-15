@@ -18,6 +18,7 @@ from pathlib import Path
 from butler.config import Settings
 from butler.core.atomic_json import read_json_object, write_json_atomic
 from butler.logging_setup import get_logger
+from butler.param import soft_flag
 
 logger = get_logger("butler.devices")
 
@@ -62,7 +63,7 @@ class Device:
             room=str(d.get("room", "")), ha_entity=str(d.get("ha_entity", "")),
             mqtt=str(d.get("mqtt", "")), channel=str(d.get("channel", "")),
             voice_override=str(d.get("voice_override", "")),
-            enabled=bool(d.get("enabled", True)),
+            enabled=soft_flag(d.get("enabled"), "enabled", default=True),
             play_mode=str(d.get("play_mode", "notify_text")),
             ha_tts_entity=str(d.get("ha_tts_entity", "")),
             ha_player_entity=str(d.get("ha_player_entity", "")),

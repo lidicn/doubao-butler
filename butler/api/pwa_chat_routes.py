@@ -5,6 +5,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.param import query_num
 from butler.config import get_settings
 from butler.core import pwa_chat_store
 from butler.logging_setup import get_logger
@@ -69,8 +70,8 @@ async def pwa_chat_messages(request: Request):
     g = guard(request)
     if g:
         return g
-    since_id = int(request.query_params.get("since", 0))
-    limit = int(request.query_params.get("limit", 100))
+    since_id = query_num(request, "since", default=0, minimum=0)
+    limit = query_num(request, "limit", default=100, minimum=0)
     items = pwa_chat_store.list_messages(since_id=since_id, limit=limit)
     latest = pwa_chat_store.get_latest_id()
     return ok({"items": items, "latest_id": latest})

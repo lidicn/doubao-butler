@@ -9,6 +9,7 @@ from starlette.routing import Route
 from butler.api.deps import err, guard, ok
 from butler.core import decision_store
 from butler.logging_setup import get_logger
+from butler.param import query_num
 from butler.runtime import get_runtime
 
 logger = get_logger("butler.decision_api")
@@ -108,8 +109,8 @@ async def decision_list(request: Request):
     if g:
         return g
     status = request.query_params.get("status") or None
-    limit = int(request.query_params.get("limit", 50))
-    offset = int(request.query_params.get("offset", 0))
+    limit = query_num(request, "limit", default=50, minimum=0)
+    offset = query_num(request, "offset", default=0, minimum=0)
     decisions = decision_store.list_decisions(status=status, limit=limit, offset=offset)
     pending = decision_store.get_pending_count()
     return ok({"decisions": decisions, "pending_count": pending})

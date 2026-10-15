@@ -21,6 +21,7 @@ from butler.integrations.llm import LLMClient
 from butler.integrations.memory_agent import MemoryAgentClient
 from butler.integrations.tv import TVClient
 from butler.logging_setup import get_logger
+from butler.param import soft_flag, soft_num
 from homesdk.consent import YES, NO, UNKNOWN, classify_answer
 from butler.store import repo
 from butler.runtime import get_runtime
@@ -100,7 +101,7 @@ class DialogManager:
     async def on_event(self, topic: str, payload: dict) -> None:
         if topic.endswith("/face") or topic.endswith("/face/fused"):
             name = (payload.get("name") or payload.get("member") or "").strip()
-            conf = float(payload.get("confidence") or 0.0)
+            conf = soft_num(payload.get("confidence"), "confidence", default=0.0, integer=False)
             await self.on_face(name or "stranger", conf)
         elif topic.endswith("/status"):
             # TV 在线状态：离线时清理在场人员
@@ -498,7 +499,7 @@ class DialogManager:
         payload = event.payload if hasattr(event, "payload") else (event or {})
         exp_type = str(payload.get("exp_type") or "")
         text = str(payload.get("text") or "").strip()
-        interrupted = bool(payload.get("interrupted", False))
+        interrupted = soft_flag(payload.get("interrupted"), "interrupted", default=False)
         logger.info("tv_voice event received: type=%s interrupted=%s text=%s", exp_type, interrupted, text[:40])
         if exp_type and exp_type != "xiaoai_listening_end":
             return

@@ -7,6 +7,7 @@ import time
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.param import body_num, path_num, query_num
 from butler.logging_setup import get_logger
 from butler.roles.store import ALL_ROLE_IDS
 from butler.runtime import get_runtime
@@ -21,7 +22,7 @@ async def local_list(request):
     g = guard(request)
     if g:
         return g
-    limit = int(request.query_params.get("limit", "100"))
+    limit = query_num(request, "limit", default=100, minimum=0)
     turns = await asyncio.to_thread(repo.recent_turns, limit)
     return ok({"turns": turns})
 
@@ -99,7 +100,7 @@ async def facts_list(request):
     """GET /api/memory/facts?status=pending&fact_type=preference&limit=100"""
     status = request.query_params.get("status", "")
     ftype = request.query_params.get("fact_type", "")
-    limit = int(request.query_params.get("limit", "100"))
+    limit = query_num(request, "limit", default=100, minimum=0)
     facts = await asyncio.to_thread(repo.list_facts, status, ftype, limit)
     counts = await asyncio.to_thread(repo.count_facts_by_status)
     return ok({"facts": facts, "counts": counts})
@@ -109,7 +110,7 @@ async def facts_detail(request):
     g = guard(request)
     if g:
         return g
-    fid = int(request.path_params.get("id", "0"))
+    fid = path_num(request, "id", default=0, minimum=1)
     fact = await asyncio.to_thread(repo.get_fact, fid)
     if not fact:
         return err("fact not found", 404)
@@ -121,7 +122,7 @@ async def facts_update(request):
     g = guard(request)
     if g:
         return g
-    fid = int(request.path_params.get("id", "0"))
+    fid = path_num(request, "id", default=0, minimum=1)
     try:
         body = await request.json()
     except Exception:
@@ -148,7 +149,7 @@ async def facts_approve(request):
     g = guard(request)
     if g:
         return g
-    fid = int(request.path_params.get("id", "0"))
+    fid = path_num(request, "id", default=0, minimum=1)
     ok_flag = await asyncio.to_thread(repo.set_fact_status, fid, "approved")
     if not ok_flag:
         return err("fact not found", 404)
@@ -160,7 +161,7 @@ async def facts_reject(request):
     g = guard(request)
     if g:
         return g
-    fid = int(request.path_params.get("id", "0"))
+    fid = path_num(request, "id", default=0, minimum=1)
     ok_flag = await asyncio.to_thread(repo.set_fact_status, fid, "rejected")
     if not ok_flag:
         return err("fact not found", 404)
@@ -172,7 +173,7 @@ async def facts_delete(request):
     g = guard(request)
     if g:
         return g
-    fid = int(request.path_params.get("id", "0"))
+    fid = path_num(request, "id", default=0, minimum=1)
     ok_flag = await asyncio.to_thread(repo.delete_fact, fid)
     if not ok_flag:
         return err("fact not found", 404)
@@ -188,7 +189,7 @@ async def facts_bulk_approve(request):
         body = await request.json()
     except Exception:
         body = {}
-    min_conf = float(body.get("min_conf", 0.7))
+    min_conf = body_num(body, "min_conf", default=0.7, minimum=0.0, maximum=1.0, integer=False)
     # DB59: 阈值必须在 [0, 1] 范围内，越界值会翻转全部待审核事实
     if not (0.0 <= min_conf <= 1.0):
         return err("min_conf must be within [0, 1]", 400)
@@ -212,7 +213,7 @@ async def facts_bulk_reject(request):
         body = await request.json()
     except Exception:
         body = {}
-    max_conf = float(body.get("max_conf", 0.6))
+    max_conf = body_num(body, "max_conf", default=0.6, minimum=0.0, maximum=1.0, integer=False)
     # DB59: 阈值必须在 [0, 1] 范围内
     if not (0.0 <= max_conf <= 1.0):
         return err("max_conf must be within [0, 1]", 400)
@@ -238,8 +239,7 @@ async def extract_run(request):
         body = await request.json()
     except Exception:
         body = {}
-    days = int(body.get("days", 7) or 7)
-    days = max(1, min(days, 90))  # 上限 90 天，防误传
+    days = body_num(body, "days", default=7, minimum=1, maximum=90)
     rt = get_runtime()
     from butler.memory.extractor import MemoryExtractor
     extractor = MemoryExtractor(rt)
@@ -291,7 +291,7 @@ async def feed_fact(request):
     g = guard(request)
     if g:
         return g
-    fid = int(request.path_params.get("id", "0"))
+    fid = path_num(request, "id", default=0, minimum=1)
     rt = get_runtime()
     from butler.memory.feeder import MemoryFeeder
     feeder = MemoryFeeder(rt)
@@ -327,7 +327,7 @@ async def fact_set_role(request):
     g = guard(request)
     if g:
         return g
-    fid = int(request.path_params.get("id", "0"))
+    fid = path_num(request, "id", default=0, minimum=1)
     try:
         body = await request.json()
     except Exception:

@@ -5,6 +5,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.param import body_num, query_num
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
 
@@ -26,7 +27,7 @@ async def inquiry_ask(request: Request):
     options = body.get("options") or []
     context = body.get("context") or {}
     tts_device = body.get("tts_device") or None
-    cooldown_hours = int(body.get("cooldown_hours", 24))
+    cooldown_hours = body_num(body, "cooldown_hours", default=24, minimum=0)
 
     if not event_key or not title or not question:
         return err("event_key, title and question are required", 400)
@@ -86,7 +87,7 @@ async def inquiry_pending(request: Request):
     engine = getattr(rt, "proactive_engine", None)
     if engine is None:
         return err("proactive engine not initialized", 503)
-    limit = int(request.query_params.get("limit", 10))
+    limit = query_num(request, "limit", default=10, minimum=0)
     pending = engine.get_pending(limit=limit)
     return ok({"pending": pending, "count": len(pending)})
 
@@ -101,8 +102,8 @@ async def inquiry_list(request: Request):
     if engine is None:
         return err("proactive engine not initialized", 503)
     status = request.query_params.get("status") or None
-    limit = int(request.query_params.get("limit", 50))
-    offset = int(request.query_params.get("offset", 0))
+    limit = query_num(request, "limit", default=50, minimum=0)
+    offset = query_num(request, "offset", default=0, minimum=0)
     inquiries = engine.list(status=status, limit=limit, offset=offset)
     return ok({"inquiries": inquiries, "count": len(inquiries)})
 

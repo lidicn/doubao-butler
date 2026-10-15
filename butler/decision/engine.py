@@ -21,6 +21,7 @@ from datetime import datetime
 from homesdk.time import house_now
 from butler.logging_setup import get_logger
 from butler.decision.action_router import ALLOWED_ACTIONS
+from butler.param import soft_num
 
 logger = get_logger("butler.decision.engine")
 
@@ -114,10 +115,8 @@ class DecisionEngine:
         # 4. 夜间规则：23:00-07:00 只允许 notify（用家庭时区，容器可能跑在 UTC）
         # （now_hour 仅供测试/调试注入，生产走当前家庭时间）
         beijing_hour = house_now().hour
-        try:
-            hour = int(payload.get("now_hour")) if payload.get("now_hour") is not None else beijing_hour
-        except (ValueError, TypeError):
-            hour = beijing_hour
+        hour = soft_num(payload.get("now_hour"), "now_hour", default=beijing_hour,
+                        minimum=0, maximum=23)
         night = hour >= self.cfg.night_start or hour < self.cfg.night_end
         if night and action != "notify":
             filter_reason = f"夜间（{self.cfg.night_start}:00-{self.cfg.night_end}:00）只允许 notify，拒绝 {action}"

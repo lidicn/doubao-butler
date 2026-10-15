@@ -91,6 +91,7 @@ from butler.store import repo
 from butler.tts.manager import TTSManager
 from butler.tts.singleton import init_queue as init_tts_queue, get_queue as get_tts_queue
 from butler.notify.singleton import init_router as init_notify_router
+from butler.param import ParamError
 from butler.devices import DeviceRegistry
 from butler.roles.store import RoleRegistry
 from butler.roles.state import RoleConversationStore
@@ -237,6 +238,11 @@ async def _avatar(request: Request):
 async def _global_exc(request, exc):
     logger.exception("unhandled: %s", exc)
     return JSONResponse({"ok": False, "error": "internal_error"}, status_code=500)
+
+
+async def _param_exc(request, exc):
+    """批221：入参不合法是调用方的错，回 400 并点名参数（`ParamError` 的消息不含原值）。"""
+    return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
 
 def _build_app() -> Starlette:
@@ -964,7 +970,7 @@ def _build_app() -> Starlette:
             allow_methods=["*"],
             allow_headers=["*"],
         )],
-        exception_handlers={Exception: _global_exc},
+        exception_handlers={ParamError: _param_exc, Exception: _global_exc},
     )
     return app
 

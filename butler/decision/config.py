@@ -6,6 +6,7 @@ from pathlib import Path
 
 from butler.config import Settings
 from butler.logging_setup import get_logger
+from butler.param import ParamError, to_bool, to_float, to_int
 
 logger = get_logger("butler.decision.config")
 
@@ -64,30 +65,47 @@ class DecisionConfig:
             logger.warning("save decision.json failed: %s", e)
 
     # ---- 读取 ----
+    # 配置侧一律「坏值记一行 + 按文档默认值走」：这些属性在调度器注册块里被读，
+    # DB99 的原始形态就是一枚 `interval_minutes: "abc"` 让整块注册中断（⛔ 抛给调用方）。
+
+    def _num(self, name: str, default, *, integer: bool = True, minimum=None, maximum=None):
+        conv = to_int if integer else to_float
+        try:
+            return conv(self.cfg.get(name), name, default=default, minimum=minimum, maximum=maximum)
+        except ParamError as exc:
+            logger.warning("decision.json 字段不可解，按默认值走：%s（默认=%s）", exc, default)
+            return default
+
+    def _flag(self, name: str, default: bool) -> bool:
+        try:
+            return to_bool(self.cfg.get(name), name, default=default)
+        except ParamError as exc:
+            logger.warning("decision.json 布尔字段不可解，按默认值走：%s（默认=%s）", exc, default)
+            return default
 
     @property
     def enabled(self) -> bool:
-        return bool(self.cfg.get("enabled", True))
+        return self._flag("enabled", True)
 
     @property
     def interval_minutes(self) -> int:
-        return max(1, int(self.cfg.get("interval_minutes", 10)))
+        return max(1, self._num("interval_minutes", 10))
 
     @property
     def night_start(self) -> int:
-        return int(self.cfg.get("night_start", 23))
+        return self._num("night_start", 23, minimum=0, maximum=23)
 
     @property
     def night_end(self) -> int:
-        return int(self.cfg.get("night_end", 7))
+        return self._num("night_end", 7, minimum=0, maximum=23)
 
     @property
     def confidence_threshold(self) -> float:
-        return float(self.cfg.get("confidence_threshold", 0.6))
+        return self._num("confidence_threshold", 0.6, integer=False, minimum=0.0, maximum=1.0)
 
     @property
     def cooldown_minutes(self) -> int:
-        return max(1, int(self.cfg.get("cooldown_minutes", 30)))
+        return max(1, self._num("cooldown_minutes", 30))
 
     @property
     def devices(self) -> dict[str, str]:

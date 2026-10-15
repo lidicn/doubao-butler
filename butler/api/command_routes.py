@@ -11,6 +11,7 @@ from starlette.routing import Route
 from starlette.responses import JSONResponse
 
 from butler.logging_setup import get_logger
+from butler.param import query_num
 from butler.store import command_store as cmd
 
 logger = get_logger("butler.api.command")
@@ -60,7 +61,7 @@ async def command_pull(request: Request):
     if g:
         return g
     target = (request.path_params.get("target") or "").strip().upper()
-    limit = int(request.query_params.get("limit", "5"))
+    limit = query_num(request, "limit", default=5, minimum=0)
     if target not in ("TP", "DP", "PM"):
         return _err("target must be TP / DP / PM")
     items = await asyncio.to_thread(cmd.pull_commands, target, limit=limit)
@@ -144,8 +145,8 @@ async def command_list(request: Request):
         return g
     target = (request.query_params.get("target") or "").strip().upper()
     status = (request.query_params.get("status") or "").strip().lower()
-    limit = int(request.query_params.get("limit", "50"))
-    offset = int(request.query_params.get("offset", "0"))
+    limit = query_num(request, "limit", default=50, minimum=0)
+    offset = query_num(request, "offset", default=0, minimum=0)
     result = await asyncio.to_thread(
         cmd.list_commands, target=target, status=status, limit=limit, offset=offset
     )

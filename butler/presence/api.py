@@ -18,6 +18,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.param import body_num
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
 
@@ -122,8 +123,8 @@ async def report_event(request: Request):
     signal_type = body.get("type", "")
     user_id = body.get("user", "")
     room = body.get("room", "")
-    confidence = float(body.get("confidence", 1.0))
-    metadata = body.get("metadata", {})
+    confidence = body_num(body, "confidence", default=1.0, minimum=0.0, maximum=1.0, integer=False)
+    metadata = body.get("metadata") or {}
 
     if not signal_type or not user_id or not room:
         return err("type, user, room are required")

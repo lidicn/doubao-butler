@@ -15,6 +15,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.param import body_bool, body_num, path_num, query_num
 from butler.runtime import get_runtime
 from butler.store import repo
 from butler.notify.singleton import get_router as get_notify_router
@@ -42,12 +43,12 @@ async def notify(request):
     ntype = str(body.get("type", "info")).strip().lower()
     if ntype not in _ALLOWED_TYPES:
         ntype = "info"
-    important = bool(body.get("important", False))
-    with_tts = bool(body.get("tts", True))
-    volume = int(body.get("volume", 80))
-    pause_media = bool(body.get("pause_media", False))
+    important = body_bool(body, "important", default=False)
+    with_tts = body_bool(body, "tts", default=True)
+    volume = body_num(body, "volume", default=80, minimum=0, maximum=100)
+    pause_media = body_bool(body, "pause_media", default=False)
     voice = body.get("voice") or None
-    duration = int(body.get("duration", 8000)) if not important else 0
+    duration = body_num(body, "duration", default=8000, minimum=0) if not important else 0
 
     rt = get_runtime()
     tts_url = ""
@@ -99,7 +100,7 @@ async def notify_history(request):
     g = guard(request)
     if g:
         return g
-    limit = int(request.query_params.get("limit", "20"))
+    limit = query_num(request, "limit", default=20, minimum=0)
     rows = await asyncio.to_thread(repo.recent_notifies, limit)
     return ok({"items": rows})
 
@@ -108,7 +109,7 @@ async def notify_delete(request):
     g = guard(request)
     if g:
         return g
-    nid = int(request.path_params.get("id", "0"))
+    nid = path_num(request, "id", default=0, minimum=1)
     ok_del = await asyncio.to_thread(repo.delete_notify, nid)
     return ok({"deleted": ok_del})
 

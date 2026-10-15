@@ -88,7 +88,9 @@ SWITCH_ROW_SYMBOLS = [
     ("butler/app.py", "mark_undelivered"),                        # DB61 调用腿
     ("butler/tts/manager.py", "gate_tts"),                        # DB64
     ("butler/api/llm_chat.py", "ignored remote system override"),  # DB73
-    ("butler/api/tts_routes.py", 'body.get("override_quiet", False)'),  # DB73b
+    # DB73b 哨兵形制随批221 变（`bool(body.get(...))` → 共用尺子 `body_bool`）：
+    #   本行口径覆盖批202 row 3 登记的那一枚；被 revert 的判据仍是「override_quiet 由调用方显式声明、默认 False」。
+    ("butler/api/tts_routes.py", 'body_bool(body, "override_quiet", default=False)'),  # DB73b
 ]
 
 

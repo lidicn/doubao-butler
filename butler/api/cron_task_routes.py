@@ -17,6 +17,7 @@ from starlette.routing import Route
 from butler.api.deps import err, guard, ok
 from butler.core.cron_validator import validator as cron_validator
 from butler.logging_setup import get_logger
+from butler.param import query_num
 from butler.runtime import get_runtime
 
 logger = get_logger("butler.api.cron_task")
@@ -91,7 +92,7 @@ async def get_logs(request: Request):
         return err("cron_task executor not initialized")
 
     skill_id = request.query_params.get("skill_id")
-    limit = int(request.query_params.get("limit", 20))
+    limit = query_num(request, "limit", default=20, minimum=0)
     logs = executor.get_execution_log(skill_id, limit)
     return ok(logs)
 
@@ -116,7 +117,7 @@ async def get_failure_patterns(request: Request):
     if not executor:
         return err("cron_task executor not initialized")
     skill_id = request.query_params.get("skill_id")
-    limit = int(request.query_params.get("limit", 50))
+    limit = query_num(request, "limit", default=50, minimum=0)
     return ok(executor.get_failure_patterns(skill_id, limit))
 
 

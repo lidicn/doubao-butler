@@ -5,6 +5,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.param import query_num
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
 
@@ -39,7 +40,7 @@ async def entity_discover(request: Request):
     device_class = request.query_params.get("device_class") or None
     name_contains = request.query_params.get("name_contains") or None
     state = request.query_params.get("state") or None
-    limit = int(request.query_params.get("limit", 50))
+    limit = query_num(request, "limit", default=50, minimum=0)
 
     entities = await discovery.discover_entities(
         domain=domain, area=area, device_class=device_class,
@@ -118,8 +119,8 @@ async def whitelist_list(request: Request):
     category = request.query_params.get("category") or None
     enabled_param = request.query_params.get("enabled")
     enabled = None if enabled_param is None else enabled_param.lower() in ("1", "true")
-    limit = int(request.query_params.get("limit", 200))
-    offset = int(request.query_params.get("offset", 0))
+    limit = query_num(request, "limit", default=200, minimum=0)
+    offset = query_num(request, "offset", default=0, minimum=0)
     entities = wl.list(category=category, enabled=enabled, limit=limit, offset=offset)
     stats = wl.count()
     return ok({"entities": entities, "count": len(entities), "stats": stats})

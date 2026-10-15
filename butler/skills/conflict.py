@@ -17,8 +17,22 @@ from pathlib import Path
 from collections import defaultdict
 
 from butler.logging_setup import get_logger
+from butler.param import ParamError, to_int
 
 logger = get_logger("butler.skills.conflict")
+
+
+def _hhmm(text: str) -> int:
+    """`HH:MM` → 当日分钟数（坏值抛 `ParamError`）。"""
+    h, m = str(text).strip().split(":")
+    return to_int(h, "小时", minimum=0, maximum=23) * 60 + to_int(m, "分钟", minimum=0, maximum=59)
+
+def _spans_overlap(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """把跨午夜窗（23:00-01:00）拆成两段再判——单段比较对这种窗恒为「不重叠」，正是 DB135 的漏报。"""
+    def split(span):
+        s, e = span
+        return [(s, e)] if s < e else [(s, 1440), (0, e)]
+    return any(x1 < y2 and y1 < x2 for x1, x2 in split(a) for y1, y2 in split(b))
 
 
 class ConflictDetector:
@@ -137,14 +151,16 @@ class ConflictDetector:
         try:
             def parse(r):
                 s, e = r.split("-")
-                sh, sm = map(int, s.split(":"))
-                eh, em = map(int, e.split(":"))
-                return sh * 60 + sm, eh * 60 + em
+                return _hhmm(s), _hhmm(e)
             s1, e1 = parse(r1)
             s2, e2 = parse(r2)
-            return s1 < e2 and s2 < e1
-        except Exception:
-            return True  # 解析失败默认重叠
+        except (ParamError, ValueError) as exc:
+            # 坏格式判「不重叠」并留痕：此前 return True 把任何一条读不懂的时间窗都报成冲突。
+            logger.warning("时间段格式不可解，按不重叠处理：%s（%s／%s）", exc, r1, r2)
+            return False
+        if s1 == e1 or s2 == e2:
+            return False                      # 零宽窗（起止同刻）不与任何东西重叠
+        return _spans_overlap((s1, e1), (s2, e2))   # 跨午夜窗在此支才算得对
 
     def _detect_duplicate_trigger(self, triggers: list[dict]) -> list[dict]:
         """检测功能重复的触发器（同一事件+同一动作+相同条件）。"""

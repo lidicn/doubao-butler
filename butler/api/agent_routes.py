@@ -14,6 +14,7 @@ from starlette.routing import Route
 
 from butler.agent_trace import AgentTracer
 from butler.api.deps import err, guard, ok
+from butler.param import body_bool, path_num, query_num
 from butler.runtime import get_runtime
 
 
@@ -43,7 +44,7 @@ async def list_traces(request):
     if g:
         return g
     try:
-        limit = int(request.query_params.get("limit", 50))
+        limit = query_num(request, "limit", default=50, minimum=0)
         limit = max(1, min(limit, 200))
     except ValueError:
         limit = 50
@@ -84,7 +85,7 @@ async def analyze_fast_routes(request):
         return g
     from butler.core.self_evolve import analyze_llm_traces
     try:
-        min_count = int(request.query_params.get("min_count", 3))
+        min_count = query_num(request, "min_count", default=3, minimum=0)
     except ValueError:
         min_count = 3
     candidates = analyze_llm_traces(min_count=min_count)
@@ -115,7 +116,7 @@ async def toggle_fast_route(request):
     route_id = request.path_params.get("route_id", "")
     try:
         body = await request.json()
-        enabled = bool(body.get("enabled", True))
+        enabled = body_bool(body, "enabled", default=True)
     except Exception:
         enabled = True
     agent = get_runtime().agent
@@ -166,7 +167,7 @@ async def analyze_failures(request):
     if g:
         return g
     from butler.core.failure_learn import analyze_failures
-    days = int(request.query_params.get("days", 7))
+    days = query_num(request, "days", default=7, minimum=1)
     data = analyze_failures(days=days)
     return ok(data)
 
@@ -177,7 +178,7 @@ async def infer_scenes(request):
     if g:
         return g
     from butler.core.scene_infer import infer_scenes
-    days = int(request.query_params.get("days", 7))
+    days = query_num(request, "days", default=7, minimum=1)
     data = infer_scenes(days=days)
     return ok(data)
 
@@ -207,7 +208,7 @@ async def events_recent(request):
     g = guard(request)
     if g:
         return g
-    seconds = int(request.query_params.get("seconds", 600))
+    seconds = query_num(request, "seconds", default=600, minimum=1)
     rt = get_runtime()
     es = getattr(rt, "event_stream", None)
     if not es:
@@ -266,7 +267,7 @@ async def perception_update_candidate(request):
     if g:
         return g
     from butler.core.perception_learn import update_candidate_rule
-    rule_id = int(request.path_params["rule_id"])
+    rule_id = path_num(request, "rule_id", minimum=0)
     body = await request.json()
     status = body.get("status", "approved")
     ok_ = update_candidate_rule(rule_id, status)

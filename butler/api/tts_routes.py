@@ -7,6 +7,7 @@ from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
 from butler.logging_setup import get_logger
+from butler.param import body_bool
 from butler.runtime import get_runtime
 
 logger = get_logger("butler.api.tts")
@@ -234,8 +235,8 @@ async def speak(request):
     device_id = str(body.get("device_id", "")).strip()
     voice = body.get("voice") or None
     title = str(body.get("title", "")).strip()
-    no_prefix = bool(body.get("no_prefix", False))
-    no_presence_route = bool(body.get("no_presence_route", False))
+    no_prefix = body_bool(body, "no_prefix", default=False)
+    no_presence_route = body_bool(body, "no_presence_route", default=False)
     backend = str(body.get("backend", "")).strip() or None
 
     rt = get_runtime()
@@ -442,7 +443,7 @@ async def queue_enqueue(request):
     backend = body.get("backend")
     voice = body.get("voice")
     # DB73b: override_quiet 由调用方显式声明，默认 False
-    override_quiet = bool(body.get("override_quiet", False))
+    override_quiet = body_bool(body, "override_quiet", default=False)
     r = q.enqueue(text, priority=priority, device_id=device_id, room=room,
                   backend=backend, voice=voice, override_quiet=override_quiet)
     return ok({"accepted": r.accepted, "reason": r.reason, "size": q.status()["size"]})

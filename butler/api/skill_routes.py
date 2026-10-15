@@ -7,6 +7,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 
 from butler.api.deps import err, guard, ok
+from butler.param import query_num
 from butler.logging_setup import get_logger
 from butler.runtime import get_runtime
 from butler.skills.schema import validate_skill
@@ -231,7 +232,7 @@ async def quarantine_audit(request: Request):
     if mgr is None:
         return err("quarantine manager not ready", 503)
     sid = request.path_params.get("skill_id", "")
-    limit = int(request.query_params.get("limit", "20"))
+    limit = query_num(request, "limit", default=20, minimum=0)
     return ok({"skill_id": sid, "entries": mgr.get_audit_log(sid, limit)})
 
 
@@ -522,7 +523,7 @@ async def perf_skills(request: Request):
     if perf is None:
         return err("performance monitor not ready", 503)
     skill_id = request.query_params.get("skill_id")
-    window = int(request.query_params.get("window", 3600))
+    window = query_num(request, "window", default=3600, minimum=1)
     return ok(perf.get_skill_stats(skill_id, window))
 
 
@@ -536,7 +537,7 @@ async def perf_llm(request: Request):
     perf = getattr(rt, "perf_monitor", None)
     if perf is None:
         return err("performance monitor not ready", 503)
-    window = int(request.query_params.get("window", 3600))
+    window = query_num(request, "window", default=3600, minimum=1)
     return ok(perf.get_llm_stats(window))
 
 
@@ -551,7 +552,7 @@ async def perf_triggers(request: Request):
     if perf is None:
         return err("performance monitor not ready", 503)
     trigger_id = request.query_params.get("trigger_id")
-    window = int(request.query_params.get("window", 3600))
+    window = query_num(request, "window", default=3600, minimum=1)
     return ok(perf.get_trigger_stats(trigger_id, window))
 
 
@@ -764,7 +765,7 @@ async def evolution_history(request: Request):
     evo = getattr(rt, "self_evolution", None)
     if evo is None:
         return err("self evolution engine not ready", 503)
-    limit = int(request.query_params.get("limit", 50))
+    limit = query_num(request, "limit", default=50, minimum=0)
     return ok({"items": evo.get_history(limit), "count": len(evo.get_history(limit))})
 
 
@@ -826,7 +827,7 @@ async def skill_runs(request: Request):
     if g:
         return g
     sid = request.path_params.get("skill_id", "")
-    limit = int(request.query_params.get("limit", "50"))
+    limit = query_num(request, "limit", default=50, minimum=0)
     rows = await asyncio.to_thread(repo_recent, sid, limit)
     return ok({"items": rows})
 
@@ -837,7 +838,7 @@ async def skill_stats(request: Request):
     if g:
         return g
     sid = request.path_params.get("skill_id", "")
-    days = int(request.query_params.get("days", "30"))
+    days = query_num(request, "days", default=30, minimum=1)
     from butler.store import repo
     stats = await asyncio.to_thread(repo.get_skill_stats, sid, days)
     return ok(stats)
@@ -848,7 +849,7 @@ async def skills_stats_all(request: Request):
     g = guard(request)
     if g:
         return g
-    days = int(request.query_params.get("days", "30"))
+    days = query_num(request, "days", default=30, minimum=1)
     from butler.store import repo
     stats = await asyncio.to_thread(repo.get_all_skill_stats, days)
     return ok({"items": stats, "count": len(stats)})
@@ -859,9 +860,9 @@ async def skills_low_quality(request: Request):
     g = guard(request)
     if g:
         return g
-    days = int(request.query_params.get("days", "30"))
-    min_runs = int(request.query_params.get("min_runs", "5"))
-    max_rate = float(request.query_params.get("max_rate", "0.6"))
+    days = query_num(request, "days", default=30, minimum=1)
+    min_runs = query_num(request, "min_runs", default=5, minimum=0)
+    max_rate = query_num(request, "max_rate", default=0.6, minimum=0.0, maximum=1.0, integer=False)
     from butler.store import repo
     items = await asyncio.to_thread(repo.get_low_quality_skills, days, min_runs, max_rate)
     return ok({"items": items, "count": len(items)})
