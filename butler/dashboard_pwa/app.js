@@ -6,6 +6,12 @@ let currentRoom = '客厅';
 let boardData = null;
 let chatHistory = [];
 
+// HTML 转义工具（DB-003 XSS 修复）
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // ========== API ==========
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json; charset=utf-8', ...(opts.headers || {}) };
@@ -51,7 +57,7 @@ async function loadBoard() {
 
   const r = await api('/api/task/board');
   if (!r.ok) {
-    boardEl.innerHTML = '<div class="empty">加载失败：' + (r.error || '') + '</div>';
+    boardEl.innerHTML = '<div class="empty">加载失败：' + escapeHtml(r.error || '') + '</div>';
     return;
   }
   boardData = r.data;
@@ -274,7 +280,7 @@ function appendChatMessage(who, text) {
   const c = document.getElementById('chat-container');
   const div = document.createElement('div');
   div.style.cssText = 'padding:8px 12px;margin:4px 0;border-radius:8px;background:rgba(255,255,255,0.06);';
-  div.innerHTML = '<b style="color:#6ab;">' + who + '：</b>' + text.replace(/</g, '&lt;');
+  div.innerHTML = '<b style="color:#6ab;">' + escapeHtml(who) + '：</b>' + escapeHtml(text);
   c.appendChild(div);
   c.scrollTop = c.scrollHeight;
 }

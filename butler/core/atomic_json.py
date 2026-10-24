@@ -71,7 +71,7 @@ def loads_column(raw, default, *, site: str):
 def write_json_atomic(path, data) -> None:
     """把 data 序列化成 JSON 并原子替换 path。序列化失败即抛出，目标与临时文件都不碰。"""
     target = Path(path)
-    tmp = target.with_name(target.name + ".tmp")
+    tmp = target.with_name(f"{target.name}.{os.getpid()}.tmp")
     payload = json.dumps(data, ensure_ascii=False, indent=2)
     try:
         tmp.write_text(payload, encoding="utf-8")
@@ -88,7 +88,7 @@ def write_lines_atomic(path, lines) -> None:
     拿它整本塞进一个 JSON 数组会改文件格式；这里只补"⛔ 就地 `open(path,'w')` 截断"那一条腿。
     """
     target = Path(path)
-    tmp = target.with_name(target.name + ".tmp")
+    tmp = target.with_name(f"{target.name}.{os.getpid()}.tmp")
     payload = "".join(str(line).rstrip("\n") + "\n" for line in lines)
     try:
         tmp.write_text(payload, encoding="utf-8")

@@ -113,7 +113,7 @@ class CronTaskExecutor:
             return
         try:
             self._data_dir.mkdir(parents=True, exist_ok=True)
-            data = {"apis": self._api_registry, "updated_at": datetime.now().isoformat()}
+            data = {"apis": self._api_registry, "updated_at": house_now().isoformat()}
             write_json_atomic(self._apis_file, data)
         except Exception as e:
             logger.warning("failed to save cron_task APIs: %s", e)
@@ -386,7 +386,7 @@ class CronTaskExecutor:
             "http_status": 0,
             "condition_result": False,
             "action_result": "",
-            "executed_at": datetime.now().isoformat(),
+            "executed_at": house_now().isoformat(),
         }
         
         # 1. 调用 API
@@ -641,7 +641,7 @@ class CronTaskExecutor:
         try:
             pattern_file = self._data_dir / "failure_patterns.jsonl"
             entry = {
-                "time": datetime.now().isoformat(),
+                "time": house_now().isoformat(),
                 "skill_id": skill_id,
                 "reason": result.get("reason", ""),
                 "http_status": result.get("http_status", 0),
@@ -764,7 +764,7 @@ class CronTaskExecutor:
     def _job_failure_entry(self, reason: str) -> dict:
         return {"ok": False, "status": "failed", "reason": reason, "http_status": 0,
                 "condition_result": False, "action_result": "",
-                "executed_at": datetime.now().isoformat()}
+                "executed_at": house_now().isoformat()}
     
     def get_execution_log(self, skill_id: str | None = None, limit: int = 20) -> list[dict]:
         """获取执行日志。"""
