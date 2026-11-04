@@ -48,7 +48,20 @@ jobs:
           cp .env.example .env
           mkdir -p data tts
       - name: Run full test suite
-        run: pytest tests -q --tb=short
+        run: |
+          set -o pipefail
+          pytest tests -q --tb=no 2>&1 | tee /tmp/pytest.log
+      - name: Surface failed tests as one annotation
+        if: failure()
+        run: |
+          grep -E '^(FAILED|ERROR) ' /tmp/pytest.log > /tmp/failed.txt || true
+          if [ -s /tmp/failed.txt ]; then
+            python3 - <<'PY'
+import pathlib, urllib.parse
+text = pathlib.Path("/tmp/failed.txt").read_text(encoding="utf-8")
+print("::error::" + urllib.parse.quote(text, safe=""))
+PY
+          fi
 
   contracts:
     name: adm-linkage-contracts
@@ -75,4 +88,17 @@ jobs:
       - name: Run ADM linkage contract tests
         # 独立于全量 suite：契约腿只跑 tests/contract，⛔ 被历史不稳用例淹没。
         # --no-cov：pytest.ini 的 --cov-fail-under=30 会在只跑契约目录时误红。
-        run: pytest tests/contract -v --no-cov
+        run: |
+          set -o pipefail
+          pytest tests/contract -v --no-cov 2>&1 | tee /tmp/contract.log
+      - name: Surface contract failures as one annotation
+        if: failure()
+        run: |
+          grep -E '^(FAILED|ERROR) ' /tmp/contract.log > /tmp/failed.txt || true
+          if [ -s /tmp/failed.txt ]; then
+            python3 - <<'PY'
+import pathlib, urllib.parse
+text = pathlib.Path("/tmp/failed.txt").read_text(encoding="utf-8")
+print("::error::" + urllib.parse.quote(text, safe=""))
+PY
+          fi
