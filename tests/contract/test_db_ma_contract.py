@@ -125,14 +125,24 @@ class DbMaContractTest(_ClientHarness):
                          % sorted(PENDING_MA_TOOLS - called))
 
     def test_06_bearer_is_single_point_and_fail_closed(self):
+        import os
         from butler.integrations.memory_agent import CredentialMissing
-        h = self.c.bearer_headers("mcp")
-        self.assertEqual(h, {"Authorization": "Bearer SENTINEL-MA-MCP"})
-        self.c.token = ""
-        with self.assertRaises(CredentialMissing):
-            self.c.bearer_headers("mcp")
-        with self.assertRaises(KeyError):
-            self.c.bearer_headers("no_such_surface")
+        old = os.environ.get("MEMORY_AGENT_TOKEN")
+        os.environ["MEMORY_AGENT_TOKEN"] = "SENTINEL-MA-MCP"
+        try:
+            h = self.c.bearer_headers("mcp")
+            self.assertEqual(h, {"Authorization": "Bearer SENTINEL-MA-MCP"})
+            # PR-C2 单源：凭据每次现读 homesdk env（⛔ 实例属性兜底）；抹掉 env＝严格入口必须抛
+            os.environ.pop("MEMORY_AGENT_TOKEN", None)
+            with self.assertRaises(CredentialMissing):
+                self.c.bearer_headers("mcp")
+            with self.assertRaises(KeyError):
+                self.c.bearer_headers("no_such_surface")
+        finally:
+            if old is None:
+                os.environ.pop("MEMORY_AGENT_TOKEN", None)
+            else:
+                os.environ["MEMORY_AGENT_TOKEN"] = old
 
     def test_07_negative_control_ruler_bites(self):
         """负控：故意让 retrieve 在外发前不设闸，test_02 那条判据必须反过来命中。

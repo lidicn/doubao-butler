@@ -187,9 +187,9 @@ class HomesdkAlignmentTest(unittest.TestCase):
         for t in ("butler/inbox/speak", "butler/inbox/notify", "butler/inbox/tv"):
             self.assertIn(t, block)
 
-    def test_06_status_is_online_compares_the_literal(self):
-        """卡片 2 的字面量口径不是我自己定的：0.3.1 的 `is_online()` 就比 `val == "online"`。"""
-        self.assertIn('== "online"', self.presence)
+    def test_06_status_is_online_compares_the_state_constant(self):
+        """0.3.3 的 `is_online()` 用 STATE_ONLINE 常量比（0.3.1 的字面量已收进口袋，DCD 20261104 T7）。"""
+        self.assertIn("STATE_ONLINE", self.presence)
         self.assertTrue(topics.adm_status_is_online("online"))
 
 

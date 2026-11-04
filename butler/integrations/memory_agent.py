@@ -69,6 +69,10 @@ class MemoryAgentClient:
         except AuthMissing as e:
             raise CredentialMissing(surface, env_key) from e
 
+    # 契约测试 tests/contract/test_db_ma_contract.py 期望的公开单点（NAS 线回收件的契约名）；
+    # 行为与 _ma_bearer 完全一致，⛔ 两套实现。
+    bearer_headers = _ma_bearer
+
     def _ma_basic(self) -> dict:
         try:
             return require_basic_headers("memory-agent")
