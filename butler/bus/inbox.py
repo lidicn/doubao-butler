@@ -4,7 +4,8 @@
   1. 载荷 schema 校验（按通道读字段，对齐契约 v2.0 §E）：trace_id 必填、长度受限，违规丢弃 + 审计；
   2. 每来源限流（滑动窗口，默认 10 条/分钟）；
   3. 每来源×通道冷却（同文本 60s 内不重复）；
-  4. 每来源 speak 每日预算（决策 11 口径，默认 3 次/日）。
+  4. 每来源 speak 每日预算（默认 0＝不限；`BUTLER_INBOX_SPEAK_DAILY_LIMIT` 正整数＝每日上限。
+     2026-11-04 按用户要求关闭 AF 主动发声的原 3 次/日上限）。
 
 契约 v2.0 §E（唯一真源，码迁就契约）：
   - speak: {trace_id, ts, text, role?, priority?, expires_at?}  text≤500
@@ -99,7 +100,12 @@ class InboxGate:
 
     @property
     def speak_daily_limit(self) -> int:
-        return _env_int("BUTLER_INBOX_SPEAK_DAILY_LIMIT", 3)
+        """每来源 speak 每日预算：`<=0`＝不限（关闭限额），正整数＝每日上限。
+
+        默认 0（不限）——2026-11-04 按用户要求关闭 AF 主动发声每日 3 次上限；
+        恢复限额时设 `BUTLER_INBOX_SPEAK_DAILY_LIMIT=3`（或其它正整数）即可。
+        """
+        return _env_int("BUTLER_INBOX_SPEAK_DAILY_LIMIT", 0)
 
     # ── 审计：sqlite 记账（speak 预算） ──
     def _db(self) -> sqlite3.Connection:
@@ -318,11 +324,12 @@ class InboxGate:
             return OUTCOME_DROPPED, "冷却中"
 
         if channel == "speak":
+            limit = self.speak_daily_limit
             used = self.budget_used(note["source"])
-            if used >= self.speak_daily_limit:
+            if limit > 0 and used >= limit:
                 logger.warning("%s inbox drop channel=speak source=%s trace=%s reason=每日预算用尽(%d/%d)",
-                               ADM_ERR_INTERNAL, note["source"], note["trace_id"], used, self.speak_daily_limit)
-                return OUTCOME_DROPPED, "每日预算用尽(%d/%d)" % (used, self.speak_daily_limit)
+                               ADM_ERR_INTERNAL, note["source"], note["trace_id"], used, limit)
+                return OUTCOME_DROPPED, "每日预算用尽(%d/%d)" % (used, limit)
             accepted = enqueue_tts(
                 note["text"], priority=note["priority"], room=note["room"],
                 member=note["source"], override_quiet=note["override_quiet"],
@@ -330,9 +337,10 @@ class InboxGate:
             )
             if accepted:
                 today = self.budget_consume(note["source"])
-                logger.info("INBOX_DONE channel=speak source=%s trace=%s budget=%d/%d",
-                            note["source"], note["trace_id"], today, self.speak_daily_limit)
-                return OUTCOME_ACCEPTED, "budget=%d/%d" % (today, self.speak_daily_limit)
+                budget_note = ("budget=%d/%d" % (today, limit)) if limit > 0 else ("budget=%d/unlimited" % today)
+                logger.info("INBOX_DONE channel=speak source=%s trace=%s %s",
+                            note["source"], note["trace_id"], budget_note)
+                return OUTCOME_ACCEPTED, budget_note
             logger.info("%s inbox drop channel=speak source=%s trace=%s reason=队列拒绝",
                         ADM_ERR_INTERNAL, note["source"], note["trace_id"])
             return OUTCOME_REJECTED, "队列拒绝"
