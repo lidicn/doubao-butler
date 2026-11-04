@@ -39,7 +39,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Install homesdk wheel (DCD 20261104 T7: 锁 0.3.3)
+      - name: "Install homesdk wheel (DCD 20261104 T7 锁 0.3.3)"
         run: pip install "$HOMESDK_WHEEL"
       - name: Install test tooling
         run: pip install pytest pytest-asyncio pytest-cov
@@ -64,7 +64,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Install homesdk wheel (DCD 20261104 T7: 锁 0.3.3)
+      - name: "Install homesdk wheel (DCD 20261104 T7 锁 0.3.3)"
         run: pip install "$HOMESDK_WHEEL"
       - name: Install test tooling
         run: pip install pytest pytest-asyncio pytest-cov
