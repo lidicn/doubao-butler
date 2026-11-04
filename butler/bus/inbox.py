@@ -74,6 +74,19 @@ def _env_flag(name: str, default: bool = True) -> bool:
     return raw.strip().lower() not in ("0", "false", "no", "off")
 
 
+def _resolve_area_id(room, rt) -> str | None:
+    """room 文本 → HA area_id（用登记表 area_id↔显示名喂 homesdk.areas）；解析不到返回 None。"""
+    from butler.areas import resolve_room
+    mapping: dict[str, str] = {}
+    try:
+        reg = getattr(rt, "devices", None) if rt is not None else None
+        if reg is not None:
+            mapping = {d.area_id: d.room for d in reg.all() if d.area_id and d.room}
+    except Exception:  # pragma: no cover - 装配面
+        mapping = {}
+    return resolve_room(room, mapping) if mapping else resolve_room(room)
+
+
 class InboxGate:
     """收件箱闸：校验 → 限流 → 冷却 → 预算 → 分发。"""
 
@@ -330,6 +343,13 @@ class InboxGate:
                 logger.warning("%s inbox drop channel=speak source=%s trace=%s reason=每日预算用尽(%d/%d)",
                                ADM_ERR_INTERNAL, note["source"], note["trace_id"], used, limit)
                 return OUTCOME_DROPPED, "每日预算用尽(%d/%d)" % (used, limit)
+            # DCD 20261104 §2.3 硬判据：解析不到 HA area_id 的 room ⇒ rejected（⛔ 静默 accepted；
+            # 空 room 不在此列——空 room 是「不按房间过滤」的既有语义，见 DeviceRegistry.resolve）
+            room_raw = (note.get("room") or "").strip()
+            if room_raw and _resolve_area_id(room_raw, self.rt) is None:
+                logger.warning("%s AREA_UNRESOLVED channel=speak source=%s trace=%s room=%r",
+                               ADM_ERR_PAYLOAD_INVALID, note["source"], note["trace_id"], room_raw)
+                return OUTCOME_REJECTED, "room 无法解析到 HA area_id（%s）" % room_raw
             accepted = enqueue_tts(
                 note["text"], priority=note["priority"], room=note["room"],
                 member=note["source"], override_quiet=note["override_quiet"],

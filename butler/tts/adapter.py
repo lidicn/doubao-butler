@@ -40,14 +40,21 @@ class TTSManagerSpeaker:
         return get_runtime().devices
 
     def _player_entity(self, room: str) -> str:
-        """先问登记表（enabled 的 xiaomi 且有 ha_player_entity，同房间取顺序里第一只），再退回硬编码表。"""
+        """先问登记表（enabled 的 xiaomi 且有 ha_player_entity，同房间取顺序里第一只），再退回硬编码表。
+
+        DCD 20261104 T1/T5：入站 room 可能是 HA area_id（如 shu_fang），
+        先经登记表边界归一到显示名再比对，双读旧中文名。
+        """
         reg = self._registry()
+        canonical = room
         if reg is not None:
+            if hasattr(reg, "_canonical_room"):
+                canonical = reg._canonical_room(room) or room
             for dev in reg.all():
-                if (dev.enabled and dev.type == "xiaomi" and dev.room == room
+                if (dev.enabled and dev.type == "xiaomi" and dev.room == canonical
                         and dev.ha_player_entity):
                     return dev.ha_player_entity
-        return ROOM_TO_PLAYER_ENTITY.get(room, "")
+        return ROOM_TO_PLAYER_ENTITY.get(canonical, "")
 
     async def speak(self, item: TTSItem) -> bool:
         """播一条：合成 + 播放到指定设备。

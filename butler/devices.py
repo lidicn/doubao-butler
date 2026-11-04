@@ -23,11 +23,21 @@ from butler.param import soft_flag
 logger = get_logger("butler.devices")
 
 
+def _resolve_area(room: str, mapping: dict[str, str] | None = None) -> str:
+    """显示名 / area_id → HA area_id（DCD 20261104 契约；解析不到返回空串，不抛穿）。"""
+    try:
+        from butler.areas import resolve_room
+    except Exception:  # pragma: no cover - 依赖装配面
+        return ""
+    return resolve_room(room, mapping) or ""
+
+
 @dataclass
 class Device:
     id: str
     type: str                     # "tv" | "xiaomi"
-    room: str = ""               # 房间；"*" 表示任意
+    room: str = ""               # 房间显示名（中文）；"*" 表示任意。⛔ 跨仓键是 area_id
+    area_id: str = ""            # HA 区域 id（pinyin，如 shu_fang）——跨仓 canonical 键（DCD 20261104）
     ha_entity: str = ""          # xiaomi：HA notify/实体 id（notify_text 模式用）
     mqtt: str = ""               # tv：可选 MQTT 主题覆盖（默认用全局 PUB_TV_TTS）
     channel: str = ""            # 预留：左右声道（部分小爱支持）
@@ -48,6 +58,7 @@ class Device:
     def to_dict(self) -> dict:
         return {
             "id": self.id, "type": self.type, "room": self.room,
+            "area_id": self.area_id,
             "ha_entity": self.ha_entity, "mqtt": self.mqtt, "channel": self.channel,
             "voice_override": self.voice_override, "enabled": self.enabled,
             "play_mode": self.play_mode, "ha_tts_entity": self.ha_tts_entity,
@@ -60,7 +71,8 @@ class Device:
     def from_dict(cls, d: dict) -> "Device":
         return cls(
             id=str(d.get("id", "")), type=str(d.get("type", "xiaomi")),
-            room=str(d.get("room", "")), ha_entity=str(d.get("ha_entity", "")),
+            room=str(d.get("room", "")), area_id=str(d.get("area_id", "")),
+            ha_entity=str(d.get("ha_entity", "")),
             mqtt=str(d.get("mqtt", "")), channel=str(d.get("channel", "")),
             voice_override=str(d.get("voice_override", "")),
             enabled=soft_flag(d.get("enabled"), "enabled", default=True),
@@ -87,7 +99,7 @@ class DeviceRegistry:
     def _seed(self) -> dict[str, Device]:
         primary_xiao = self.s.xiaomi_notify_entity
         edgetts = "tts.edgetts_zh_cn_xiaoxiaoneural"
-        return {
+        devices: dict[str, Device] = {
             "tv_living": Device("tv_living", "tv", room="客厅", mqtt="", channel=""),
             "xiao_living": Device(
                 "xiao_living", "xiaomi", room="客厅",
@@ -154,6 +166,11 @@ class DeviceRegistry:
                 wake_button="button.xiaomi_s12_b693_wake_up",
             ),
         }
+        # DCD 20261104 T3/Q4甲：种子设备统一按显示名对齐到 HA area_id（只切键，不改显示名）
+        for dev in devices.values():
+            if not dev.area_id and dev.room:
+                dev.area_id = _resolve_area(dev.room)
+        return devices
 
     def load(self) -> None:
         seed = self._seed()
@@ -166,10 +183,16 @@ class DeviceRegistry:
         for did, d in raw.items():
             if isinstance(d, dict):
                 dev = Device.from_dict({**d, "id": did})
+                if not dev.area_id and dev.room:
+                    # 老 devices.json 无 area_id：按显示名就地对齐到 HA area_id（双读过渡）
+                    dev.area_id = _resolve_area(dev.room) or ""
                 seed[did] = dev
         self.devices = seed
         # 首次播种后落盘，便于 WebUI 直接编辑（缺档＝真没有，⛔ 一并拒掉，否则新装环境建不起表）
         if not self.path.exists():
+            self.save()
+        elif any(not (isinstance(raw.get(k), dict) and raw[k].get("area_id")) for k in raw):
+            # 有老档缺 area_id：补齐一次落盘（只加键，不改用户其它字段；坏档拒写那半在 save()）
             self.save()
 
     def save(self) -> bool:
@@ -196,6 +219,20 @@ class DeviceRegistry:
     def get(self, dev_id: str) -> Device | None:
         return self.devices.get(dev_id)
 
+    def _canonical_room(self, room: str | None) -> str | None:
+        """入站 room（area_id / HA area_name / 旧中文名）→ 登记表显示房间名（边界归一）。
+
+        DCD 20261104 T1/T5：canonical 键是 area_id；这里只做「边界归一」，
+        既有按 dev.room 精确比对与空 room 留痕口径一字不动。
+        """
+        if room in (None, "", "*"):
+            return room
+        mapping = {d.area_id: d.room for d in self.devices.values() if d.area_id and d.room}
+        aid = _resolve_area(room, mapping) if mapping else _resolve_area(room)
+        if aid and mapping and aid in mapping:
+            return mapping[aid]
+        return room
+
     def resolve(self, device_ids: list[str], room: str | None = None) -> list[Device]:
         """返回角色在指定房间可用的设备（按 output_devices 过滤）。
 
@@ -204,6 +241,7 @@ class DeviceRegistry:
         ⛔ 把空 room 读成「没设备」而拒绝（AF ask 桥那类天生不带 room 的问句会整条哑掉）。
         这一档另配一行台数留痕（`room-unfiltered`），供装机窗回读「不带房间时到底给了几台」。
         """
+        room = self._canonical_room(room)
         unfiltered = not room or room == "*"
         out: list[Device] = []
         for did in device_ids or []:
