@@ -295,8 +295,8 @@ class DeployFaceGate(unittest.TestCase):
     def test_08_dockerfile_nonroot_user(self):
         self.assertIn("useradd -r -u 10001", DOCKERFILE, "Dockerfile 没建 butler 用户")
         self.assertRegex(DOCKERFILE, r"(?m)^USER butler\s*$", "Dockerfile 没切到 USER butler")
-        self.assertIn("homesdk-0.3.2-py3-none-any.whl", DOCKERFILE,
-                      "homesdk 0.3.2 wheel 安装腿不在＝0fa806a 那笔又被抹了")
+        self.assertIn("homesdk-0.3.3-py3-none-any.whl", DOCKERFILE,
+                      "homesdk 0.3.3 wheel 安装腿不在＝0fa806a 那笔又被抹了 / 未跟上 DCD 20261104 T7")
 
     # ---- 六、部署面⛔ 凭据字面量（现读 b206c：NAS 面 dev 有 3 枚、我这侧 dev 有 1 枚）----
     def test_09_deploy_face_has_no_credential_literals(self):

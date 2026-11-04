@@ -218,7 +218,7 @@ class NoAdHocErrorPrefixes(unittest.TestCase):
 
         self.assertTrue(is_adm_err(ADM_ERR_INTERNAL))
         self.assertFalse(is_adm_err("INBOX_DROP"))
-        self.assertEqual(len(ADM_ERRORS), 6)
+        self.assertEqual(len(ADM_ERRORS), 7)  # 0.3.3 加 ADM_ERR_PUBLISH_REFUSED（DCD 20261010 拆码）
 
 
 if __name__ == "__main__":

@@ -69,10 +69,10 @@ def handwritten_decoder_sites(src: str) -> list[int]:
 
 
 def wheel_violations(dockerfile_text: str) -> list[str]:
-    """Dockerfile 里 homesdk wheel 的装腿违规（非 0.3.2 的每一行都点名）。"""
+    """Dockerfile 里 homesdk wheel 的装腿违规（非 0.3.3 的每一行都点名）。"""
     bad = []
     for line in dockerfile_text.splitlines():
-        if "homesdk-" in line and "0.3.2-py3-none-any.whl" not in line:
+        if "homesdk-" in line and "0.3.3-py3-none-any.whl" not in line:
             bad.append(line.strip())
     return bad
 
@@ -196,18 +196,21 @@ class TestSingleDecoderRuler(unittest.TestCase):
 
 
 class TestDockerfileWheelPin(unittest.TestCase):
-    """row 4：镜像装的是 0.3.2——`homesdk.adm` 只存在于 0.3.2，装错版则恢复的码 import 就崩。"""
+    """row 4：镜像装的是 homesdk 0.3.3——DCD 20261104 T7「三仓锁 homesdk>=0.3.3」，
+    0.3.3 起 `homesdk.areas`（房间区域机制）才在；装旧版则 area 解析退化、adm 变体也可能缺。"""
 
-    def test_dockerfile_installs_only_032(self):
+    def test_dockerfile_installs_only_033(self):
         text = (REPO / "Dockerfile").read_text(encoding="utf-8")
-        self.assertEqual(wheel_violations(text), [], "Dockerfile 里的 homesdk 装腿不是 0.3.2")
-        self.assertIn("COPY vendor/homesdk-0.3.2-py3-none-any.whl", text)
-        self.assertIn("pip install --no-cache-dir /tmp/homesdk-0.3.2-py3-none-any.whl", text)
+        self.assertEqual(wheel_violations(text), [], "Dockerfile 里的 homesdk 装腿不是 0.3.3")
+        self.assertIn("COPY vendor/homesdk-0.3.3-py3-none-any.whl", text)
+        self.assertIn("pip install --no-cache-dir /tmp/homesdk-0.3.3-py3-none-any.whl", text)
 
-    def test_both_wheels_still_in_vendor(self):
-        """恢复 1 的核对项：vendor 里两枚 wheel 并存（⛔ 顺手删 0.3.1，那不在本单授权内）。"""
-        for name in ("homesdk-0.3.1-py3-none-any.whl", "homesdk-0.3.2-py3-none-any.whl"):
+    def test_vendor_keeps_032_and_033(self):
+        """DCD 20261104 T7：0.3.1 残留按裁定清理；0.3.2 留作回滚，0.3.3 为现装。"""
+        for name in ("homesdk-0.3.2-py3-none-any.whl", "homesdk-0.3.3-py3-none-any.whl"):
             self.assertTrue((REPO / "vendor" / name).is_file(), f"vendor/{name} 不在位")
+        self.assertFalse((REPO / "vendor" / "homesdk-0.3.1-py3-none-any.whl").is_file(),
+                         "0.3.1 残留没清（DCD 20261104 T7 明令清理）")
 
     def test_ruler_bites_wrong_wheel_pin(self):
         bad = (
