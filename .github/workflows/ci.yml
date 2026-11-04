@@ -50,9 +50,9 @@ jobs:
         run: |
           set -o pipefail
           pytest tests -q --tb=no 2>&1 | tee /tmp/pytest.log
-      - name: Surface failed tests as one annotation
+      - name: Surface failure summary as annotation
         if: failure()
-        run: grep -E '^(FAILED|ERROR) ' /tmp/pytest.log | python3 -c "import sys,urllib.parse; t=sys.stdin.read(); print('::error::'+urllib.parse.quote(t,safe='')) if t.strip() else None"
+        run: python3 -c "import pathlib,urllib.parse; t=pathlib.Path('/tmp/pytest.log').read_text(errors='replace'); print('::error::'+urllib.parse.quote('\n'.join(t.splitlines()[-30:]),safe=''))"
 
   contracts:
     name: adm-linkage-contracts
@@ -82,6 +82,6 @@ jobs:
         run: |
           set -o pipefail
           pytest tests/contract -v --no-cov 2>&1 | tee /tmp/contract.log
-      - name: Surface contract failures as one annotation
+      - name: Surface contract failure summary as annotation
         if: failure()
-        run: grep -E '^(FAILED|ERROR) ' /tmp/contract.log | python3 -c "import sys,urllib.parse; t=sys.stdin.read(); print('::error::'+urllib.parse.quote(t,safe='')) if t.strip() else None"
+        run: python3 -c "import pathlib,urllib.parse; t=pathlib.Path('/tmp/contract.log').read_text(errors='replace'); print('::error::'+urllib.parse.quote('\n'.join(t.splitlines()[-30:]),safe=''))"
