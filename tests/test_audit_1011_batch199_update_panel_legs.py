@@ -61,12 +61,7 @@ class ShapeRuler:
     def hits(app_block: str, html_block: str, api_block: str):
         bad = []
         joined_app = app_block + html_block
-        # 1) 确认版本必须取自后端 check 响应（前端 APP_VERSION 是 09-21 那种「两个物理文件」老路）
-        if re.search(r"\bAPP_VERSION\b", app_block) or re.search(r"\bAPP_VERSION\b", api_block):
-            bad.append("confirm-uses-front-end-app-version")
-        if "upd.version" not in app_block and "update.version" not in app_block:
-            bad.append("confirm-version-not-sourced-from-check")
-        # 2) 「只落码」⛔ 念成「已生效」
+        # 1) 「只落码」⛔ 念成「已生效」
         if "applied_pending_restart" in joined_app and PENDING_LABEL not in joined_app:
             bad.append("pending-restart-labelled-effective")
         if re.search(r"已生效", joined_app):
@@ -97,7 +92,7 @@ async loadUpdate() {
 },
 async applyUpdate() {
   if (!this.upd || this.upd.decision.action !== "apply") return;
-  const r = await API.updateApply(this.upd.branch, this.upd.version);
+  const r = await API.updateApply(this.upd.branch);
   this.showToast(r && r.ok ? "已请求，宿主 cron 一分钟一轮" : (r && r.error || "请求被拒"));
 },
 updateStateLabel(st) {
@@ -116,7 +111,7 @@ CLEAN_HTML = """
 CLEAN_API = """
 // 批199 BEGIN
 updateCheck() { return this._req("GET", "/api/system/update/check"); },
-updateApply(ref, confirmVersion) { return this._req("POST", "/api/system/update", { ref, confirm_version: confirmVersion }); },
+updateApply(ref) { return this._req("POST", "/api/system/update", { ref }); },
 updateStatus() { return this._req("GET", "/api/system/update/status"); },
 // 批199 END
 """
@@ -126,11 +121,7 @@ SYNTH_CLAIMS_EFFECTIVE = """
 updateStateLabel(st) { return st.state === "applied_pending_restart" ? "已生效" : st.state; },
 // 批199 END
 """
-SYNTH_FRONT_END_VERSION = """
-// 批199 BEGIN
-async applyUpdate() { return API.updateApply(this.upd.branch, this.APP_VERSION); },
-// 批199 END
-"""
+
 SYNTH_LEAKY_PATH = """
 <!-- 批199 BEGIN -->
 <div x-text="$store.app.upd && $store.app.upd.decision.reason"></div>
@@ -221,9 +212,13 @@ class RulerCalibrationTests(unittest.TestCase):
         hits = ShapeRuler.hits(SYNTH_CLAIMS_EFFECTIVE, "<!-- 批199 BEGIN -->x<!-- 批199 END -->", CLEAN_API)
         self.assertIn("claims-effective-without-restart", hits, hits)
 
-    def test_11_synth_front_end_version_bites(self):
-        hits = ShapeRuler.hits(SYNTH_FRONT_END_VERSION, CLEAN_HTML, CLEAN_API)
-        self.assertIn("confirm-uses-front-end-app-version", hits, hits)
+    def test_11_panel_has_no_version_confirm_input(self):
+        """2026-11-04（出资人令）：去掉版本号二次确认——面板不应再有版本输入框/updConfirm。"""
+        html = block(INDEX_HTML.read_text(encoding="utf-8", errors="replace"), "index.html")
+        app = block(APP_JS.read_text(encoding="utf-8", errors="replace"), "app.js")
+        self.assertNotIn("updConfirm", html)
+        self.assertNotIn("填入当前版本号", html)
+        self.assertNotIn("updConfirm", app)
 
     def test_12_synth_hardcoded_container_path_bites(self):
         hits = ShapeRuler.hits(CLEAN_APP, SYNTH_LEAKY_PATH, CLEAN_API)

@@ -1,4 +1,4 @@
-﻿/* 豆包管家 WebUI — 主框架（Alpine store 基础状态 + 通用方法）
+/* 豆包管家 WebUI — 主框架（Alpine store 基础状态 + 通用方法）
  * 页面逻辑拆分到 js/pages/*.js，各模块在 alpine:init 时往 store 注入方法。
  */
 document.addEventListener("alpine:init", () => {
@@ -200,7 +200,6 @@ document.addEventListener("alpine:init", () => {
     // ⛔ 拿本文件顶部那枚手抄的版本字面量当确认值（它会与后端 __version__ 分叉，批199 门盯这一条）。
     upd: null,
     updStatus: null,
-    updConfirm: "",
     updError: "",
     updTimer: null,
     async loadUpdate() {
@@ -225,8 +224,7 @@ document.addEventListener("alpine:init", () => {
     },
     async applyUpdate() {
       if (!this.upd || this.upd.decision.action !== "apply") return;
-      if (this.updConfirm !== this.upd.version) { this.showToast("确认版本号与当前不一致"); return; }
-      const r = await API.updateApply(this.upd.branch, this.upd.version);
+      const r = await API.updateApply(this.upd.branch);
       if (r && r.ok) {
         this.showToast("已请求，宿主 cron 一分钟一轮");
         this.pollUpdate();

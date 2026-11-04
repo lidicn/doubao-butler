@@ -122,6 +122,12 @@ class MCPServer:
                 result = self._tool_get_skill_health(rt, arguments)
             elif name == "list_cron_apis":
                 result = self._tool_list_cron_apis(rt, arguments)
+            elif name == "system_update":
+                result = self._tool_system_update(rt, arguments)
+            elif name == "system_update_check":
+                result = self._tool_system_update_check(rt, arguments)
+            elif name == "system_update_status":
+                result = self._tool_system_update_status(rt, arguments)
             else:
                 result = {"content": [{"type": "text", "text": f"Tool '{name}' not implemented"}], "isError": True}
 
@@ -607,6 +613,38 @@ class MCPServer:
             return self._text_result("cron_task 执行器未就绪", is_error=True)
         apis = executor.list_apis()
         return self._text_result(json.dumps(apis, ensure_ascii=False), extra={"apis": apis})
+
+    # ── 系统自更新（开发者 agent 通道，2026-11-04）：复用 api/update_routes 的 helper，⛔ 第二套实现 ──
+
+    def _tool_system_update(self, rt, args: dict) -> dict:
+        """触发自更新（写请求标记；宿主 cron 落码）。等价于 POST /api/system/update，但走 MCP 工具。"""
+        from butler.api.update_routes import write_request_marker, validate_ref
+        s = getattr(rt, "settings", None)
+        if s is None:
+            return self._text_result("settings 未就绪", is_error=True)
+        if not getattr(s, "self_update_enabled", False):
+            return self._text_result("自更新未启用（SELF_UPDATE_ENABLED=false）", is_error=True)
+        ref = str(args.get("ref") or getattr(s, "update_branch", "main")).strip()
+        why = validate_ref(s, ref)
+        if why:
+            return self._text_result(why, is_error=True)
+        payload = write_request_marker(ref, requested_by="agent:mcp")
+        return self._text_result(
+            "已提交升级请求 ref=%s（宿主 cron 一分钟一轮）；用 system_update_status 轮询" % ref,
+            extra={"request": payload})
+
+    def _tool_system_update_check(self, rt, args: dict) -> dict:
+        from butler.api.update_routes import build_check
+        s = getattr(rt, "settings", None)
+        if s is None:
+            return self._text_result("settings 未就绪", is_error=True)
+        data = build_check(s)
+        return self._text_result(json.dumps(data, ensure_ascii=False), extra={"update": data})
+
+    def _tool_system_update_status(self, rt, args: dict) -> dict:
+        from butler.api.update_routes import build_status
+        data = build_status()
+        return self._text_result(json.dumps(data, ensure_ascii=False), extra={"status": data})
 
     def _text_result(self, text: str, is_error: bool = False, extra: dict | None = None) -> dict:
         """构造 MCP 工具调用结果。"""

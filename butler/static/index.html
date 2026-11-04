@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN" class="dark">
 <head>
   <meta charset="UTF-8" />
@@ -1804,10 +1804,8 @@
           </div>
           <div class="flex flex-wrap items-center gap-2 text-sm">
             <button class="btn-ghost" @click="$store.app.loadUpdate()">检查更新</button>
-            <input class="input" style="max-width:180px" type="text" x-model="$store.app.updConfirm"
-                   placeholder="填入当前版本号以确认" />
             <button class="btn-amber"
-                    :disabled="!$store.app.upd || $store.app.upd.decision.action !== 'apply' || $store.app.updConfirm !== $store.app.upd.version"
+                    :disabled="!$store.app.upd || $store.app.upd.decision.action !== 'apply'"
                     @click="$store.app.applyUpdate()">请求更新</button>
           </div>
           <div class="text-sm" x-show="$store.app.updStatus">

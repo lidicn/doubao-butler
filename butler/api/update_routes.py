@@ -5,6 +5,11 @@
 ⇒ 容器⛔ 跑 git、⛔ 碰 docker。取码、快进判定、备份、语法检查、重启全在宿主 cron
 （`scripts/host_check_update.sh` 每 5 分钟写预览，`scripts/host_update.sh` 每分钟看标记）。
 
+2026-11-04 变更：
+- 去掉「输入当前版本号二次确认」——`update_apply` 不再要求 `confirm_version`（出资人令）。
+- 把读预览/读状态/写标记抽成 `build_check/build_status/write_request_marker`，供 WebUI 路由
+  与 **MCP 工具（system_update*，开发者 agent 通道）** 共用同一份实现（单一真源）。
+
 三枚文件一律过 `_path()`→`data_paths.data_file()`（惰性单点解析，批164 D5 同族），⛔ 模块级容器路径死值。
 """
 from __future__ import annotations
@@ -40,12 +45,10 @@ def _int(v, default: int = 0) -> int:
         return default
 
 
-async def update_check(request):
+# ── 可复用实现（WebUI 路由 与 MCP 工具共用，单一真源） ──────────────────
+
+def build_check(s) -> dict:
     """预览＋「现在点会不会被拒」的预判（预判与宿主执行共用 `update_gate`，⛔ 两套口径）。"""
-    g = guard(request)
-    if g:
-        return g
-    s = get_runtime().settings
     st = update_gate.read_state(_path(PREVIEW_NAME))
     prev = st["data"] or {}
     if not st["present"]:
@@ -59,7 +62,7 @@ async def update_check(request):
             fast_forward=bool(prev.get("fast_forward")),
             ref=str(prev.get("ref") or s.update_branch),
         )
-    return ok({
+    return {
         "enabled": bool(s.self_update_enabled),
         "preview_present": st["present"],
         "preview_error": st["error"],
@@ -75,50 +78,11 @@ async def update_check(request):
         "branch": s.update_branch,
         "version": __version__,
         "decision": {"action": action, "reason": reason},
-    })
-
-
-async def update_apply(request):
-    """二次确认（填当前版本号）后写请求标记；执行归宿主 cron，本函数⛔ 动码、⛔ 重启。"""
-    g = guard(request)
-    if g:
-        return g
-    s = get_runtime().settings
-    try:
-        body = await request.json()
-    except Exception:
-        return err("需要 JSON 请求体（confirm_version 必填）")
-    if not s.self_update_enabled:
-        return err("自更新未启用（SELF_UPDATE_ENABLED=false）", 403)
-    confirm = str(body.get("confirm_version") or "").strip()
-    ref = str(body.get("ref") or s.update_branch).strip()
-    if confirm != __version__:
-        return err("确认版本号与当前不一致：请把当前版本 %s 填进 confirm_version" % __version__)
-    if ref != s.update_branch and not update_gate.is_release_ref(ref):
-        return err("目标 ref 只允许发布分支（%s）或版本 tag（v<主>.<次>），收到 %r" % (s.update_branch, ref))
-
-    marker = _path(MARKER_NAME)
-    payload = {
-        "requested_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "ref": ref,
-        "confirm_version": confirm,
-        "from_version": __version__,
     }
-    tmp = marker.with_name(marker.name + ".tmp")   # 先写临时件再改名：⛔ 让 cron 读到半截 JSON
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, marker)
-    logger.info("self_update_requested: ref=%s from_version=%s", ref, __version__)
-    resp = ok({"accepted": True, "ref": ref, "executed_by": "host_cron",
-               "next": "宿主 cron 一分钟一轮；进度看 GET /api/system/update/status"})
-    resp.status_code = 202
-    return resp
 
 
-async def update_status(request):
+def build_status() -> dict:
     """把「落盘」与「生效」分开报——只落码没重启时⛔ 说已生效。"""
-    g = guard(request)
-    if g:
-        return g
     marker = update_gate.read_state(_path(MARKER_NAME))
     res = update_gate.read_state(_path(RESULT_NAME))
     data = res["data"] or {}
@@ -134,7 +98,7 @@ async def update_status(request):
             state = "applied"
     elif marker["present"]:
         state = "queued"
-    return ok({
+    return {
         "state": state,
         "pending_restart": pending,
         "error": error,
@@ -145,7 +109,69 @@ async def update_status(request):
         "to_tag": data.get("to_tag", ""),
         "changelog": data.get("changelog", []),
         "finished_at": data.get("finished_at", ""),
-    })
+    }
+
+
+def write_request_marker(ref: str, requested_by: str = "webui") -> dict:
+    """原子写升级请求标记（宿主 cron 每分钟读它；⛔ 让它读到半截 JSON）。"""
+    marker = _path(MARKER_NAME)
+    payload = {
+        "requested_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "ref": ref,
+        "from_version": __version__,
+        "requested_by": requested_by,
+    }
+    tmp = marker.with_name(marker.name + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, marker)
+    logger.info("self_update_requested: ref=%s from_version=%s by=%s", ref, __version__, requested_by)
+    return payload
+
+
+def validate_ref(s, ref: str) -> str | None:
+    """校验目标 ref（发布分支或版本 tag）。返回错误串，None=通过。"""
+    if ref != s.update_branch and not update_gate.is_release_ref(ref):
+        return "目标 ref 只允许发布分支（%s）或版本 tag（v<主>.<次>），收到 %r" % (s.update_branch, ref)
+    return None
+
+
+# ── WebUI 路由 ────────────────────────────────────────────────────────
+
+async def update_check(request):
+    g = guard(request)
+    if g:
+        return g
+    return ok(build_check(get_runtime().settings))
+
+
+async def update_apply(request):
+    """写请求标记；执行归宿主 cron，本函数⛔ 动码、⛔ 重启。已去掉版本号二次确认（2026-11-04）。"""
+    g = guard(request)
+    if g:
+        return g
+    s = get_runtime().settings
+    try:
+        body = await request.json()
+    except Exception:
+        return err("需要 JSON 请求体")
+    if not s.self_update_enabled:
+        return err("自更新未启用（SELF_UPDATE_ENABLED=false）", 403)
+    ref = str(body.get("ref") or s.update_branch).strip()
+    why = validate_ref(s, ref)
+    if why:
+        return err(why)
+    write_request_marker(ref, requested_by="webui")
+    resp = ok({"accepted": True, "ref": ref, "executed_by": "host_cron",
+               "next": "宿主 cron 一分钟一轮；进度看 GET /api/system/update/status"})
+    resp.status_code = 202
+    return resp
+
+
+async def update_status(request):
+    g = guard(request)
+    if g:
+        return g
+    return ok(build_status())
 
 
 def routes():

@@ -189,14 +189,11 @@ class ApplyRouteTests(unittest.TestCase):
         self.assertEqual(code, 403)
         self.assertFalse(files[ur.MARKER_NAME].exists())
 
-    def test_15_confirm_is_required_and_matched(self):
-        code, _, files = _call(ur.update_apply, {"ref": "main"})
-        self.assertEqual(code, 400)
-        self.assertFalse(files[ur.MARKER_NAME].exists())
-        code2, body2, files2 = _call(ur.update_apply, {"confirm_version": "9.9.9", "ref": "main"})
-        self.assertEqual(code2, 400)
-        self.assertIn("确认", body2.get("error", ""))   # deps.err 的形：{"ok": False, "error": "<串>"}
-        self.assertFalse(files2[ur.MARKER_NAME].exists())
+    def test_15_no_confirm_needed_applies(self):
+        """2026-11-04（出资人令）：去掉版本号二次确认——只带 ref 应直接受理并写 marker。"""
+        code, body, files = _call(ur.update_apply, {"ref": "main"})
+        self.assertEqual(code, 202, body)
+        self.assertTrue(files[ur.MARKER_NAME].exists())
 
     def test_16_ref_outside_branch_and_tag_denied(self):
         code, _, files = _call(ur.update_apply, {"confirm_version": "1.0.0", "ref": "../../etc"})
@@ -204,11 +201,11 @@ class ApplyRouteTests(unittest.TestCase):
         self.assertFalse(files[ur.MARKER_NAME].exists())
 
     def test_17_accepted_request_writes_marker(self):
-        code, body, files = _call(ur.update_apply, {"confirm_version": "1.0.0", "ref": "main"})
+        code, body, files = _call(ur.update_apply, {"ref": "main"})
         self.assertEqual(code, 202)
         marker = json.loads(files[ur.MARKER_NAME].read_text(encoding="utf-8"))
         self.assertEqual(marker["ref"], "main")
-        self.assertEqual(marker["confirm_version"], "1.0.0")
+        self.assertEqual(marker["requested_by"], "webui")
         self.assertIn("requested_at", marker)
         self.assertEqual(body["data"]["executed_by"], "host_cron")
 

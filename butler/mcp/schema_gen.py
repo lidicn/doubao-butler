@@ -204,6 +204,38 @@ MCP_TOOLS = [
         parameters={},
         required=[],
     ),
+    generate_tool_schema(
+        name="system_update",
+        description=(
+            "触发管家系统自更新：写升级请求，由宿主 cron 从发布源(GitHub)拉取并落码。"
+            "仅开发/运维 agent 使用（需带开发者服务令牌调 /api/mcp）。"
+            "副作用：会改部署树代码；日常 main 只落码不重启，要生效需发版本 tag 或手动重启容器。"
+            "何时不要调用：非开发/运维场景；不确定目标 ref 时。"
+        ),
+        parameters={
+            "ref": {
+                "type": "string",
+                "description": "目标分支或版本 tag（省略＝当前发布分支）。只允许发布分支或 v<主>.<次> 形态 tag。",
+            },
+        },
+        required=[],
+    ),
+    generate_tool_schema(
+        name="system_update_check",
+        description=(
+            "查看系统自更新预览：是否落后/本地是否有未收编改动/能否快进/拒绝原因。只读，无副作用。"
+        ),
+        parameters={},
+        required=[],
+    ),
+    generate_tool_schema(
+        name="system_update_status",
+        description=(
+            "查看系统自更新执行状态：queued/applied/applied_pending_restart/failed。只读，无副作用。"
+        ),
+        parameters={},
+        required=[],
+    ),
 ]
 
 # 3 个只读 Resources 定义
