@@ -115,8 +115,23 @@ if [ "${DIRTY:-0}" -gt 0 ]; then
     refuse_and_exit "有未收编的本地改动（$DIRTY 枚跟踪文件被改）"
 fi
 
-if ! git fetch --force "$REPO_URL" "$REF" >> "$LOG" 2>&1; then
-    refuse_and_exit "git fetch 失败（网络或发布源不可达），未动码"
+# 2026-11-04 现读：NAS→GitHub 链路抖动，单次 fetch 会把「已点升级」误拒；重试 + 退避吸收偶发失败。
+fetch_retry() {
+    local tries="${1:-5}"; shift
+    local i=1
+    while [ "$i" -le "$tries" ]; do
+        if git fetch --quiet --force "$@" 2>>"$LOG"; then
+            return 0
+        fi
+        log "fetch retry $i/$tries 失败（网络抖动）: $*"
+        i=$((i + 1))
+        [ "$i" -le "$tries" ] && sleep 3
+    done
+    return 1
+}
+
+if ! fetch_retry 5 "$REPO_URL" "$REF"; then
+    refuse_and_exit "git fetch 失败（网络或发布源不可达，已重试 5 次），未动码"
 fi
 TO_SHA="$(git rev-parse FETCH_HEAD 2>/dev/null || echo 'unknown')"
 

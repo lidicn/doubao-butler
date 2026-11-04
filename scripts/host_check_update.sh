@@ -52,12 +52,28 @@ LOCAL="$(git rev-parse HEAD 2>/dev/null || echo '')"
 # 脏＝跟踪文件被改（⛔ 数未跟踪件：workorders/ data/ 常年未跟踪，不是「未收编的本地改动」）
 DIRTY="$(git status --porcelain --untracked-files=no 2>/dev/null | grep -c . || true)"
 
+# 2026-11-04 现读：NAS→GitHub 链路抖动（SSH 5 成一~3、HTTPS 亦丢包），单次 fetch 会误判「无更新」。
+# fetch 重试 + 退避：把偶发传输失败吸收掉，避免「明明有新提交却显示已是最新」。
+fetch_retry() {
+    local tries="${1:-5}"; shift
+    local i=1
+    while [ "$i" -le "$tries" ]; do
+        if git fetch --quiet --force "$@" 2>>"$LOG"; then
+            return 0
+        fi
+        log "fetch retry $i/$tries 失败（网络抖动）: $*"
+        i=$((i + 1))
+        [ "$i" -le "$tries" ] && sleep 3
+    done
+    return 1
+}
+
 REMOTE=""
 FETCH_ERR=""
-if git fetch --quiet --force "$REPO_URL" "$BRANCH" 2>>"$LOG"; then
+if fetch_retry 5 "$REPO_URL" "$BRANCH"; then
     REMOTE="$(git rev-parse FETCH_HEAD 2>/dev/null || echo '')"
 else
-    FETCH_ERR="git fetch 失败（网络或发布源不可达）"
+    FETCH_ERR="git fetch 失败（网络或发布源不可达，已重试 5 次）"
     log "ERROR: $FETCH_ERR url=$REPO_URL"
 fi
 
