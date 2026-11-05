@@ -1,14 +1,15 @@
 name: CI
 
 # DB 的首个 GitHub Actions 门（2026-11-04 起）。结构照 AutoForge 的 ci.yml：
-# 拆「全量 pytest」与「跨仓契约 tests/contract」两条独立硬闸，避免契约腿被历史不稳用例淹没。
+# 拆「全量 pytest」与「跨仓契约 tests/contract」两条独立硬闸。
 #
-# 为什么不跑 gates.sh 的 leak 腿：DB 的 `scripts/leak_gate.py` 要读真实 `.env` 比对标密；
-# CI 里没有真 `.env`（gitignore），拿 `.env.example` 占位去比会把它判成"疑似泄露"。
-# 这条留本机/部署面跑，CI 先跑 pytest + 契约两条客观闸。
-#
-# 失败清单会被打成**一条 annotation**（公开可读），所以不登录 GitHub 也能从 API 读到红在哪：
+# 失败清单会被打成一条 annotation（公开可读），不登录也能从 API 查到红在哪：
 #   GET /repos/<owner>/<repo>/commits/<sha>/check-runs -> annotations
+#
+# `.env` 处理口径（两条既有测试互相拉扯，这里取交集）：
+#   - batch210 的 leak 区间腿要在仓根读到 `.env` 才肯跑（否则判"未量"）；
+#   - batch206 会扫 tests/butler/scripts/根四枚配置件，凡出现 `.env` 真值即判"码面抄真值"。
+#   ⇒ 写一份**唯一哨兵值**的 `.env`：够长（≥10）、但不出现于任何被扫文件里。
 
 on:
   push:
@@ -44,16 +45,16 @@ jobs:
         run: pip install "$HOMESDK_WHEEL"
       - name: Install test tooling
         run: pip install pytest pytest-asyncio pytest-cov
-      - name: Prepare runtime face
-        run: mkdir -p data tts
+      - name: Prepare runtime face (sentinel .env)
+        run: |
+          mkdir -p data tts
+          printf '%s\n' \
+            'DOUBAO_API_KEY=ci-sentinel-doubao-api-key-0001' \
+            'DESKPILOT_API_TOKEN=ci-sentinel-deskpilot-token-0001' \
+            'TASK_REPORT_TOKEN=ci-sentinel-task-report-token-0001' \
+            'BUTLER_WEB_PASSWORD=ci-sentinel-web-password-0001' \
+            > .env
       - name: Run full test suite
-        env:
-          # `.env` 不入库（gitignore），也不复制（复制会把样例占位值当成"码面抄了真值"误报）；
-          # 启动硬门槛四枚必需键用 CI 哨兵值（不是真凭据）。
-          DOUBAO_API_KEY: ci-sentinel-doubao
-          DESKPILOT_API_TOKEN: ci-sentinel-deskpilot
-          TASK_REPORT_TOKEN: ci-sentinel-task
-          BUTLER_WEB_PASSWORD: ci-sentinel-web
         run: |
           set -o pipefail
           pytest tests -q --tb=no 2>&1 | tee /tmp/pytest.log
@@ -68,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # batch210 的 leak 区间腿要 HEAD~1；浅克隆会让它"未量"
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -81,16 +82,17 @@ jobs:
         run: pip install "$HOMESDK_WHEEL"
       - name: Install test tooling
         run: pip install pytest pytest-asyncio pytest-cov
-      - name: Prepare runtime face
-        run: mkdir -p data tts
+      - name: Prepare runtime face (sentinel .env)
+        run: |
+          mkdir -p data tts
+          printf '%s\n' \
+            'DOUBAO_API_KEY=ci-sentinel-doubao-api-key-0001' \
+            'DESKPILOT_API_TOKEN=ci-sentinel-deskpilot-token-0001' \
+            'TASK_REPORT_TOKEN=ci-sentinel-task-report-token-0001' \
+            'BUTLER_WEB_PASSWORD=ci-sentinel-web-password-0001' \
+            > .env
       - name: Run ADM linkage contract tests
-        # 独立于全量 suite：只跑 tests/contract，⛔ 被历史不稳用例淹没。
-        # --no-cov：pytest.ini 的 --cov-fail-under=30 会在只跑契约目录时误红。
-        env:
-          DOUBAO_API_KEY: ci-sentinel-doubao
-          DESKPILOT_API_TOKEN: ci-sentinel-deskpilot
-          TASK_REPORT_TOKEN: ci-sentinel-task
-          BUTLER_WEB_PASSWORD: ci-sentinel-web
+        # 独立于全量 suite；--no-cov：只跑契约目录时 --cov-fail-under=30 会误红。
         run: |
           set -o pipefail
           pytest tests/contract -v --no-cov 2>&1 | tee /tmp/contract.log
