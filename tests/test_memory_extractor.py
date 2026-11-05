@@ -24,22 +24,43 @@ import types
 import unittest
 from pathlib import Path
 
-_tmp = tempfile.mkdtemp(prefix="butler_mem_test_")
-
 from butler.config import Settings
 import butler.store.db as db_mod
 import butler.store.repo as repo_mod
 
-_s = Settings(data_dir=_tmp)
-db_mod.get_settings = lambda: _s
-repo_mod.get_settings = lambda: _s
-
 from butler.store import repo
 from butler.memory.extractor import MemoryExtractor
 
+_tmp: str | None = None
+_s = None
+_orig_db_get_settings = None
+_orig_repo_get_settings = None
+
+
+def setUpModule():
+    """把「get_settings→临时库」的替换收进本模块生命周期，⛔ 在导入期就替换全局。
+
+    导入期替换的后果：collection 会把所有测试模块先导完，于是**所有**先跑的用例都共用
+    这一个固定库（batch13/169 那种"单跑绿、全量红"的串库就是这么来的）。
+    setUpModule 只在本文件用例前生效，tearDownModule 还原。
+    """
+    global _tmp, _s, _orig_db_get_settings, _orig_repo_get_settings
+    _tmp = tempfile.mkdtemp(prefix="butler_mem_test_")
+    _s = Settings(data_dir=_tmp)
+    _orig_db_get_settings = db_mod.get_settings
+    _orig_repo_get_settings = repo_mod.get_settings
+    db_mod.get_settings = lambda: _s
+    repo_mod.get_settings = lambda: _s
+
 
 def tearDownModule():
-    shutil.rmtree(_tmp, ignore_errors=True)
+    global _tmp, _s
+    db_mod.get_settings = _orig_db_get_settings
+    repo_mod.get_settings = _orig_repo_get_settings
+    if _tmp:
+        shutil.rmtree(_tmp, ignore_errors=True)
+    _tmp = None
+    _s = None
 
 
 def _wipe_tables():
