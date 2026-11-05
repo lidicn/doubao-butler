@@ -30,6 +30,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # batch210 的 leak 区间腿要 HEAD~1；浅克隆会让它"未量"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -43,10 +45,15 @@ jobs:
       - name: Install test tooling
         run: pip install pytest pytest-asyncio pytest-cov
       - name: Prepare runtime face
-        run: |
-          cp .env.example .env
-          mkdir -p data tts
+        run: mkdir -p data tts
       - name: Run full test suite
+        env:
+          # `.env` 不入库（gitignore），也不复制（复制会把样例占位值当成"码面抄了真值"误报）；
+          # 启动硬门槛四枚必需键用 CI 哨兵值（不是真凭据）。
+          DOUBAO_API_KEY: ci-sentinel-doubao
+          DESKPILOT_API_TOKEN: ci-sentinel-deskpilot
+          TASK_REPORT_TOKEN: ci-sentinel-task
+          BUTLER_WEB_PASSWORD: ci-sentinel-web
         run: |
           set -o pipefail
           pytest tests -q --tb=no 2>&1 | tee /tmp/pytest.log
@@ -60,6 +67,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # batch210 的 leak 区间腿要 HEAD~1；浅克隆会让它"未量"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -73,12 +82,15 @@ jobs:
       - name: Install test tooling
         run: pip install pytest pytest-asyncio pytest-cov
       - name: Prepare runtime face
-        run: |
-          cp .env.example .env
-          mkdir -p data tts
+        run: mkdir -p data tts
       - name: Run ADM linkage contract tests
         # 独立于全量 suite：只跑 tests/contract，⛔ 被历史不稳用例淹没。
         # --no-cov：pytest.ini 的 --cov-fail-under=30 会在只跑契约目录时误红。
+        env:
+          DOUBAO_API_KEY: ci-sentinel-doubao
+          DESKPILOT_API_TOKEN: ci-sentinel-deskpilot
+          TASK_REPORT_TOKEN: ci-sentinel-task
+          BUTLER_WEB_PASSWORD: ci-sentinel-web
         run: |
           set -o pipefail
           pytest tests/contract -v --no-cov 2>&1 | tee /tmp/contract.log

@@ -130,14 +130,14 @@ class DbMaContractTest(_ClientHarness):
         old = os.environ.get("MEMORY_AGENT_TOKEN")
         os.environ["MEMORY_AGENT_TOKEN"] = "SENTINEL-MA-MCP"
         try:
-            h = self.c.bearer_headers("mcp")
+            h = self.c._ma_bearer("mcp")
             self.assertEqual(h, {"Authorization": "Bearer SENTINEL-MA-MCP"})
             # PR-C2 单源：凭据每次现读 homesdk env（⛔ 实例属性兜底）；抹掉 env＝严格入口必须抛
             os.environ.pop("MEMORY_AGENT_TOKEN", None)
             with self.assertRaises(CredentialMissing):
-                self.c.bearer_headers("mcp")
+                self.c._ma_bearer("mcp")
             with self.assertRaises(KeyError):
-                self.c.bearer_headers("no_such_surface")
+                self.c._ma_bearer("no_such_surface")
         finally:
             if old is None:
                 os.environ.pop("MEMORY_AGENT_TOKEN", None)
