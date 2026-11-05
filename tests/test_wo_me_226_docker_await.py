@@ -121,7 +121,7 @@ class TestDockerDispatchRuns:
 
     async def test_docker_logs_surfaces_daemon_error(self):
         self._stub(rc=1, out="", err="Cannot connect to the Docker daemon at unix:///var/run/docker.sock.")
-        d = json.loads(await T._dispatch_docker(self.agent, "docker_logs", {"container": "butler", "tail": 5}))
+        d = json.loads(await T._dispatch_docker(self.agent, "docker_logs", {"container": "doubao-butler", "tail": 5}))
         assert d["ok"] is False
         assert "Cannot connect to the Docker daemon" in d["message"]
         assert COROUTINE_MSG not in json.dumps(d, ensure_ascii=False)
