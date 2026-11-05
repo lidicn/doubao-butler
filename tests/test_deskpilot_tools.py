@@ -100,7 +100,7 @@ class FakeAgent:
 class TestDispatch(unittest.TestCase):
     def test_dispatch_no_deskpilot(self):
         agent = FakeAgent(deskpilot=None)
-        r = asyncio.get_event_loop().run_until_complete(
+        r = asyncio.run(
             dispatch_tool("desk_volume_set", {"level": 50}, agent)
         )
         obj = json.loads(r)
@@ -110,7 +110,7 @@ class TestDispatch(unittest.TestCase):
     def test_dispatch_system_status(self):
         dpk = FakeDeskPilot()
         agent = FakeAgent(deskpilot=dpk)
-        r = asyncio.get_event_loop().run_until_complete(
+        r = asyncio.run(
             dispatch_tool("desk_system_status", {}, agent)
         )
         obj = json.loads(r)
@@ -120,7 +120,7 @@ class TestDispatch(unittest.TestCase):
     def test_dispatch_volume_set(self):
         dpk = FakeDeskPilot()
         agent = FakeAgent(deskpilot=dpk)
-        r = asyncio.get_event_loop().run_until_complete(
+        r = asyncio.run(
             dispatch_tool("desk_volume_set", {"level": 40}, agent)
         )
         obj = json.loads(r)
@@ -130,7 +130,7 @@ class TestDispatch(unittest.TestCase):
     def test_dispatch_windows_activate(self):
         dpk = FakeDeskPilot()
         agent = FakeAgent(deskpilot=dpk)
-        r = asyncio.get_event_loop().run_until_complete(
+        r = asyncio.run(
             dispatch_tool("desk_windows_activate", {"title": "微信"}, agent)
         )
         obj = json.loads(r)
@@ -140,7 +140,7 @@ class TestDispatch(unittest.TestCase):
     def test_dispatch_ssh_removed_from_tools(self):
         dpk = FakeDeskPilot()
         agent = FakeAgent(deskpilot=dpk)
-        r = asyncio.get_event_loop().run_until_complete(
+        r = asyncio.run(
             dispatch_tool("desk_ssh_exec", {"command": "df -h"}, agent)
         )
         obj = json.loads(r)
@@ -150,7 +150,7 @@ class TestDispatch(unittest.TestCase):
     def test_dispatch_music_play(self):
         dpk = FakeDeskPilot()
         agent = FakeAgent(deskpilot=dpk)
-        r = asyncio.get_event_loop().run_until_complete(
+        r = asyncio.run(
             dispatch_tool("desk_music_play", {"keyword": "周杰伦 晴天"}, agent)
         )
         obj = json.loads(r)
@@ -160,7 +160,7 @@ class TestDispatch(unittest.TestCase):
     def test_dispatch_unknown_tool(self):
         dpk = FakeDeskPilot()
         agent = FakeAgent(deskpilot=dpk)
-        r = asyncio.get_event_loop().run_until_complete(
+        r = asyncio.run(
             dispatch_tool("desk_nonexistent", {}, agent)
         )
         obj = json.loads(r)
@@ -173,7 +173,7 @@ class TestDispatch(unittest.TestCase):
                 raise ConnectionError("refused")
 
         agent = FakeAgent(deskpilot=BrokenDP())
-        r = asyncio.get_event_loop().run_until_complete(
+        r = asyncio.run(
             dispatch_tool("desk_volume_get", {}, agent)
         )
         obj = json.loads(r)
@@ -192,14 +192,14 @@ class TestDeskPilotClient(unittest.TestCase):
     def test_health_unreachable(self):
         from butler.integrations.deskpilot import DeskPilotClient
         c = DeskPilotClient("http://192.0.2.1:9999", "tok", timeout=1.0)
-        r = asyncio.get_event_loop().run_until_complete(c.health())
+        r = asyncio.run(c.health())
         self.assertFalse(r["ok"])
         self.assertEqual(r["error"], "unavailable")
 
     def test_get_timeout(self):
         from butler.integrations.deskpilot import DeskPilotClient
         c = DeskPilotClient("http://192.0.2.1:9999", "tok", timeout=1.0)
-        r = asyncio.get_event_loop().run_until_complete(c.system_status())
+        r = asyncio.run(c.system_status())
         self.assertFalse(r["ok"])
         self.assertIn(r["error"], ("operation_timeout", "unavailable"))
 

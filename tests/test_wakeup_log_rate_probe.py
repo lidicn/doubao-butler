@@ -90,6 +90,9 @@ class WakeupLogRateProbeTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="wlr_probe_")
         self.addCleanup(self.tmp.cleanup)
         self.db = os.path.join(self.tmp.name, "butler.db")
+        # workorders/ 不入库（gitignore）：干净 CI 里没有这把尺子 ⇒ 本腿未量，skip（⛔ 记成绿）
+        if not PROBE_PATH.is_file():
+            self.skipTest(f"尺子不在盘上（workorders/ 被 gitignore）：{PROBE_PATH}")
         self.mod = load_probe()
         self.assertTrue(PROBE_PATH.is_file(), f"尺子不在盘上：{PROBE_PATH}")
 

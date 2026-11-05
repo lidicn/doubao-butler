@@ -131,7 +131,7 @@ class TestDecisionEngine(unittest.TestCase):
 
             def tick(responses, **kw):
                 rt.llm.responses = list(responses)
-                return asyncio.get_event_loop().run_until_complete(
+                return asyncio.run(
                     engine.tick({"mock": mock, **kw})
                 )
 

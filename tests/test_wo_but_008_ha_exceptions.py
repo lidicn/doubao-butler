@@ -47,7 +47,7 @@ class TestHAExceptions(unittest.TestCase):
 
         with patch("butler.integrations.ha.httpx.AsyncClient", return_value=mock_client):
             with self.assertRaises(HAEntityNotFound) as ctx:
-                asyncio.get_event_loop().run_until_complete(
+                asyncio.run(
                     client.call_service_strict("light", "turn_on", {"entity_id": "light.test"})
                 )
             self.assertEqual(ctx.exception.status_code, 404)
@@ -73,7 +73,7 @@ class TestHAExceptions(unittest.TestCase):
 
         with patch("butler.integrations.ha.httpx.AsyncClient", return_value=mock_client):
             with self.assertRaises(HAUnauthorized) as ctx:
-                asyncio.get_event_loop().run_until_complete(
+                asyncio.run(
                     client.call_service_strict("light", "turn_on", {})
                 )
             self.assertEqual(ctx.exception.status_code, 401)
@@ -87,7 +87,7 @@ class TestHAExceptions(unittest.TestCase):
 
         client = HAClient(FakeSettings())
         with self.assertRaises(HAError) as ctx:
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 client.call_service_strict("light", "turn_on", {})
             )
         self.assertIn("token", str(ctx.exception).lower())
