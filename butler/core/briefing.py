@@ -35,11 +35,31 @@ def is_degenerate_content(text: str) -> bool:
     return re.search(r"[0-9A-Za-z\u4e00-\u9fff]", t) is None
 
 
-def _briefing_is_bad(text: str) -> bool:
-    return is_degenerate_content(text) or "失败" in (text or "")
+# 播报闸门（2026-11-06 P0）：
+# 实测两类残次品会原样推给用户——① 模型把 prompt 脚手架吐回来
+# （"新闻候选：暂无" / "规则：1. …"）；② 拿不到数据时用占位词交差
+# （"undefined" / "null" / 未渲染的 `{}`）。这两类一律判坏，整条丢弃。
+# 判「语义胡言」不能靠词表——那一半靠 prompt 的「无数据不提示」硬规则，见 `_build_prompt`。
+_SCAFFOLD_TOKENS = ("新闻候选", "生活提醒：", "天气：", "规则：", "家里今天的情况")
+_PLACEHOLDER_TOKENS = ("undefined", "null", "None", "{", "}")
 
-# 启动时加载人格定义
-_PERSONA_PATH = Path(__file__).resolve().parent.parent.parent / "doc" / "06-场景设计" / "briefing_persona.md"
+
+def _briefing_is_bad(text: str) -> bool:
+    t = text or ""
+    if is_degenerate_content(t):
+        return True
+    if "失败" in t:
+        return True
+    return any(tok in t for tok in _SCAFFOLD_TOKENS + _PLACEHOLDER_TOKENS)
+
+# 人格定义加载顺序：先读随代码走的 `butler/core/` 副本，再退到 `doc/`。
+# 生产容器只挂 `butler/ data/ tts/`，`doc/` 不在容器里 ⇒ 只读 doc 那份会退化成一句兜底
+# （生产日志实证：`persona file not found: /app/doc/briefing_persona.md`）。
+# 两份内容必须一致，漂移由 `tests/test_briefing_persona_and_gate.py` 守。
+_PERSONA_PATHS = (
+    Path(__file__).resolve().parent / "briefing_persona.md",
+    Path(__file__).resolve().parent.parent.parent / "doc" / "06-场景设计" / "briefing_persona.md",
+)
 _PERSONA_CACHE: str = ""
 
 
@@ -47,11 +67,18 @@ def _load_persona() -> str:
     global _PERSONA_CACHE
     if _PERSONA_CACHE:
         return _PERSONA_CACHE
-    try:
-        _PERSONA_CACHE = _PERSONA_PATH.read_text(encoding="utf-8")
-    except Exception as e:
-        logger.warning("persona file not found: %s", e)
-        _PERSONA_CACHE = "你是这个家的管家。"
+    for p in _PERSONA_PATHS:
+        try:
+            text = p.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning("persona file not found: %s (%s)", p, e)
+            continue
+        if text.strip():
+            _PERSONA_CACHE = text
+            logger.info("persona loaded: %s (%d chars)", p, len(text))
+            return _PERSONA_CACHE
+    logger.error("persona unavailable, one-liner fallback: %s", _PERSONA_PATHS)
+    _PERSONA_CACHE = "你是这个家的管家。"
     return _PERSONA_CACHE
 
 
@@ -146,6 +173,64 @@ def _get_topic(briefing_type: str) -> str:
     return tips.get(w, "")
 
 
+def _build_prompt(persona: str, report: dict, weather: str, news: list[str],
+                  topic: str, briefing_type: str) -> str:
+    """拼简报 prompt：**有数据才提**，没数据那格改写「不许编」的硬规则（2026-11-06 P0）。
+
+    为什么不是「先给 LLM 全量数据再让它自己判断」：实测新闻源失效时 `news=0`，
+    prompt 仍写「新闻里挑一条」⇒ 没数据也要挑，只能编。规则必须按有无数据**分支生成**，
+    不能让模型自己权衡。
+    """
+    has_weather = bool((weather or "").strip())
+    has_news = bool(news)
+    has_topic = bool((topic or "").strip())
+    has_events = int((report or {}).get("total_events", 0) or 0) > 0
+
+    lines = [
+        persona, "",
+        "---", "",
+        f"现在是{'早间' if briefing_type == 'morning' else '晚间'}。",
+        "下面是今天家里的情况和一些外部信息。请你以管家的身份，自然地说一段话——像跟主人聊天一样。",
+        "",
+        "规则：",
+        "1. 自己判断什么值得说，什么不值得；【最重要】不确定的事不要乱说，没数据就不提",
+    ]
+    n = 2
+    if has_news:
+        lines.append(f"{n}. 新闻里挑一条大佬可能感兴趣的（科技、游戏、AI相关优先），简单提一下；"
+                     f"只许用下面给出的新闻候选，不许自己编")
+    else:
+        lines.append(f"{n}. 今天没有新闻候选：不要提新闻，也不许自己编新闻")
+    n += 1
+    if has_topic:
+        lines.append(f"{n}. 生活提醒自然带出来")
+    else:
+        lines.append(f"{n}. 今天没有生活提醒：不许编造提醒")
+    n += 1
+    if not has_weather:
+        lines.append(f"{n}. 天气数据没拿到：不要报天气、不要猜温度")
+        n += 1
+    if not has_events:
+        lines.append(f"{n}. 家里今天还没有设备活动记录：不要编造谁在家做了什么")
+        n += 1
+    lines.append(f"{n}. 长度100-200字，一段连贯的话，不要列表")
+    n += 1
+    lines.append(f"{n}. 不要用emoji堆砌")
+
+    lines += ["", "---"]
+    if has_weather:
+        lines.append(f"天气：{weather}")
+    if has_news:
+        lines.append(f"新闻候选：{'；'.join(news[:5])}")
+    if has_topic:
+        lines.append(f"生活提醒：{topic}")
+    if has_events:
+        lines.append(f"家里今天的情况：{json.dumps(report, ensure_ascii=False)}")
+    else:
+        lines.append("家里今天的情况：今天还没有设备活动记录")
+    return "\n".join(lines)
+
+
 async def generate_briefing(rt, briefing_type: str = "morning") -> str:
     persona = _load_persona()
     report = _build_report()
@@ -153,33 +238,17 @@ async def generate_briefing(rt, briefing_type: str = "morning") -> str:
     news = await _fetch_news()
     topic = _get_topic(briefing_type)
 
-    system = f"""{persona}
-
----
-
-现在是{"早间" if briefing_type == "morning" else "晚间"}。
-下面是今天家里的情况和一些外部信息。请你以管家的身份，自然地说一段话——像跟主人聊天一样。
-
-规则：
-1. 自己判断什么值得说，什么不值得
-2. 【最重要】不确定的事不要乱说。数据不够就不提
-3. 新闻里挑一条大佬可能感兴趣的（科技、游戏、AI相关优先），简单提一下
-4. 如果有生活提醒（话题），自然带出来
-5. 长度100-200字，一段连贯的话，不要列表
-6. 不要用emoji堆砌
-
----
-天气：{weather or '暂无'}
-新闻候选：{'；'.join(news[:5]) if news else '暂无'}
-生活提醒：{topic or '无'}
-家里今天的情况：{json.dumps(report, ensure_ascii=False)}
-"""
+    logger.info("briefing inputs: type=%s events=%s weather=%s news=%d topic=%s",
+                briefing_type, report.get("total_events", 0), bool(weather), len(news), bool(topic))
+    system = _build_prompt(persona, report, weather, news, topic, briefing_type)
 
     llm = getattr(rt, "llm", None)
     if not llm:
         return "LLM 未就绪。"
     try:
-        text, _ = await llm.chat(system, [], max_tokens=500, temperature=0.8)
+        # 温度 0.8 → 0.6（2026-11-06 P0）：播报是固定场景的短文本，降温度压「自由发挥」，
+        # 语义闸门挡不住编造，只能从采样面少给机会。
+        text, _ = await llm.chat(system, [], max_tokens=500, temperature=0.6)
         return (text or "").strip()
     except Exception as e:
         logger.error("briefing LLM: %s", e)
