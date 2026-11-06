@@ -39,7 +39,7 @@ def _briefing_is_bad(text: str) -> bool:
     return is_degenerate_content(text) or "失败" in (text or "")
 
 # 启动时加载人格定义
-_PERSONA_PATH = Path(__file__).resolve().parent.parent.parent / "doc" / "briefing_persona.md"
+_PERSONA_PATH = Path(__file__).resolve().parent.parent.parent / "doc" / "06-场景设计" / "briefing_persona.md"
 _PERSONA_CACHE: str = ""
 
 
