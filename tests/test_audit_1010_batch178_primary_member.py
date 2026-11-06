@@ -193,9 +193,12 @@ class MorningRoutineMemberTest(MemberPatchMixin, unittest.TestCase):
             async def _broadcast(self, ctx):
                 self.broadcasts.append(ctx)
 
+        # 2026-11-06 P1：去重从模块变量改成落盘（DATA_DIR/morning_state.json），
+        # 本档只测成员判定，两枚去重入口都打桩成「今天没播过」。
         with mock.patch.object(routine, "ts", _StubTs("daily", transitions)), \
                 mock.patch.object(routine, "time", FakeClock(ANY_MORNING)), \
-                mock.patch.object(routine, "_morning_reported_date", ""):
+                mock.patch.object(routine, "_reported_date", lambda: ""), \
+                mock.patch.object(routine, "_mark_reported", lambda day: None):
             mgr = _Recorder(_StubRT(self.USERS))
             triggered = _drive(mgr.check_and_broadcast())
         return {"triggered": triggered, "broadcasts": len(mgr.broadcasts)}
