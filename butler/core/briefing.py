@@ -184,7 +184,9 @@ def _build_prompt(persona: str, report: dict, weather: str, news: list[str],
     has_weather = bool((weather or "").strip())
     has_news = bool(news)
     has_topic = bool((topic or "").strip())
-    has_events = int((report or {}).get("total_events", 0) or 0) > 0
+    # ⛔ 不写成 int(...)：batch221 的盲区棘轮把「int/float 首实参带 .get()」逐档计枚，
+    #    这里只要真值判定，bool() 不在那族里（见 tests/test_audit_1015_batch221_tree_cast_gate.py）。
+    has_events = bool((report or {}).get("total_events"))
 
     lines = [
         persona, "",
