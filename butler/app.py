@@ -758,10 +758,7 @@ def _build_app() -> Starlette:
             async def _evening_briefing():
                 from butler.core.briefing import push_briefing
                 await push_briefing(rt, "evening")
-            # 2026-11-06（播报口径 B）：早间简报 7:10 → 7:30 —— 7:10 撞上「起床场景」
-            # （morning/routine 6:00–10:00 检测），同一个人会先听主卧模板、二十分钟后再听客厅简报。
-            # 场景归 routine、资讯归 briefing，错开半小时。
-            safe_add_job(sched, scheduler_job_failures, _morning_briefing, "cron", hour=7, minute=30, id="morning_briefing", max_instances=1)
+            safe_add_job(sched, scheduler_job_failures, _morning_briefing, "cron", hour=7, minute=30, id="morning_briefing", max_instances=1)  # 口径B：7:10→7:30 错开起床场景（场景归 routine、资讯归 briefing）
             safe_add_job(sched, scheduler_job_failures, _evening_briefing, "cron", hour=22, minute=0, id="evening_briefing", max_instances=1)
             logger.info(f"LLM briefing scheduled: 7:30 morning, 22:00 evening ({house_tz_name()})")
 
