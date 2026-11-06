@@ -21,16 +21,39 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from butler.config import get_settings
+from butler.core.atomic_json import read_json_object, write_json_atomic
 from butler.logging_setup import get_logger
 from butler.timeseries import store as ts
 
 logger = get_logger("butler.morning")
 
-# 去重：当天是否已播报
-_morning_reported_date: str = ""
+
+# 去重（2026-11-06 P1）：原来是一个内存变量 `_morning_reported_date`，进程重启即清零
+# ⇒ 同一天重启后会再播一次。改成 `DATA_DIR/morning_state.json` 落盘，读不出来按「没播过」
+# 处理并留痕（本仓判例：读不出来 ≠ 没有；这里宁可多播一次，也不静默吞掉一天）。
+def _state_path() -> Path:
+    return Path(get_settings().data_dir) / "morning_state.json"
+
+
+def _reported_date() -> str:
+    data, unreadable = read_json_object(_state_path())
+    if unreadable:
+        logger.warning("morning state unreadable, treat as not reported: %s", _state_path())
+        return ""
+    return str(data.get("last_reported_date") or "")
+
+
+def _mark_reported(day: str) -> None:
+    path = _state_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(path, {"last_reported_date": day})
+    except Exception as e:  # 写不进去只降级「可能重播一次」，⛔ 影响播报本体
+        logger.warning("morning state write failed: %s", e)
 
 
 @dataclass
@@ -54,8 +77,6 @@ class MorningRoutine:
 
     async def check_and_broadcast(self) -> bool:
         """检查是否满足起床条件，满足则播报。返回是否播报。"""
-        global _morning_reported_date
-
         now = time.time()
         local = time.localtime(now)
         hour = local.tm_hour
@@ -65,8 +86,8 @@ class MorningRoutine:
         if hour < 6 or hour >= 10:
             return False
 
-        # 当天已播报过
-        if _morning_reported_date == today_str:
+        # 当天已播报过（落盘去重：重启不清零）
+        if _reported_date() == today_str:
             return False
 
         # 条件1：睡眠模式已退出（当前不是 sleep 模式，且最近有 sleep exit）
@@ -106,11 +127,12 @@ class MorningRoutine:
 
         # 所有条件满足，开始播报
         logger.info("morning routine triggered for %s", today_str)
-        _morning_reported_date = today_str
 
         try:
             ctx = await self._build_context(sleep_enter_ts, transitions)
             await self._broadcast(ctx)
+            # 播报成功才记「今天播过」：失败（如 TTS/HA 全挂）留到下一轮 5 分钟检测再试。
+            _mark_reported(today_str)
             return True
         except Exception as e:
             logger.warning("morning broadcast failed: %s", e)
@@ -202,13 +224,14 @@ class MorningRoutine:
         text = "".join(lines)
         logger.info("morning broadcast: %s", text[:200])
 
-        # 通过 TTS 播报（小爱在主卧/客厅）
+        # 通过 TTS 播报（目标音箱与音色走 settings，默认＝原行为：主卧触屏 + 小爱音色）
+        s = get_settings()
         if self.rt and hasattr(self.rt, "tts"):
             try:
                 await self.rt.tts.speak(
                     text=text,
-                    voice="xiaoyi",  # 小爱音色
-                    device_id="xiao_touch8",  # 主卧室音箱
+                    voice=s.morning_tts_voice,
+                    device_id=s.morning_tts_device_id,
                 )
             except Exception as e:
                 logger.warning("morning tts failed: %s", e)
@@ -246,7 +269,7 @@ class MorningRoutine:
                 question="需要我为你打开窗帘并启动早餐模式吗？",
                 options=["打开窗帘", "启动早餐模式", "都不需要"],
                 context={"scene": "morning_routine"},
-                tts_device="xiao_touch8",
+                tts_device=get_settings().morning_tts_device_id,
                 cooldown_hours=12,
             )
             if inquiry:

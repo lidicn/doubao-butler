@@ -258,6 +258,11 @@ class Settings:
     # 换人住主卧就要改三个文件。默认值＝原来那个名字 ⇒ 不配就是现行为。
     primary_member: str = "lidicn"
 
+    # 2026-11-06 P1：晨起播报的目标音箱与音色原来钉死在 morning/routine.py 里，
+    # 换房间/换音箱就要改码。默认值＝原行为（主卧触屏 + 小爱音色）。
+    morning_tts_device_id: str = "xiao_touch8"
+    morning_tts_voice: str = "xiaoyi"
+
     @classmethod
     def load(cls) -> "Settings":
         s = cls(
@@ -343,6 +348,8 @@ class Settings:
             data_dir=_env("DATA_DIR", "/app/data"),
             tts_dir=_env("TTS_DIR", "/app/tts"),
             primary_member=_env("PRIMARY_MEMBER", "lidicn"),
+            morning_tts_device_id=_env("MORNING_TTS_DEVICE_ID", "xiao_touch8"),
+            morning_tts_voice=_env("MORNING_TTS_VOICE", "xiaoyi"),
         )
         dnd = _env("DND_WINDOWS")
         if dnd:
