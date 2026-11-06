@@ -55,6 +55,15 @@ async def skills_save(request: Request):
             return err(verr)
     except Exception as e:
         return err(f"invalid skill: {e}")
+    # 2026-11-06 DB27：审批判定接线（`needs_review()` 此前零生产调用方）。
+    # 口径按 2026-11-06 决议 B：agent（LLM）来源走 needs_review，判「需审」即 pending_review；
+    # 用户显式创建保持 approved（人工明确表态优先）。调用方自己写了 approval 的，一律照写。
+    raw_approval = body.get("approval") if isinstance(body, dict) else None
+    sandbox = getattr(get_runtime(), "sandbox_mgr", None)
+    if (sandbox is not None and raw_approval in (None, "")
+            and normalized.get("source") == "agent" and sandbox.needs_review(normalized)):
+        normalized["approval"] = "pending_review"
+        logger.info("skill %s needs_review → approval=pending_review", normalized.get("id"))
     runner.store.save(normalized)
     return ok({"skill": normalized})
 

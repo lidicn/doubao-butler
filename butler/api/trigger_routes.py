@@ -135,7 +135,16 @@ async def triggers_save(request: Request):
     except Exception:
         return err("invalid json")
     try:
-        normalized, verr = validate_trigger(body)
+        # 2026-11-06 DB29（口径 A）：`actions[].skill` 必须真实存在，不存在就拒绝落盘。
+        # 技能库来自 runtime；取不到 runner 时不额外拦（保持旧形为），但会留一行 warning。
+        rt = get_runtime()
+        _store = getattr(getattr(rt, "runner", None), "store", None)
+        if _store is None:
+            logger.warning("trigger save: runner.store 不可用，跳过 actions.skill 存在性校验")
+            skill_exists = None
+        else:
+            skill_exists = lambda sid, _s=_store: _s.get(sid) is not None
+        normalized, verr = validate_trigger(body, skill_exists=skill_exists)
         if verr:
             return err(verr)
     except Exception as e:

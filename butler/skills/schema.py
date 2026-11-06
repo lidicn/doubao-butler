@@ -4,7 +4,9 @@ v2 新增字段：
   - status: draft | enabled | disabled | quarantined（默认 enabled，兼容旧 enabled 字段）
   - source: builtin | user | agent（默认 user）
   - priority: 1-100（默认50，数字越大优先级越高）
-  - approval: pending_review | approved | rejected | auto_approved（v1.5 沙箱审批，默认 approved）
+  - approval: pending_review | approved | rejected | auto_approved（v1.5 沙箱审批）
+    默认按来源分档（2026-11-06 DB26）：`source=agent`（LLM 生成）→ `pending_review`；
+    其余（user/builtin）→ `approved`。
 
 技能定义示例：
 {
@@ -184,9 +186,16 @@ def validate_skill(raw: dict) -> tuple[dict | None, str]:
 
     priority = max(1, min(100, _i(raw.get("priority"), 50)))
 
-    # v1.5 审批状态
+    # v1.5 审批状态（2026-11-06 DB26）：默认值**按来源分档**——
+    # LLM/agent 生成的技能默认 `pending_review`（没过沙箱审批就不上线）；
+    # 用户显式创建/内置技能保持 `approved`（原行为，即建即用）。
+    # 改前一律 approved ⇒ LLM 生成的技能直接启用，审批门被默认值架空。
     _APPROVALS = {"pending_review", "approved", "rejected", "auto_approved"}
-    approval = _s(raw.get("approval"), "approved").lower()
+    _raw_approval = raw.get("approval")
+    if _raw_approval is None or str(_raw_approval).strip() == "":
+        approval = "pending_review" if source == "agent" else "approved"
+    else:
+        approval = _s(_raw_approval, "approved").lower()
     if approval not in _APPROVALS:
         approval = "pending_review"
 

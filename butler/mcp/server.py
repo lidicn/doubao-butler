@@ -224,7 +224,11 @@ class MCPServer:
                     trigger_json["id"] = "trig_" + uuid.uuid4().hex[:8]
                 trigger_json.setdefault("priority", 50)
                 trigger_json.setdefault("enabled", True)
-                normalized, verr = validate_trigger(trigger_json)
+                # 2026-11-06 DB29（口径 A）：actions[].skill 必须真实存在，不存在即拒绝落盘。
+                _skill_store = getattr(getattr(rt, "runner", None), "store", None)
+                skill_exists = (lambda sid, _s=_skill_store: _s.get(sid) is not None
+                                ) if _skill_store is not None else None
+                normalized, verr = validate_trigger(trigger_json, skill_exists=skill_exists)
                 if verr:
                     return self._text_result(
                         f"触发规则未创建，定义不符合 schema：{verr}",

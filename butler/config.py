@@ -263,6 +263,10 @@ class Settings:
     morning_tts_device_id: str = "xiao_touch8"
     morning_tts_voice: str = "xiaoyi"
 
+    # 2026-11-06 DB23：DeskPilot「运行程序」白名单（逗号分隔，按程序文件名匹配，大小写不敏感）。
+    # 空＝fail-closed：`desk_system_run` 一律拒绝——⛔ 让 LLM 在 Windows 主机上跑任意程序。
+    deskpilot_allowed_programs: str = ""
+
     @classmethod
     def load(cls) -> "Settings":
         s = cls(
@@ -350,6 +354,7 @@ class Settings:
             primary_member=_env("PRIMARY_MEMBER", "lidicn"),
             morning_tts_device_id=_env("MORNING_TTS_DEVICE_ID", "xiao_touch8"),
             morning_tts_voice=_env("MORNING_TTS_VOICE", "xiaoyi"),
+            deskpilot_allowed_programs=_env("DESKPILOT_ALLOWED_PROGRAMS", ""),
         )
         dnd = _env("DND_WINDOWS")
         if dnd:

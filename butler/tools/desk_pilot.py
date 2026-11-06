@@ -9,6 +9,26 @@ from butler.logging_setup import get_logger
 
 logger = get_logger("butler.tools")
 
+
+def _desk_program_allowed(path: str) -> tuple[bool, str]:
+    """2026-11-06 DB23：`desk_system_run` 的程序白名单判定。返回 `(allowed, reason)`。
+
+    口径 A（出资人 2026-11-06 点头）：按**程序文件名**比对（大小写不敏感），
+    白名单空＝fail-closed 拒绝一切——⛔ 让 LLM 把任意 `.exe` 原样 POST 到 Windows 主机。
+    判别只看 basename：路径分隔符两边都吃（Windows `\\` 与 POSIX `/`）。
+    """
+    raw = (get_settings().deskpilot_allowed_programs or "").strip()
+    if not raw:
+        return False, ("DeskPilot 允许程序白名单未配置（DESKPILOT_ALLOWED_PROGRAMS），"
+                       "desk_system_run 已按 fail-closed 拒绝")
+    name = str(path or "").replace("\\", "/").rsplit("/", 1)[-1].strip().lower()
+    if not name:
+        return False, "desk_system_run 缺少 path"
+    allowed = {p.strip().lower() for p in raw.split(",") if p.strip()}
+    if name not in allowed:
+        return False, f"程序 {name} 不在允许清单（DESKPILOT_ALLOWED_PROGRAMS）"
+    return True, ""
+
 def _deskpilot_pm_send_url() -> str:
     return f"{get_settings().deskpilot_http_url.rstrip('/')}/api/v1/pm/send"
 # WO-BUT-018: token 从 config 读取，不再硬编码
@@ -56,6 +76,11 @@ async def _dispatch_deskpilot(agent, name: str, args: dict) -> str:
         elif name == "desk_system_notify":
             r = await dpk.system_notify(args.get("title", ""), args.get("message", ""))
         elif name == "desk_system_run":
+            allowed, why = _desk_program_allowed(args.get("path", ""))
+            if not allowed:
+                logger.warning("desk_system_run refused: %s path=%r", why, args.get("path", ""))
+                return _json.dumps({"ok": False, "error": "program_not_allowed", "message": why},
+                                   ensure_ascii=False)
             r = await dpk.system_run(args.get("path", ""), args.get("args", ""))
         elif name == "desk_volume_get":
             r = await dpk.volume_get()

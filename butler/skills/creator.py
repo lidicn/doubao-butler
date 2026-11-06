@@ -116,11 +116,17 @@ class SkillCreator:
 
     def create_draft(self, skill: dict, role_id: str = "butler") -> dict:
         """创建草稿技能，保存到 _drafts 目录，等待用户确认。"""
+        # 2026-11-06 DB26：先把来源钉成 agent 再校验——默认审批按来源分档，
+        # 校验之后再改 source 会让 LLM 技能拿到 approved（审批门被默认值架空）。
+        skill = dict(skill) if isinstance(skill, dict) else skill
+        if isinstance(skill, dict):
+            skill["source"] = "agent"
         normalized, err = validate_skill(skill)
         if err:
             return {"ok": False, "error": f"技能定义校验失败: {err}"}
         normalized["status"] = "draft"
         normalized["source"] = "agent"
+        normalized["approval"] = "pending_review"
         normalized["draft_id"] = f"draft_{int(time.time())}"
         normalized["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         # WO-BUT-002：代际号（跨代作废）+ UNKNOWN 重试计数（上限1次）
@@ -182,6 +188,9 @@ class SkillCreator:
             return {"ok": False, "error": "没有待确认的技能草稿"}
         draft["status"] = "enabled"
         draft["enabled"] = True
+        # 2026-11-06 DB26：用户点「确认」＝人工审批通过，把草稿的 pending_review 抬成 approved，
+        # 否则 runner 的审批闸会把它继续挡住（状态 enabled 却永远跑不起来）。
+        draft["approval"] = "approved"
         draft.pop("draft_id", None)
         draft.pop("created_at", None)
         draft["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")

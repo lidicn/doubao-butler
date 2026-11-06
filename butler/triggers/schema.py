@@ -55,8 +55,13 @@ def _validate_time_range(s: str) -> bool:
     return 0 <= h1 <= 23 and 0 <= m1 <= 59 and 0 <= h2 <= 23 and 0 <= m2 <= 59
 
 
-def validate_trigger(raw: dict) -> tuple[dict | None, str]:
-    """校验并规范化 trigger 定义。返回 (normalized, error)；error 为空表示成功。"""
+def validate_trigger(raw: dict, skill_exists=None) -> tuple[dict | None, str]:
+    """校验并规范化 trigger 定义。返回 (normalized, error)；error 为空表示成功。
+
+    `skill_exists`（可选）：判「技能是否存在」的回调，由调用方注入。给了就校验
+    `actions[].skill` 存在性（2026-11-06 DB29：口径 A＝不存在即拒绝落盘，fail-closed）；
+    不给则保持旧行为（`triggers/store` 重载历史件时⛔ 回溯拒收）。
+    """
     if not isinstance(raw, dict):
         return None, "trigger 定义必须是 JSON object"
     tid = _s(raw.get("id"))
@@ -107,6 +112,8 @@ def validate_trigger(raw: dict) -> tuple[dict | None, str]:
         skill = _s(a.get("skill"))
         if not skill:
             continue
+        if skill_exists is not None and not skill_exists(skill):
+            return None, f"actions 引用的技能不存在：{skill}（先建技能，再挂触发器）"
         params = a.get("params") or {}
         if not isinstance(params, dict):
             params = {}
