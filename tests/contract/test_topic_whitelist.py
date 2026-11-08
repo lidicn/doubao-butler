@@ -27,6 +27,9 @@ REGISTERED = {
     "adm/autoforge/status", "adm/autoforge/caps",
     "ma/insights", "ma/presence", "ma/device-health", "ma/alerts",
     "af/automation/fired", "af/automation/failed",
+    # 2026-11-08 AF-PM 交接《MQTT 主动询问语音腿》：线协议＝af_mqtt_bridge.py v1.28.3（已上线、冻结），
+    # 属 AF↔DB 跨仓契约主题，与 af/automation/* 同类登记（⛔ 家庭内网待登记名单）。
+    "af/ask/pending", "af/ask/answer",
     "butler/status/state", "butler/dialog/event",
     "butler/inbox/speak", "butler/inbox/notify", "butler/inbox/tv",
 }
