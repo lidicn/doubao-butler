@@ -173,6 +173,18 @@ class XiaomiEar:
         room = getattr(dev, "room", "") or ""
         logger.info("ear [%s|%s] %s", entity_id, room, text[:80])
 
+        # === AF 主动询问语音环（2026-11-08）===
+        # 回答多半不带唤醒词（「要」「不要」），所以在唤醒词匹配**之前**截获；
+        # 只有本房间挂着未过期的 af/ask 时才命中，其余照旧往下走。
+        ask_mgr = getattr(self.rt, "af_ask", None)
+        if ask_mgr is not None:
+            try:
+                if await ask_mgr.on_transcript(dev.id, room, text):
+                    logger.info("ear af-ask answer captured [%s|%s]", dev.id, room)
+                    return
+            except Exception as e:
+                logger.warning("ear af-ask hook failed: %s", e)
+
         # === 电子书语音控制（播放中时响应停止/暂停/继续/上下章）===
         ab = getattr(self.rt, "audiobook", None)
         if ab and ab.state.playing:

@@ -153,11 +153,14 @@ SITES = [
     #   L891 `rt.ilink_bridge.stop()`（锚点现读 kind=sync⇒本就不是漏 await）、
     #   L896 `await asyncio.wait_for(rt.tts.queue.shutdown())`＝WRAPPED、
     #   L1135 `t.start()`＝`def _start_evolution_scheduler` 里的 threading.Thread。
-    ("app.py", 524, "start"),
-    ("app.py", 601, "start"),
-    ("app.py", 817, "start"),
-    ("app.py", 832, "start"),
-    ("app.py", 840, "start"),
+    # 2026-11-08 REANCHOR（AF ask 语音环接线，app.py 四处净插）：档顶 import +1、
+    #   `_consume` 的 af/ask/pending 分支 +9、lifespan 的 af_ask 装配 +8、关停腿 close +5；
+    #   11 枚落点逐枚按「接收者链＋叶名」现读（AST 现扫，⛔ 靠算术）：
+    ("app.py", 534, "start"),   # rt.ilink_bridge.start
+    ("app.py", 619, "start"),   # mqtt.start
+    ("app.py", 835, "start"),   # sched.start
+    ("app.py", 850, "start"),   # rt.xiaomi_ear.start
+    ("app.py", 858, "start"),   # rt.event_stream.start
 
     # 1011-b190-REANCHOR 872→883 / 877→888 / 880→900 / 883→903 / 887→907：**本节口径覆盖批189
     #   的落点登记**——漂移源＝批190（合并行 #11 最后两条腿）在 `finally` 里净插两段：
@@ -174,12 +177,12 @@ SITES = [
     #   已被 1015-b221-REANCHOR 覆盖 ⇒ 现读落点见那一节，⛔ 按本节的旧行号找码。
     #   ⚠ 1015-b221 那六枚（899／904／913／916／919／923）又已被 1015-b224-REANCHOR 覆盖
     #   （见本档上面那段：落点 906／911／920／923／926／930，接收者逐枚现读）。
-    ("app.py", 906, "stop"),
-    ("app.py", 911, "stop_xiaomi_token_refresh"),
-    ("app.py", 920, "cancel_watch_tasks"),
-    ("app.py", 923, "stop"),
-    ("app.py", 926, "stop"),
-    ("app.py", 930, "shutdown"),
+    ("app.py", 929, "stop"),                    # rt.event_stream.stop
+    ("app.py", 934, "stop_xiaomi_token_refresh"),  # rt.ha.stop_xiaomi_token_refresh
+    ("app.py", 943, "cancel_watch_tasks"),      # rt.ha.cancel_watch_tasks
+    ("app.py", 946, "stop"),                    # mqtt.stop
+    ("app.py", 949, "stop"),                    # rt.xiaomi_ear.stop
+    ("app.py", 953, "shutdown"),                # rt._sched.shutdown
     # 批195 re-anchor 513→527 / 655→669：`_observe_presence` 助手在 `__init__` 下方净插 14 行，
     #   两条调用点本体一字未动（⛔ 加减行号，按符号 `self.tv.notify` / `XiaomiEar.note_speak` 重钉）。
     # 批194 A1 re-anchor 527→550 / 643→666：`match_role_by_text` 改锚定版在两条调用点**上方**净插 23 行

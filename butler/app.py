@@ -66,6 +66,7 @@ from butler.api.deps import err, is_login_locked, login, ok
 from butler.bus.mqtt_client import MQTTClient
 from butler.bus.topics import (PUB_DIALOG, SUB_MA_PRESENCE, SUB_MA_DEVICE_HEALTH,
                         SUB_MA_INSIGHTS, SUB_AF_AUTOMATION_FIRED, SUB_AF_AUTOMATION_FAILED,
+                        SUB_AF_ASK_PENDING,
                         ADM_STATE_UNPARSABLE, adm_state_is_present, adm_status_state)
 from homesdk.adm.errors import ADM_ERR_PAYLOAD_INVALID, ADM_ERR_PEER_OFFLINE
 from butler.bus.af_events import handle_af_automation_event
@@ -162,6 +163,15 @@ async def _consume(rt) -> None:
             elif topic in (SUB_AF_AUTOMATION_FIRED, SUB_AF_AUTOMATION_FAILED):
                 # §9 任务2（批135）：AF 上报 fired/failed → 告知用户，failed 带 error 可读
                 handle_af_automation_event(topic, payload)
+            elif topic == SUB_AF_ASK_PENDING:
+                # 2026-11-08 AF 主动询问语音环：念题→收口头回答→发 af/ask/answer。
+                # 管理器懒装配（首条消息时建），handle_pending 只入队，⛔ 在这里等回答。
+                manager = getattr(rt, "af_ask", None)
+                if manager is None:
+                    from butler.bus.af_ask import AfAskManager
+                    manager = rt.af_ask = AfAskManager(rt)
+                    logger.info("af_ask initialized (MQTT voice leg): af/ask/pending → af/ask/answer")
+                await manager.handle_pending(payload)
             elif topic.startswith("butler/inbox/"):
                 # §13.4 公共收件箱：任何仓投递 → DB 过闸（schema/限流/冷却/预算）后播出/分发
                 if getattr(rt, "inbox", None) is not None:
@@ -560,6 +570,14 @@ def _build_app() -> Starlette:
             print('[startup] af_bridge started, polling', af_base)
         except Exception as e:
             print(f'[startup] af_bridge start failed: {e}')
+        # 2026-11-08 AF 主动询问语音环（MQTT）：装配放在 af_bridge 之后、MQTT 消费协程之前；
+        # 念题走 dialog.speak_as_role（按 room 选箱＋回声抑制），回答由 xiaomi_ear 转写回调进来。
+        try:
+            from butler.bus.af_ask import AfAskManager
+            rt.af_ask = AfAskManager(rt)
+            print('[startup] af_ask voice leg initialized')
+        except Exception as e:
+            print(f'[startup] af_ask init failed: {e}')
         # 设备登记表 + 角色登记表（多角色对话 / 全屋任意小爱）
         devices = DeviceRegistry(s)
         devices.load()
@@ -886,6 +904,11 @@ def _build_app() -> Starlette:
                 await asyncio.wait_for(af_bridge.stop(), timeout=2.0)
             except Exception as e:
                 logger.warning("af_bridge stop failed: %s", e)
+            try:
+                if getattr(rt, "af_ask", None) is not None:
+                    rt.af_ask.close()
+            except Exception as e:
+                logger.warning("af_ask close failed: %s", e)
             try:
                 if getattr(rt, "ilink_bridge", None) is not None:
                     rt.ilink_bridge.stop()

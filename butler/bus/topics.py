@@ -100,6 +100,11 @@ def adm_status_is_online(payload: Any) -> bool:
 # /api/asks/pending 是用户问询桥，与本事件腿不重叠、不重复消费。
 SUB_AF_AUTOMATION_FIRED = "af/automation/fired"
 SUB_AF_AUTOMATION_FAILED = "af/automation/failed"
+# 主动询问语音环（2026-11-08 AF-PM 交接，线协议＝af_mqtt_bridge.py v1.28.3 冻结）：
+# pending 载荷 {ask_id, room(HA area_id), prompt, source, priority, timeout_remaining}
+# answer  载荷 {ask_id, answer: yes|no, raw_text}；QoS1、retain=false（retain 会重连后重复问）。
+SUB_AF_ASK_PENDING = "af/ask/pending"
+PUB_AF_ASK_ANSWER = "af/ask/answer"
 
 SUB_TOPICS = (
     SUB_TV_STATUS,
@@ -120,6 +125,7 @@ SUB_TOPICS = (
     SUB_ADM_AF_STATUS,
     SUB_AF_AUTOMATION_FIRED,
     SUB_AF_AUTOMATION_FAILED,
+    SUB_AF_ASK_PENDING,
     f"{BUTLER_ROOT}/dialog/event",  # 订阅自身发布的对话事件，用于 SSE 推送
 )
 
