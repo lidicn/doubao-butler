@@ -70,6 +70,7 @@ class _Ask:
     prompt: str
     deadline: float
     done: asyncio.Event = field(default_factory=asyncio.Event)
+    device_ids: list = field(default_factory=list)
 
 
 class AfAskManager:
@@ -174,6 +175,7 @@ class AfAskManager:
                 # 用户没回答：什么都不发，AF 侧超时兜底，本条问句作废。
                 logger.info("AF_ASK_TIMEOUT ask=%s room=%s 无人回答，⛔ 发答案", ask.ask_id, ask.room)
         finally:
+            await self._stop_media(ask)
             self._active.pop(ask.ask_id, None)
             if not ask.done.is_set():
                 ask.done.set()
@@ -198,6 +200,8 @@ class AfAskManager:
             return None
         logger.info("AF_ASK_SPOKEN ask=%s room=%s devices=%.200s",
                     ask.ask_id, ask.room, res.get("devices"))
+        ask.device_ids = [d.get("device", "") for d in (res.get("devices") or [])
+                          if isinstance(d, dict) and d.get("ok") and d.get("device")]
         return res
 
     @staticmethod
@@ -210,6 +214,35 @@ class AfAskManager:
             except Exception:
                 pass
         return max(2.0, len(prompt or "") * 0.32)
+
+    async def _stop_media(self, ask: _Ask) -> None:
+        """问句结束（答完/超时/未播）后，把设备端这次 TTS 停掉并清出播放队列。
+
+        2026-11-10 循环声根因：`player_play_operation stop` 只停当前这条，X08A 的播放队列里
+        还留着这条 TTS；用户随后一句「打开」让小爱恢复上次媒体时，会把播报当音乐再放一遍。
+        `ha.stop_xiaomi_playback` = stop + 关循环 + 清队列 三连，复播路径才断。
+        """
+        ha = getattr(self.rt, "ha", None)
+        if ha is None:
+            return
+        for did in list(ask.device_ids or []):
+            dev = self._device(did)
+            try:
+                entity = getattr(dev, "ha_player_entity", "") if dev is not None else ""
+                if not entity:
+                    logger.info("AF_ASK_MEDIA_STOP_SKIPPED ask=%s device=%s 原因=无播放实体",
+                                ask.ask_id, did)
+                    continue
+                aid = await ha.get_xiaoai_id(entity)
+                if aid:
+                    await ha.stop_xiaomi_playback(aid)
+                    logger.info("AF_ASK_MEDIA_STOPPED ask=%s device=%s", ask.ask_id, did)
+                else:
+                    await ha.call_service("media_player", "media_stop", {"entity_id": entity})
+                    logger.info("AF_ASK_MEDIA_STOPPED(ha) ask=%s device=%s entity=%s",
+                                ask.ask_id, did, entity)
+            except Exception as e:
+                logger.warning("AF_ASK_MEDIA_STOP_FAILED ask=%s device=%s err=%s", ask.ask_id, did, e)
 
     async def _arm_wake(self, ask: _Ask, spoken: dict) -> None:
         """念完后按 `wake_button` 把音箱切进聆听态（2026-11-10 联调 §3.4）。

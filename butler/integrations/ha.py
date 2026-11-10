@@ -531,6 +531,32 @@ class HAClient:
         msg = {"startaudioid": audio_id, "music": json.dumps(music, ensure_ascii=False)}
         return await self._xiaomi_ubus(device_id, "player_play_music", msg)
 
+    async def _xiaomi_hard_stop(self, device_id: str) -> dict:
+        """硬停：stop → 关循环 → 清队列 三连（2026-11-10 循环声修复）。
+
+        为什么光 stop 不够：X08A 的 `player_play_music` 会把这条 TTS 留在播放队列里，
+        `player_play_operation stop` 只是停住当前这条；用户随后一句「打开」让小爱恢复
+        上次媒体时，它又会把这条播报当音乐重播一遍（11:39 一次性 ask 出现两次 stop@end 的根因）。
+        清空队列（REPLACE_ALL 空列表）后设备端没有可恢复的条目，复播路径才断。
+        """
+        rj = await self._xiaomi_stop_playback(device_id)
+        try:
+            await self._xiaomi_ubus(device_id, "player_set_loop", {"loop_type": 0})
+        except Exception:
+            pass
+        try:
+            cj = await self._xiaomi_clear_queue(device_id)
+            logger.info("xiaomi queue cleared device=%s -> %s", device_id, cj.get("code"))
+        except Exception as e:
+            logger.warning("xiaomi queue clear failed device=%s: %s", device_id, e)
+        return rj
+
+    async def stop_xiaomi_playback(self, device_id: str) -> dict:
+        """外部调用：把该设备这次临时 TTS 从队列里彻底拿掉（防小爱当音乐复播）。"""
+        if not device_id:
+            return {"code": -1, "message": "device_id 为空"}
+        return await self._xiaomi_hard_stop(device_id)
+
     def schedule_xiaomi_stop(self, device_id: str, audio_secs: float) -> None:
         """music 模式精确停止（X08A 单曲循环专用，v2）。
 
@@ -577,12 +603,12 @@ class HAClient:
                     if dur < expected_ms * 0.5:
                         effective_dur = expected_ms
                     if effective_dur and pos > 0 and pos >= effective_dur - XIAOMI_STOP_LEAD_MS:
-                        rj = await self._xiaomi_stop_playback(device_id)
+                        rj = await self._xiaomi_hard_stop(device_id)
                         logger.info("xiaomi stop@end(pos>=eff_dur-%d) pos=%d dev_dur=%d exp_ms=%d -> %s",
                                     XIAOMI_STOP_LEAD_MS, pos, dur, expected_ms, rj.get("code"))
                         return
                     if seen and pos < prev - 300:  # position 突降 = 循环回绕 -> 立即停
-                        rj = await self._xiaomi_stop_playback(device_id)
+                        rj = await self._xiaomi_hard_stop(device_id)
                         logger.info("xiaomi stop@loop pos=%d prev=%d -> %s", pos, prev, rj.get("code"))
                         return
                     if pos > 300:
@@ -595,11 +621,8 @@ class HAClient:
                         return
             # 兜底：超时仍在播则强制 stop（优先 operation stop，失败再清队列）
             try:
-                rj = await self._xiaomi_stop_playback(device_id)
-                logger.info("xiaomi stop@timeout (op stop) -> %s code=%s", device_id, rj.get("code"))
-                if rj.get("code") != 0:
-                    await self._xiaomi_clear_queue(device_id)
-                    logger.info("xiaomi stop@timeout (clear_queue fallback) -> %s", device_id)
+                rj = await self._xiaomi_hard_stop(device_id)
+                logger.info("xiaomi stop@timeout (hard stop) -> %s code=%s", device_id, rj.get("code"))
             except Exception as e:
                 logger.warning("xiaomi stop failed for %s: %s", device_id, e)
 

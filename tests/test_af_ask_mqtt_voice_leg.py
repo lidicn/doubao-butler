@@ -50,11 +50,20 @@ class _HA:
         self.calls.append({"domain": domain, "service": service, "data": data or {}})
         return "ok"
 
+    async def get_xiaoai_id(self, entity_id):
+        self.calls.append({"get_xiaoai_id": entity_id})
+        return "aid_x"
+
+    async def stop_xiaomi_playback(self, device_id):
+        self.calls.append({"stop_xiaomi_playback": device_id})
+        return {"code": 0}
+
 
 class _Dev:
     def __init__(self, dev_id="xiao_touch8", wake_button="button.xiao_touch8_wake_up"):
         self.id = dev_id
         self.wake_button = wake_button
+        self.ha_player_entity = "media_player.xiao_touch8_play_control"
 
 
 class _Devices:
@@ -208,6 +217,15 @@ class AnswerLeg(_Base):
         await asyncio.sleep(0.1)  # 等过期
         self.assertFalse(await self.mgr.on_transcript("xiao_touch8", "书房", "要"))
         self.assertEqual(self.rt.mqtt.published, [])
+
+    async def test_media_stopped_after_answer(self):
+        """答完后必须 stop+清队列：只 stop 不队列清理，小爱会把这条播报当音乐复播（循环声）。"""
+        self.rt.devices = _Devices([_Dev()])
+        await self.speak()
+        await self.mgr.on_transcript("xiao_touch8", "书房", "要")
+        ok = await _until(lambda: any("stop_xiaomi_playback" in c for c in self.rt.ha.calls))
+        self.assertTrue(ok, "答完没清设备播放队列＝复播路径还在")
+        self.assertTrue(self.rt.mqtt.published[0]["payload"]["answer"] == "yes")
 
     async def test_unanswered_sends_nothing(self):
         await self.mgr.handle_pending(_payload(timeout_remaining=0.05))
