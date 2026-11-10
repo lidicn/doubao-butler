@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from butler.bus.topics import PUB_AF_ASK_ANSWER
 from butler.logging_setup import get_logger
 from butler.param import soft_num
+from homesdk.consent import classify_answer as _consent_classify
 
 logger = get_logger("butler.bus.af_ask")
 
@@ -33,8 +34,8 @@ MAX_PROMPT_LEN = 500
 #: 回答原话长度上限（超过这个长度不可能是 MVP 的「要/不要」）
 MAX_ANSWER_LEN = 20
 
-_YES_TOKENS = ("要", "好", "是", "开", "行", "可以", "需要", "嗯", "对", "ok", "yes", "yeah")
-_NO_TOKENS = ("不要", "不用", "不需要", "不行", "不是", "不", "否", "别", "关", "no", "n")
+# 回答判定唯一权威＝homesdk.consent.classify_answer（⛔ 本仓不再自建词表 / 子串判定）。
+# 否定优先、YES 只整句精确、应答词（嗯/哦）不算同意 —— 全部由 homesdk 一处决定。
 #: 带参数的回答：数字/中文数字/温度单位/百分比 ⇒ 整条拒收（MVP 只支持两值）。
 _PARAM_RE = re.compile(r"[0-9０-９一二三四五六七八九十百千万]|度|℃|温度|百分|%|摄氏")
 _PUNCT = "，。！？、,.!?;；:：~～ \t\r\n\"'“”‘’"
@@ -53,12 +54,11 @@ def classify_answer(text: str) -> tuple[str | None, str]:
         return None, "too_long"
     if _PARAM_RE.search(t):
         return None, "param"
-    low = t.lower()
-    # 先判否：「不要」里含「要」、「不行」里含「行」——顺序反了会把否定读成肯定。
-    if any(tok in low for tok in _NO_TOKENS):
-        return "no", "ok"
-    if any(tok in low for tok in _YES_TOKENS):
+    verdict = _consent_classify(t)  # homesdk 唯一权威：yes / no / unknown
+    if verdict == "yes":
         return "yes", "ok"
+    if verdict == "no":
+        return "no", "ok"
     return None, "unclassified"
 
 

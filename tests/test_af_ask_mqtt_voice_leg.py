@@ -109,12 +109,24 @@ async def _until(pred, timeout=2.0):
 
 class ClassifyAnswer(unittest.TestCase):
     def test_yes_variants(self):
-        for t in ("要", "好", "是", "开", "行", "可以", "需要", "嗯", "对", "ok", "yes", "要开"):
+        for t in ("要", "好", "是", "开", "行", "可以", "对", "打开", "ok", "yes", "yeah", "好的", "同意"):
             self.assertEqual(classify_answer(t)[0], "yes", t)
 
     def test_no_variants(self):
-        for t in ("不要", "不用", "不", "否", "别", "关", "不需要", "不行", "不是", "no", "不要开"):
+        for t in ("不要", "不用", "不", "否", "别", "不需要", "不行", "不是", "no", "取消", "算了", "不要开"):
             self.assertEqual(classify_answer(t)[0], "no", t)
+
+    def test_responders_are_not_consent(self):
+        # 应答词/近义短语不算同意：homesdk 判 unknown ⇒ 不发（宁缺勿错发）
+        for t in ("嗯", "哦", "要开", "需要", "对的", "关"):
+            self.assertIsNone(classify_answer(t)[0], t)
+
+    def test_delegates_to_homesdk_authority(self):
+        # 判定唯一权威＝homesdk.consent.classify_answer；本仓不得长出第二套判定
+        from homesdk.consent import classify_answer as h
+        for t in ("要", "不要", "嗯", "要开", "今天天气怎么样", "打开", "取消", "对的", "没问题"):
+            expect = {"yes": "yes", "no": "no"}.get(h(t))
+            self.assertEqual(classify_answer(t)[0], expect, t)
 
     def test_param_answers_rejected(self):
         for t in ("开到24度", "26度", "调到 26 度", "百分之五十", "开空调到26"):
