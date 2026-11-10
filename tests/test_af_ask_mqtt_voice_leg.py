@@ -37,6 +37,33 @@ class _Dialog:
         self.calls.append({"text": text, "room": room, "member": member})
         return {"spoken": self.spoken, "devices": [{"device": "xiao_touch8", "ok": True}]}
 
+    @staticmethod
+    def _est_speak_secs(text):
+        return 0.0
+
+
+class _HA:
+    def __init__(self):
+        self.calls = []
+
+    async def call_service(self, domain, service, data=None):
+        self.calls.append({"domain": domain, "service": service, "data": data or {}})
+        return "ok"
+
+
+class _Dev:
+    def __init__(self, dev_id="xiao_touch8", wake_button="button.xiao_touch8_wake_up"):
+        self.id = dev_id
+        self.wake_button = wake_button
+
+
+class _Devices:
+    def __init__(self, devs=None):
+        self._d = {d.id: d for d in (devs or [])}
+
+    def get(self, dev_id):
+        return self._d.get(dev_id)
+
 
 class _MQTT:
     def __init__(self):
@@ -52,6 +79,7 @@ class _RT:
         self.roles = _Roles()
         self.mqtt = _MQTT()
         self.devices = None
+        self.ha = _HA()
 
 
 def _payload(**over):
@@ -95,6 +123,8 @@ class _Base(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.rt = _RT()
         self.mgr = AfAskManager(self.rt)
+        # 唤醒延迟置 0：本档不真等 TTS 念完；睡眠窗的行为由 WakeArming 单独验
+        self.mgr._speak_secs = lambda prompt, dialog=None: -1.5
         self.addCleanup(self.mgr.close)
 
     async def speak(self, **over):
@@ -195,6 +225,74 @@ class RoomSerial(_Base):
         await self.mgr.on_transcript("xiao_touch8", "书房", "要")
         ok = await _until(lambda: len(self.rt.dialog.calls) >= 2)
         self.assertTrue(ok, "第一条答完，第二条没接着念")
+
+
+class WakeArming(_Base):
+    """联调 §3.4：念完问题后必须按 wake_button 把音箱切进聆听态（腿 1 红点）。"""
+
+    async def test_presses_wake_button_after_speaking(self):
+        self.rt.devices = _Devices([_Dev()])
+        await self.speak()
+        ok = await _until(lambda: len(self.rt.ha.calls) >= 1)
+        self.assertTrue(ok, "念完没按唤醒＝音箱不进聆听态，用户无法零唤醒词作答")
+        call = self.rt.ha.calls[0]
+        self.assertEqual(call["domain"], "button")
+        self.assertEqual(call["service"], "press")
+        self.assertEqual(call["data"], {"entity_id": "button.xiao_touch8_wake_up"})
+
+    async def test_missing_wake_button_is_named_not_silent(self):
+        self.rt.devices = _Devices([_Dev(wake_button="")])
+        with self.assertLogs("butler.bus.af_ask", level="WARNING") as cm:
+            await self.speak()
+            await _until(lambda: False, 0.1)
+        joined = " ".join(cm.output)
+        self.assertIn("AF_ASK_WAKE_UNSUPPORTED", joined)
+        self.assertEqual(self.rt.ha.calls, [], "没有唤醒按钮还去按压＝假肢")
+        # ⛔ 静默降级：必须点名「回退方案需报 AF-PM 裁定」
+        self.assertIn("AF-PM", joined)
+
+
+class UnclassifiedKeepsWindow(_Base):
+    """小爱自己的「我在」/听不清的噪声不能把挂起问句关掉。"""
+
+    async def test_ignored_chatter_does_not_close_ask(self):
+        self.rt.devices = _Devices([_Dev()])
+        await self.speak()
+        handled = await self.mgr.on_transcript("xiao_touch8", "书房", "我在")
+        self.assertTrue(handled)
+        self.assertEqual(self.rt.mqtt.published, [])
+        self.assertTrue(await self.mgr.on_transcript("xiao_touch8", "书房", "要"),
+                        "噪声之后用户再答「要」应该还能接到")
+        self.assertEqual(self.rt.mqtt.published[0]["payload"]["answer"], "yes")
+
+
+class DeviceWakeButtonMigration(unittest.TestCase):
+    """联调腿 1 根因：生产 devices.json 的 wake_button 是空串 ⇒ 念完按不到唤醒。"""
+
+    def test_empty_wake_button_filled_from_seed_and_persisted(self):
+        import json
+        import tempfile
+        from butler.config import Settings
+        from butler.devices import DeviceRegistry
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        data = pathlib.Path(tmp.name)
+        (data / "devices.json").write_text(json.dumps({
+            "xiao_study": {
+                "id": "xiao_study", "type": "xiaomi", "room": "书房", "enabled": True,
+                "ha_player_entity": "media_player.xiaomi_x08a_1648_play_control",
+                "ha_sensor": "sensor.xiaomi_x08a_1648_conversation",
+                "wake_button": "",
+            }
+        }, ensure_ascii=False), encoding="utf-8")
+        reg = DeviceRegistry(Settings(data_dir=str(data)))
+        reg.load()
+        self.assertEqual(reg.get("xiao_study").wake_button, "button.xiaomi_x08a_1648_wake_up",
+                         "老档空 wake_button 没补上＝腿 1 继续红")
+        saved = json.loads((data / "devices.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["xiao_study"]["wake_button"], "button.xiaomi_x08a_1648_wake_up",
+                         "补全没落盘＝下次重启又回到空串")
 
 
 class WiringShape(unittest.TestCase):

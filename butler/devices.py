@@ -186,13 +186,22 @@ class DeviceRegistry:
                 if not dev.area_id and dev.room:
                     # 老 devices.json 无 area_id：按显示名就地对齐到 HA area_id（双读过渡）
                     dev.area_id = _resolve_area(dev.room) or ""
+                base = seed.get(did)
+                if not dev.wake_button and base is not None and base.wake_button:
+                    # 2026-11-10 AF ask 腿 1 红点根因：老 devices.json 的 wake_button 是空串，
+                    # 而种子表里 9 台音箱的唤醒按钮早就有了 ⇒ 念完题按不到「唤醒」，音箱不进聆听态。
+                    # 就地补全（只补空值，⛔ 改用户填过的值；自定义设备不在种子里则跳过），并落盘一次。
+                    dev.wake_button = base.wake_button
+                    logger.info("devices wake_button migrated: %s -> %s", did, dev.wake_button)
                 seed[did] = dev
         self.devices = seed
         # 首次播种后落盘，便于 WebUI 直接编辑（缺档＝真没有，⛔ 一并拒掉，否则新装环境建不起表）
         if not self.path.exists():
             self.save()
-        elif any(not (isinstance(raw.get(k), dict) and raw[k].get("area_id")) for k in raw):
-            # 有老档缺 area_id：补齐一次落盘（只加键，不改用户其它字段；坏档拒写那半在 save()）
+        elif any(isinstance(raw.get(k), dict)
+                 and (not raw[k].get("area_id") or not raw[k].get("wake_button"))
+                 for k in raw):
+            # 有老档缺 area_id／wake_button：补齐一次落盘（只加键，不改用户其它字段；坏档拒写那半在 save()）
             self.save()
 
     def save(self) -> bool:

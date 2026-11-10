@@ -156,10 +156,12 @@ class AfAskManager:
         self._active[ask.ask_id] = ask
         try:
             spoken = await self._speak(ask)
-            if not spoken:
+            if spoken is None:
                 logger.error("AF_ASK_UNSENT ask=%s room=%s 原因=没有设备出声（⛔ 继续等回答）",
                              ask.ask_id, ask.room)
                 return
+            # 念完之后把音箱切进聆听态（联调 §3.4：念完问题后用户零唤醒词直接答）
+            await self._arm_wake(ask, spoken)
             remaining = ask.deadline - time.monotonic()
             if remaining <= 0:
                 logger.warning("AF_ASK_TIMEOUT ask=%s room=%s 念完已过期，⛔ 等回答", ask.ask_id, ask.room)
@@ -176,27 +178,102 @@ class AfAskManager:
             if not ask.done.is_set():
                 ask.done.set()
 
-    async def _speak(self, ask: _Ask) -> bool:
+    async def _speak(self, ask: _Ask) -> dict | None:
         dialog = getattr(self.rt, "dialog", None)
         roles = getattr(self.rt, "roles", None)
         if dialog is None or roles is None:
             logger.error("AF_ASK_UNSENT ask=%s 原因=runtime 未就绪（dialog/roles 缺失）", ask.ask_id)
-            return False
+            return None
         role = roles.get("butler") if hasattr(roles, "get") else None
         if role is None:
             logger.error("AF_ASK_UNSENT ask=%s 原因=角色 butler 取不到", ask.ask_id)
-            return False
+            return None
         try:
             res = await dialog.speak_as_role(role, ask.prompt, ask.room, member="系统")
         except Exception as e:
             logger.error("AF_ASK_UNSENT ask=%s 原因=speak_as_role 抛错：%s", ask.ask_id, e)
-            return False
+            return None
         if not (res or {}).get("spoken"):
             logger.error("AF_ASK_UNSENT ask=%s 原因=无设备出声 回执=%.200s", ask.ask_id, res)
-            return False
+            return None
         logger.info("AF_ASK_SPOKEN ask=%s room=%s devices=%.200s",
                     ask.ask_id, ask.room, res.get("devices"))
-        return True
+        return res
+
+    @staticmethod
+    def _speak_secs(prompt: str, dialog=None) -> float:
+        """估算这条 prompt 念多久：优先用 dialog 的现成估算（约 3.1 字/秒）。"""
+        est = getattr(dialog, "_est_speak_secs", None)
+        if callable(est):
+            try:
+                return est(prompt)
+            except Exception:
+                pass
+        return max(2.0, len(prompt or "") * 0.32)
+
+    async def _arm_wake(self, ask: _Ask, spoken: dict) -> None:
+        """念完后按 `wake_button` 把音箱切进聆听态（2026-11-10 联调 §3.4）。
+
+        AF 的「主动」＝自动化触发小爱唤醒：念完问题必须落在聆听态，用户才能零唤醒词作答。
+        ⛔ 静默降级：没有唤醒按钮／按压失败一律点名 `AF_ASK_WAKE_UNSUPPORTED`
+        （回退方案须经出资人报 AF-PM 裁定）。
+        """
+        dialog = getattr(self.rt, "dialog", None)
+        delay = self._speak_secs(ask.prompt, dialog) + 1.5
+        remaining = ask.deadline - time.monotonic()
+        if remaining <= 1.0:
+            logger.warning("AF_ASK_WAKE_SKIPPED ask=%s 剩余 %.1fs，不足等念完再唤醒", ask.ask_id, remaining)
+            return
+        await asyncio.sleep(min(delay, max(0.0, remaining - 1.0)))
+        pressed = 0
+        for item in spoken.get("devices") or []:
+            if not isinstance(item, dict) or not item.get("ok"):
+                continue
+            dev = self._device(item.get("device", ""))
+            if dev is None:
+                logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s device=%s 原因=登记表里没有该设备",
+                               ask.ask_id, item.get("device", ""))
+                continue
+            wake = getattr(dev, "wake_button", "") or ""
+            if not wake:
+                logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s device=%s 原因=wake_button 未配置"
+                               "（回退方案需报 AF-PM 裁定，⛔ 静默降级）", ask.ask_id, dev.id)
+                continue
+            ha = getattr(self.rt, "ha", None)
+            if ha is None:
+                logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s device=%s 原因=HA 未就绪", ask.ask_id, dev.id)
+                continue
+            try:
+                await ha.call_service("button", "press", {"entity_id": wake})
+                pressed += 1
+                logger.info("AF_ASK_WAKE_PRESSED ask=%s device=%s entity=%s", ask.ask_id, dev.id, wake)
+            except Exception as e:
+                logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s device=%s 原因=按压失败：%s",
+                               ask.ask_id, dev.id, e)
+            self._clear_echo(dev.id)
+        if pressed == 0:
+            logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s 整条没有一台按到唤醒按钮"
+                           "（用户可能无法零唤醒词作答；回退方案需报 AF-PM 裁定）", ask.ask_id)
+        else:
+            logger.info("AF_ASK_LISTEN_ARMED ask=%s pressed=%d", ask.ask_id, pressed)
+
+    def _device(self, dev_id: str):
+        devices = getattr(self.rt, "devices", None)
+        if devices is None or not dev_id:
+            return None
+        try:
+            return devices.get(dev_id)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _clear_echo(dev_id: str) -> None:
+        """清掉该设备的回声窗：唤醒之后用户说的「要」不能被自家 TTS 的抑制窗吞掉。"""
+        try:
+            from butler.core.xiaomi_ear import XiaomiEar
+            XiaomiEar.clear_echo(dev_id)
+        except Exception:
+            pass
 
     # ── 入口：耳朵转写 ─────────────────────────────────────────────
     async def on_transcript(self, device_id: str, room: str, text: str) -> bool:
@@ -219,11 +296,17 @@ class AfAskManager:
                 return False
             answer, why = classify_answer(text)
             if answer is None:
-                # 带参数/听不清/复述问句：整条拒收（AF 走超时兜底），⛔ 猜、⛔ 截断。
-                logger.warning("AF_ASK_REJECTED ask=%s room=%s 原因=%s text_len=%d",
-                               ask.ask_id, ask.room, why, len(str(text or "")))
-                self._active.pop(ask.ask_id, None)
-                ask.done.set()
+                if why == "param":
+                    # 带参数：整条拒收（AF 走超时兜底），⛔ 猜、⛔ 截断。
+                    logger.warning("AF_ASK_REJECTED ask=%s room=%s 原因=param（带参数整条拒收）text_len=%d",
+                                   ask.ask_id, ask.room, len(str(text or "")))
+                    self._active.pop(ask.ask_id, None)
+                    ask.done.set()
+                    return True
+                # 听不清／噪声／小爱自己的「我在」：吞掉这句、继续等——
+                # ⛔ 判成拒收把窗口关掉（那样用户再答「要」也接不到了）。
+                logger.info("AF_ASK_UNCLASSIFIED ask=%s room=%s 原因=%s text_len=%d，继续等回答",
+                            ask.ask_id, ask.room, why, len(str(text or "")))
                 return True
             payload = {"ask_id": ask.ask_id, "answer": answer, "raw_text": str(text or "")}
             ok = self._publish(payload)
@@ -254,7 +337,7 @@ class AfAskManager:
             from butler.areas import resolve_room
             mapping: dict[str, str] = {}
             reg = getattr(self.rt, "devices", None)
-            if reg is not None:
+            if reg is not None and hasattr(reg, "all"):
                 mapping = {d.area_id: d.room for d in reg.all() if d.area_id and d.room}
             resolved = resolve_room(raw, mapping) if mapping else resolve_room(raw)
             return resolved or raw

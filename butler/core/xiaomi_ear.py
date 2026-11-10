@@ -142,6 +142,11 @@ class XiaomiEar:
         for stale in [k for k, v in cls._echo_cooldown.items() if v <= now]:
             del cls._echo_cooldown[stale]
 
+    @classmethod
+    def clear_echo(cls, device_id: str) -> None:
+        """清除设备的回声抑制窗（2026-11-10 AF ask）：唤醒后用户的回答⛔ 被自己的 TTS 窗吞掉。"""
+        cls._echo_cooldown.pop(device_id, None)
+
     async def _handle_event(self, event: dict, sensor_map: dict):
         data = event.get("data", {})
         entity_id = data.get("entity_id", "")
