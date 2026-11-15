@@ -5,6 +5,7 @@
 DB＝表达中枢：收到即告知用户（Bark 优先），失败事件把 `error` 原文带进正文。
 fail-closed：非对象或缺 trace_id ⇒ 丢弃 + ADM_ERR_PAYLOAD_INVALID 日志，⛔ 拿缺件事件当成功播报。
 """
+import inspect
 from typing import Callable, Optional
 
 from butler.logging_setup import get_logger
@@ -17,16 +18,32 @@ OUTCOME_DROPPED = "dropped_invalid"
 OUTCOME_NOTIFY_FAILED = "notify_failed"
 
 
-def _default_notify(title: str, body: str) -> None:
-    from butler.notifier.router import get_router
-    nr = get_router()
-    if nr is None or nr.bark is None:
-        raise RuntimeError("notify router unavailable")
-    nr.bark.send(title, body)
+async def _default_notify(title: str, body: str) -> None:
+    """走统一通知路由（唯一正确入口：`butler.notify.singleton.get_router`）。
+
+    历史缺陷（批135 引入）：此处误 import 了 `butler.notifier.router.get_router`——该函数
+    从未存在（`notifier/router.py` 里只有 `NotificationRouter` 类），全仓其余五个消费点
+    都走 `butler.notify.singleton`。后果：订阅通、通知腿 100% 失败且只落 WARNING，
+    AF 的 fired/failed Bark 推送等于一直没发。
+
+    调用形按 `NotifyRouter.notify(channel, text, **kwargs)`（async，返回 NotifyResult）：
+    ⛔ 不是 `NotificationRouter` 的 `bark.send(...)`（无此方法）。
+    """
+    from butler.notify.singleton import get_router
+
+    router = get_router()
+    if router is None:
+        # 不假绿：router 未初始化是「通知没发出去」，交给上层记 notify_failed。
+        raise RuntimeError("notify router 未初始化（butler.notify.singleton.get_router() 返回 None）")
+    res = await router.notify("bark", body, title=title)
+    ch = (getattr(res, "results", None) or {}).get("bark")
+    if ch is None or not getattr(ch, "ok", False):
+        # 通道未绑定 / 被模式门挡住 / 投递失败：一律按未送达上报，⛔ 当成已通知。
+        raise RuntimeError("bark 通道未送达：%s" % (getattr(ch, "error", "not_bound"),))
 
 
-def handle_af_automation_event(topic: str, payload,
-                               notify: Optional[Callable[[str, str], None]] = None) -> str:
+async def handle_af_automation_event(topic: str, payload,
+                                     notify: Optional[Callable] = None) -> str:
     if not isinstance(payload, dict):
         logger.error("%s af_events payload 非对象 topic=%s", ADM_ERR_PAYLOAD_INVALID, topic)
         return OUTCOME_DROPPED
@@ -46,7 +63,10 @@ def handle_af_automation_event(topic: str, payload,
         body = f"{automation_id}（{ref}）已执行｜trace={trace_id}"
     send = notify or _default_notify
     try:
-        send(title, body)
+        result = send(title, body)
+        # 注入的桩可以是同步 callable；生产 `_default_notify` 是 async，这里统一等它完成。
+        if inspect.isawaitable(result):
+            await result
     except Exception as e:
         logger.warning("%s af_events notify failed topic=%s trace=%s err=%s",
                        ADM_ERR_INTERNAL, topic, trace_id, e)

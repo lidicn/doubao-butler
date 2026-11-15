@@ -162,7 +162,7 @@ async def _consume(rt) -> None:
                         logger.warning("MA insights bark notify failed: %s", e)
             elif topic in (SUB_AF_AUTOMATION_FIRED, SUB_AF_AUTOMATION_FAILED):
                 # §9 任务2（批135）：AF 上报 fired/failed → 告知用户，failed 带 error 可读
-                handle_af_automation_event(topic, payload)
+                await handle_af_automation_event(topic, payload)
             elif topic == SUB_AF_ASK_PENDING:
                 # 2026-11-08 AF 主动询问语音环：念题→收口头回答→发 af/ask/answer。
                 # 管理器懒装配（首条消息时建），handle_pending 只入队，⛔ 在这里等回答。
