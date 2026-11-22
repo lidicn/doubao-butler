@@ -557,7 +557,15 @@ def _build_app() -> Starlette:
         trigger_engine.set_runtime(rt)
         rt.trigger_engine = trigger_engine
         dialog.trigger_engine = trigger_engine   # on_face 等事件走 trigger 规则层
-        # AF ask 桥：轮询 AutoForge 挂起 ask → TTS 播报 → 用户回答注回
+        # 2026-11-22 AF 主动询问问句双播修复：A 环（af_ask）必须先装配，af_bridge.start()
+        # 首 poll 才能看到 rt.af_ask 在位而让出播报/应答权；⛔ 顺序反了有首 poll 抢播窗口。
+        try:
+            from butler.bus.af_ask import AfAskManager
+            rt.af_ask = AfAskManager(rt)
+            print('[startup] af_ask voice leg initialized')
+        except Exception as e:
+            print(f'[startup] af_ask init failed: {e}')
+        # AF ask 桥：轮询 AutoForge 挂起 ask → TTS 播报 → 用户回答注回（A 环缺席时兜底）
         try:
             from butler import af_bridge
             af_base = getattr(s, 'autoforge_base_url', '')  # WO-BUT-012: 空串→af_bridge 模块默认
@@ -570,14 +578,6 @@ def _build_app() -> Starlette:
             print('[startup] af_bridge started, polling', af_base)
         except Exception as e:
             print(f'[startup] af_bridge start failed: {e}')
-        # 2026-11-08 AF 主动询问语音环（MQTT）：装配放在 af_bridge 之后、MQTT 消费协程之前；
-        # 念题走 dialog.speak_as_role（按 room 选箱＋回声抑制），回答由 xiaomi_ear 转写回调进来。
-        try:
-            from butler.bus.af_ask import AfAskManager
-            rt.af_ask = AfAskManager(rt)
-            print('[startup] af_ask voice leg initialized')
-        except Exception as e:
-            print(f'[startup] af_ask init failed: {e}')
         # 设备登记表 + 角色登记表（多角色对话 / 全屋任意小爱）
         devices = DeviceRegistry(s)
         devices.load()

@@ -142,6 +142,10 @@ async def _poll_once() -> None:
     new_ids = {a["ask_id"] for a in asks}
 
     # 新 ask → 播报
+    # 2026-11-22（AF 主动询问问句双播修复）：A 环（butler/bus/af_ask.py，MQTT 语音环）
+    # 在场时问句播报与应答都归它；B 环（本模块）不得再念一遍。两个环各念一遍同一 ask
+    # ⇒ 设备从 0 位重放 ⇒ 前缀重复（现场 ask_id 047265e1408d）。
+    a_ring = getattr(_rt, "af_ask", None) if _rt else None
     for ask in asks:
         aid = ask["ask_id"]
         if aid not in known_ids:
@@ -149,7 +153,13 @@ async def _poll_once() -> None:
                 "room": ask.get("room", ""),
                 "prompt": ask.get("prompt", ""),
                 "prompt_ts": time.time(),
+                "a_ring": a_ring is not None,
             }
+            if a_ring is not None:
+                # 记进 _pending 只为去重（同 ask 重发不再进这里）；播报权让给 A 环。
+                logger.info("AF_BRIDGE_ANNOUNCE_OWNED_BY_A_RING ask=%s 原因=af_ask 在场（A 环权威，B 环不播报）", aid)
+                continue
+            logger.info("AF_BRIDGE_ANNOUNCE_FALLBACK ask=%s 原因=af_ask 未装配，B 环兜底播报", aid)
             await _announce(ask)
 
     # 已解决的 ask（AF 那边 answer 后 pending 里就没了）
@@ -230,6 +240,10 @@ async def on_user_reply(room: str, text: str) -> bool:
     返回 True 表示这是对 AF ask 的回答（dialog 不需要再走正常对话）。
     """
     global _delivered_total, _unconsumed_total
+    # 2026-11-22（双播/双投修复）：A 环（af_ask）在场时它是唯一回答路径，
+    # B 环不得抢答（否则同一回答被投两次到 AF /api/asks/answer）。
+    if getattr(_rt, "af_ask", None) is not None:
+        return False
     # 找同房间待答 ask
     for aid, info in list(_pending.items()):
         if info["room"] and info["room"] != room:
