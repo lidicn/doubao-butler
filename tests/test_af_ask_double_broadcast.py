@@ -248,13 +248,19 @@ class C5_同ask重发不重复播报(_Base):
 
 class C0_装配次序(_Base):
     def test_c0_af_ask_before_af_bridge_start(self):
-        """app.py：`rt.af_ask = AfAskManager(rt)` 必须在 `await af_bridge.start()` 之前。"""
+        """app.py：eager 装配 `rt.af_ask = AfAskManager(rt)` 必须在 `await af_bridge.start()` 之前。
+
+        注意 `_consume` 里还有一处懒装配（另一行），所以尺子取「修复标记 → af_bridge.start()」
+        这段区间，⛔ 用全文件首个 index（会先命中懒装配，次序回退也假绿）。
+        """
         from pathlib import Path
         root = Path(af.__file__).resolve().parent.parent
         src = (root / "butler" / "app.py").read_text(encoding="utf-8")
-        i_ask = src.index("rt.af_ask = AfAskManager(rt)")
+        i_mark = src.index("# 2026-11-22 AF 主动询问问句双播修复")
         i_start = src.index("await af_bridge.start()")
-        self.assertLess(i_ask, i_start, "af_ask 装配必须在 af_bridge.start() 之前")
+        seg = src[i_mark:i_start]
+        self.assertIn("rt.af_ask = AfAskManager(rt)", seg,
+                      "eager 装配不在 af_bridge.start() 之前（首 poll 抢播窗口回来了）")
 
 
 if __name__ == "__main__":
