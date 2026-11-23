@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from dataclasses import dataclass, field
 from butler.bus.topics import PUB_AF_ASK_ANSWER
 from butler.logging_setup import get_logger
 from butler.param import soft_num
+from butler.startup_assets import WAKE_DING_NAME
 from homesdk.consent import classify_answer as _consent_classify
 
 logger = get_logger("butler.bus.af_ask")
@@ -33,6 +35,21 @@ SEEN_TTL_S = 3600.0
 MAX_PROMPT_LEN = 500
 #: 回答原话长度上限（超过这个长度不可能是 MVP 的「要/不要」）
 MAX_ANSWER_LEN = 20
+
+#: 唤醒提示音时长（秒）：`startup_assets.FFMPEG_ARGV` 里 `sine=...:duration=0.2` 钉死。
+WAKE_DING_DURATION_S = 0.2
+#: 提示音播完的余量（秒）：≥ 一个 ding 时长，覆盖云端投递抖动。
+WAKE_DING_MARGIN_S = 0.3
+#: 报给 `schedule_xiaomi_stop` 的时长（秒）：那条停止腿自带 800ms 提前量（`ha.py:605`）
+#: ⇒ 报 1.0s 才等价于「叮播完（0.2s）即停」；报 0.2s 会因提前量大于音频本身而一开播就停。
+WAKE_DING_STOP_REPORT_S = 1.0
+
+
+def _settings():
+    """配置读取点（测试可整体替换本函数，⛔ 各方法自己 `import get_settings`）。"""
+    from butler.config import get_settings
+    return get_settings()
+
 
 # 回答判定唯一权威＝homesdk.consent.classify_answer（⛔ 本仓不再自建词表 / 子串判定）。
 # 否定优先、YES 只整句精确、应答词（嗯/哦）不算同意 —— 全部由 homesdk 一处决定。
@@ -76,13 +93,16 @@ class _Ask:
 class AfAskManager:
     """同房间串行 + ask_id 去重 + 超时静默的 ask 语音环。"""
 
-    def __init__(self, rt):
+    def __init__(self, rt, *, clock=None, sleep=None):
         self.rt = rt
         self._seen: dict[str, float] = {}
         self._queues: dict[str, list[_Ask]] = {}
         self._workers: dict[str, asyncio.Task] = {}
         self._active: dict[str, _Ask] = {}
         self._closed = False
+        # 时钟/睡眠可注入：判据件 D4 用桩时钟验「按压不早于 ding 播完」，⛔ 靠真等。
+        self._clock = clock or time.monotonic
+        self._sleep = sleep or asyncio.sleep
 
     # ── 入口：MQTT pending ──────────────────────────────────────────
     async def handle_pending(self, payload) -> None:
@@ -118,7 +138,7 @@ class AfAskManager:
             logger.warning("AF_ASK_EXPIRED ask=%s timeout_remaining=%r，⛔ 念题（AF 已走兜底）",
                            ask_id, payload.get("timeout_remaining"))
             return None
-        deadline = time.monotonic() + min(timeout, MAX_WAIT_S)
+        deadline = self._clock() + min(timeout, MAX_WAIT_S)
         return _Ask(ask_id=ask_id, room=room, room_key=self._room_key(room),
                     prompt=prompt[:MAX_PROMPT_LEN], deadline=deadline)
 
@@ -127,10 +147,10 @@ class AfAskManager:
         return ask_id in self._seen
 
     def _remember(self, ask_id: str) -> None:
-        self._seen[ask_id] = time.monotonic()
+        self._seen[ask_id] = self._clock()
 
     def _prune_seen(self) -> None:
-        now = time.monotonic()
+        now = self._clock()
         expired = [k for k, ts in self._seen.items() if now - ts > SEEN_TTL_S]
         for k in expired:
             self._seen.pop(k, None)
@@ -163,7 +183,7 @@ class AfAskManager:
                 return
             # 念完之后把音箱切进聆听态（联调 §3.4：念完问题后用户零唤醒词直接答）
             await self._arm_wake(ask, spoken)
-            remaining = ask.deadline - time.monotonic()
+            remaining = ask.deadline - self._clock()
             if remaining <= 0:
                 logger.warning("AF_ASK_TIMEOUT ask=%s room=%s 念完已过期，⛔ 等回答", ask.ask_id, ask.room)
                 return
@@ -245,20 +265,61 @@ class AfAskManager:
                 logger.warning("AF_ASK_MEDIA_STOP_FAILED ask=%s device=%s err=%s", ask.ask_id, did, e)
 
     async def _arm_wake(self, ask: _Ask, spoken: dict) -> None:
-        """念完后按 `wake_button` 把音箱切进聆听态（2026-11-10 联调 §3.4）。
+        """念完后：等问句播完 → 播唤醒提示音并等它播完 → 按 `wake_button` 开窗。
 
-        AF 的「主动」＝自动化触发小爱唤醒：念完问题必须落在聆听态，用户才能零唤醒词作答。
-        ⛔ 静默降级：没有唤醒按钮／按压失败一律点名 `AF_ASK_WAKE_UNSUPPORTED`
-        （回退方案须经出资人报 AF-PM 裁定）。
+        2026-11-23「唤醒窗口可感知化」：主卧 Sound Pro 的按压唤醒是纯静音开窗（无提示音、
+        无灯），用户只能盲猜窗口何时打开。四段顺序（D0 钉着，⛔ 换序）：
+
+        ① `dialog.speak_as_role` 下发即返回、**不等播放完成**（`core/dialog.py:686`）⇒ 先按
+           `_speak_secs` 估时把问句等完。这一等⛔ 删、⛔ 挪到 ding 之后：删了就是在问句尾巴上
+           按按钮；挪了会 REPLACE_ALL 打断问句。
+        ② 只对「本次真会按压的那批设备」播 `wake_ding.mp3`（与 press 同一道设备门，D5）。
+        ③ 等提示音播完：各条「开始 + 0.2s 时长 + 余量」，时钟可注入（D4 用桩时钟验）。
+        ④ 再 `button.press` 开窗——先开窗后放音，提示音会被刚打开的麦克风自己拾成用户回答。
+
+        ⛔ 静默降级：没有唤醒按钮／提示音缺失或播放失败／按压失败一律点名
+        `AF_ASK_WAKE_UNSUPPORTED`（提示音再补一条 `AF_ASK_WAKE_DING_UNSUPPORTED`），
+        且提示音失败**不阻塞**按压（D3）。
         """
         dialog = getattr(self.rt, "dialog", None)
+        # ① 等问句播完（既有逻辑，⛔ 删/挪）
         delay = self._speak_secs(ask.prompt, dialog) + 1.5
-        remaining = ask.deadline - time.monotonic()
+        remaining = ask.deadline - self._clock()
         if remaining <= 1.0:
             logger.warning("AF_ASK_WAKE_SKIPPED ask=%s 剩余 %.1fs，不足等念完再唤醒", ask.ask_id, remaining)
             return
-        await asyncio.sleep(min(delay, max(0.0, remaining - 1.0)))
+        await self._sleep(min(delay, max(0.0, remaining - 1.0)))
+
+        # ② 同一道设备门：先挑出本次真会按压的设备，ding 与 press 都只对这批（D5）
+        targets = self._wake_targets(ask, spoken)
+        if targets:
+            await self._play_wake_ding(ask, targets)
+
+        # ④ 按压开窗
         pressed = 0
+        for dev, wake in targets:
+            try:
+                await self.rt.ha.call_service("button", "press", {"entity_id": wake})
+                pressed += 1
+                logger.info("AF_ASK_WAKE_PRESSED ask=%s device=%s entity=%s", ask.ask_id, dev.id, wake)
+            except Exception as e:
+                logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s device=%s 原因=按压失败：%s",
+                               ask.ask_id, dev.id, e)
+            self._clear_echo(dev.id)
+        if pressed == 0:
+            logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s 整条没有一台按到唤醒按钮"
+                           "（用户可能无法零唤醒词作答；回退方案需报 AF-PM 裁定）", ask.ask_id)
+        else:
+            logger.info("AF_ASK_LISTEN_ARMED ask=%s pressed=%d", ask.ask_id, pressed)
+
+    def _wake_targets(self, ask: _Ask, spoken: dict) -> list:
+        """挑出「本次真会按压唤醒按钮」的设备：ding 与 press 共用这一道门（D5）。
+
+        无唤醒按钮/设备未登记/HA 未就绪一律点名 `AF_ASK_WAKE_UNSUPPORTED` 并排除——
+        ⛔ 对这些设备也播提示音：用户听到「叮」却开不了窗，比没有提示音更误导。
+        """
+        ha = getattr(self.rt, "ha", None)
+        targets: list = []
         for item in spoken.get("devices") or []:
             if not isinstance(item, dict) or not item.get("ok"):
                 continue
@@ -272,23 +333,78 @@ class AfAskManager:
                 logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s device=%s 原因=wake_button 未配置"
                                "（回退方案需报 AF-PM 裁定，⛔ 静默降级）", ask.ask_id, dev.id)
                 continue
-            ha = getattr(self.rt, "ha", None)
             if ha is None:
                 logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s device=%s 原因=HA 未就绪", ask.ask_id, dev.id)
                 continue
-            try:
-                await ha.call_service("button", "press", {"entity_id": wake})
-                pressed += 1
-                logger.info("AF_ASK_WAKE_PRESSED ask=%s device=%s entity=%s", ask.ask_id, dev.id, wake)
-            except Exception as e:
-                logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s device=%s 原因=按压失败：%s",
-                               ask.ask_id, dev.id, e)
-            self._clear_echo(dev.id)
-        if pressed == 0:
-            logger.warning("AF_ASK_WAKE_UNSUPPORTED ask=%s 整条没有一台按到唤醒按钮"
-                           "（用户可能无法零唤醒词作答；回退方案需报 AF-PM 裁定）", ask.ask_id)
-        else:
-            logger.info("AF_ASK_LISTEN_ARMED ask=%s pressed=%d", ask.ask_id, pressed)
+            targets.append((dev, wake))
+        return targets
+
+    async def _play_wake_ding(self, ask: _Ask, targets: list) -> None:
+        """③ 对 targets 播 `wake_ding.mp3` 并等到播完；失败只点名，⛔ 阻塞按压（D3）。"""
+        try:
+            s = _settings()
+        except Exception as e:
+            logger.warning("AF_ASK_WAKE_DING_UNSUPPORTED ask=%s 原因=配置读取失败：%s", ask.ask_id, e)
+            return
+        path = os.path.join(str(getattr(s, "tts_dir", "") or ""), WAKE_DING_NAME)
+        if not getattr(s, "tts_dir", "") or not os.path.exists(path):
+            logger.warning("AF_ASK_WAKE_DING_UNSUPPORTED ask=%s 原因=提示音资产缺失 path=%s",
+                           ask.ask_id, path)
+            return
+        url = str(getattr(s, "base_url", "") or "").rstrip("/") + "/tts/" + WAKE_DING_NAME
+        starts: list[float] = []
+        for dev, _wake in targets:
+            started = self._clock()
+            if await self._emit_ding(dev, url):
+                starts.append(started)
+                logger.info("AF_ASK_WAKE_DING_PLAYED ask=%s device=%s url=%s",
+                            ask.ask_id, dev.id, url)
+            else:
+                logger.warning("AF_ASK_WAKE_DING_UNSUPPORTED ask=%s device=%s 原因=播放失败",
+                               ask.ask_id, getattr(dev, "id", ""))
+        if not starts:
+            return
+        # 等「最后一条」播完：按各自开始时刻算；⛔ 从全部下发完再硬等（首条会提前）。
+        done_at = max(st + WAKE_DING_DURATION_S + WAKE_DING_MARGIN_S for st in starts)
+        wait = done_at - self._clock()
+        if wait > 0:
+            await self._sleep(wait)
+
+    async def _emit_ding(self, dev, url: str) -> bool:
+        """播提示音：照抄念题同一条小爱腿（`core/dialog.py:625-651`，D6 钉着）。
+
+        有 xiaoai 云端直连优先 `player_play_url`（music 固件走 `player_play_music` 并补关循环），
+        否则回退 HA `media_player.play_media`。⛔ 另造第二套播放通道。
+        """
+        ha = getattr(self.rt, "ha", None)
+        entity = getattr(dev, "ha_player_entity", "") or ""
+        if ha is None or not entity:
+            return False
+        dev_id = getattr(dev, "id", "")
+        try:
+            s = _settings()
+            if getattr(s, "xiaomi_service_token", "") and getattr(s, "xiaomi_user_id", ""):
+                aid = await ha.get_xiaoai_id(entity)
+                if aid:
+                    xmethod = getattr(dev, "xiaomi_play", None) or "url"
+                    rj = await ha.play_xiaomi_url_once(aid, url, method=xmethod) or {}
+                    ok = str(rj.get("code")) == "0"
+                    if ok and xmethod == "music":
+                        ha.schedule_xiaomi_stop(aid, WAKE_DING_STOP_REPORT_S)
+                    if not ok:
+                        logger.warning("AF_ASK_WAKE_DING_UNSUPPORTED device=%s 原因=小爱直连失败 code=%s",
+                                       dev_id, rj.get("code"))
+                    return ok
+            r = await ha.tts_play_url(url, entity)
+            if str(r).startswith("ok"):
+                await ha.schedule_media_stop(entity, WAKE_DING_DURATION_S)
+                return True
+            logger.warning("AF_ASK_WAKE_DING_UNSUPPORTED device=%s 原因=HA 播放失败 detail=%s",
+                           dev_id, r)
+            return False
+        except Exception as e:
+            logger.warning("AF_ASK_WAKE_DING_UNSUPPORTED device=%s 原因=播放异常：%s", dev_id, e)
+            return False
 
     def _device(self, dev_id: str):
         devices = getattr(self.rt, "devices", None)
@@ -316,7 +432,7 @@ class AfAskManager:
         """
         if not self._active:
             return False
-        now = time.monotonic()
+        now = self._clock()
         room_key = self._room_key(room) if room else ""
         for ask in list(self._active.values()):
             if ask.room_key != room_key:
