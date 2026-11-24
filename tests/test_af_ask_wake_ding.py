@@ -2,7 +2,7 @@
 
 现场（2026-11-23）：主卧 Sound Pro（l17a）的按压唤醒是**纯静音开窗**（无提示音、无灯），
 聆听窗只有 2–9 秒且无声可感 ⇒ 用户只能盲猜何时作答。修复＝念完题后先播 `wake_ding.mp3`
-（880Hz／0.2s，`startup_assets.FFMPEG_ARGV` 钉死），播完再按 `wake_button` 开窗。
+（880Hz／0.6s，`startup_assets.FFMPEG_ARGV` 钉死），播完再按 `wake_button` 开窗。
 
 顺序硬约束（ADM-链主 2026-11-23 补三条）：
 - `dialog.speak_as_role` 下发即返回、不等播放完成 ⇒ 必须保留「等问句播完」再播 ding（D0）；

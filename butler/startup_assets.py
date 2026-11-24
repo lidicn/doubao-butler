@@ -17,10 +17,16 @@ import pathlib
 
 WAKE_DING_NAME = "wake_ding.mp3"
 
-# 与改码前 app.py:271-273 那 14 项字面量逐枚相等（验收腿 test_03 钉着它）
+# 2026-11-24 durable 修（附带件②）：旧参数 volume=0.4 / duration=0.2 实测
+# `ffmpeg -af volumedetect` → mean −30.4 dB / max −26.5 dB（几乎听不见）；现网手工重生成的
+# 0.6s / volume=6.0 实测 mean −6.5 / max −2.9 dB。文件在挂载卷持久、被删重建即回到旧参数，
+# 因此把参数钉到手工件同值（fade-out 起点随 duration 一起挪到 0.55s）。
+# 2026-11-23 更正：旧注释称「验收腿 test_03 钉着它」——该腿不存在（`git log -S "sine=frequency"
+# -- tests/` 空、batch6 gate 是「未 await 普查」名册，与 FFMPEG 无关）；现由
+# `tests/test_wake_ding_asset.py` 钉参数与重建响度。
 FFMPEG_ARGV = (
-    "ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=880:duration=0.2",
-    "-af", "afade=t=in:st=0:d=0.01,afade=t=out:st=0.15:d=0.05,volume=0.4",
+    "ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=880:duration=0.6",
+    "-af", "afade=t=in:st=0:d=0.01,afade=t=out:st=0.55:d=0.05,volume=6.0",
     "-ar", "24000", "-ac", "1", "-b:a", "24k",
 )
 DEFAULT_TIMEOUT_S = 10

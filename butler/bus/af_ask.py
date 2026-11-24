@@ -36,13 +36,20 @@ MAX_PROMPT_LEN = 500
 #: 回答原话长度上限（超过这个长度不可能是 MVP 的「要/不要」）
 MAX_ANSWER_LEN = 20
 
-#: 唤醒提示音时长（秒）：`startup_assets.FFMPEG_ARGV` 里 `sine=...:duration=0.2` 钉死。
-WAKE_DING_DURATION_S = 0.2
+#: 唤醒提示音时长（秒）：`startup_assets.FFMPEG_ARGV` 里 `sine=...:duration=0.6` 钉死。
+WAKE_DING_DURATION_S = 0.6
 #: 提示音播完的余量（秒）：≥ 一个 ding 时长，覆盖云端投递抖动。
 WAKE_DING_MARGIN_S = 0.3
 #: 报给 `schedule_xiaomi_stop` 的时长（秒）：那条停止腿自带 800ms 提前量（`ha.py:605`）
-#: ⇒ 报 1.0s 才等价于「叮播完（0.2s）即停」；报 0.2s 会因提前量大于音频本身而一开播就停。
-WAKE_DING_STOP_REPORT_S = 1.0
+#: ⇒ 报「时长+0.8」才等价于「叮播完即停」；报 0.6s 会因提前量落在音频中段而被切掉尾巴。
+WAKE_DING_STOP_REPORT_S = WAKE_DING_DURATION_S + 0.8
+
+#: 问句播完探测：下发后至少等这么久才允许判定（防读到播放前的空/陈旧态就放音）。
+PROMPT_IDLE_FLOOR_S = 1.0
+#: 问句播完探测：轮询间隔（与 `ha.schedule_media_stop` 同口径）。
+PROMPT_POLL_S = 0.2
+#: 问句播完探测：位置判据的 ε（对齐 `ha.py` 的 `pos >= dur - 0.5`）。
+PROMPT_END_EPS_S = 0.5
 
 
 def _settings():
@@ -270,11 +277,12 @@ class AfAskManager:
         2026-11-23「唤醒窗口可感知化」：主卧 Sound Pro 的按压唤醒是纯静音开窗（无提示音、
         无灯），用户只能盲猜窗口何时打开。四段顺序（D0 钉着，⛔ 换序）：
 
-        ① `dialog.speak_as_role` 下发即返回、**不等播放完成**（`core/dialog.py:686`）⇒ 先按
-           `_speak_secs` 估时把问句等完。这一等⛔ 删、⛔ 挪到 ding 之后：删了就是在问句尾巴上
-           按按钮；挪了会 REPLACE_ALL 打断问句。
+        ① `dialog.speak_as_role` 下发即返回、**不等播放完成**（`core/dialog.py:686`）⇒ 必须显式
+           等问句播完（`_wait_prompt_finished`）：2026-11-24 起改「轮询设备 media_player 的完成
+           信号」，探测不可用才回退旧的固定估时等待。这一等⛔ 删、⛔ 挪到 ding 之后：删了就是
+           在问句尾巴上按按钮；挪了会 REPLACE_ALL 打断问句。
         ② 只对「本次真会按压的那批设备」播 `wake_ding.mp3`（与 press 同一道设备门，D5）。
-        ③ 等提示音播完：各条「开始 + 0.2s 时长 + 余量」，时钟可注入（D4 用桩时钟验）。
+        ③ 等提示音播完：各条「开始 + 0.6s 时长 + 0.3s 余量」，时钟可注入（D4 用桩时钟验）。
         ④ 再 `button.press` 开窗——先开窗后放音，提示音会被刚打开的麦克风自己拾成用户回答。
 
         ⛔ 静默降级：没有唤醒按钮／提示音缺失或播放失败／按压失败一律点名
@@ -282,16 +290,21 @@ class AfAskManager:
         且提示音失败**不阻塞**按压（D3）。
         """
         dialog = getattr(self.rt, "dialog", None)
-        # ① 等问句播完（既有逻辑，⛔ 删/挪）
         delay = self._speak_secs(ask.prompt, dialog) + 1.5
         remaining = ask.deadline - self._clock()
         if remaining <= 1.0:
             logger.warning("AF_ASK_WAKE_SKIPPED ask=%s 剩余 %.1fs，不足等念完再唤醒", ask.ask_id, remaining)
             return
-        await self._sleep(min(delay, max(0.0, remaining - 1.0)))
+        cap = min(delay, max(0.0, remaining - 1.0))
 
-        # ② 同一道设备门：先挑出本次真会按压的设备，ding 与 press 都只对这批（D5）
+        # ② 同一道设备门：先挑出本次真会按压的设备，ding／press／完成探测都只对这批（D5）
         targets = self._wake_targets(ask, spoken)
+
+        # ① 等问句播完：完成信号驱动（2026-11-24 方案 A）；探测不可用则回退原有固定等待（逐字等价）
+        if not await self._wait_prompt_finished(ask, targets, cap):
+            await self._sleep(min(delay, max(0.0, remaining - 1.0)))
+
+        # ② 播「叮」
         if targets:
             await self._play_wake_ding(ask, targets)
 
@@ -338,6 +351,93 @@ class AfAskManager:
                 continue
             targets.append((dev, wake))
         return targets
+
+    async def _wait_prompt_finished(self, ask: _Ask, targets: list, cap_secs: float) -> bool:
+        """① 等问句播完（2026-11-24 方案 A：完成信号驱动）。
+
+        旧行为＝盲等 `_speak_secs+1.5`（11 字≈5.0s），而设备侧 2.23s 就播完了（03:01:59 的
+        `stop@end pos=2129 dev_dur=2232`）⇒ 问句与「叮」之间空等约 2s。本函数轮询念题设备的
+        `media_player` 状态，确认播完即返回；`cap_secs` 是旧等待的上限（只可能更早，⛔ 更晚）。
+
+        三道保险：
+        - floor：下发后 ≥ `PROMPT_IDLE_FLOOR_S` 才允许判定（防读到播放前的空/陈旧态就放音）；
+        - cap：探测持续不可用 ⇒ 最多等到 `cap_secs`（与改造前等值，不晚放）；
+        - 回退：无 `ha_player_entity`／HA 不可用／`get_state` 缺失 ⇒ 返回 False，
+          由调用方走原有固定等待（逐字等价）。
+
+        多设备：`all()` —— 只要还有一台在播就不算播完（先播完那台的「叮」会插进另一台的问句）。
+        返回 True＝本次等待已由本函数完成；False＝调用方需走固定等待。
+        """
+        ha = getattr(self.rt, "ha", None)
+        entities = [getattr(dev, "ha_player_entity", "") or "" for dev, _w in targets]
+        entities = [e for e in entities if e]
+        probe = getattr(ha, "get_state", None) if ha is not None else None
+        if not entities or not callable(probe):
+            logger.info("AF_ASK_WAKE_WAIT_FALLBACK ask=%s 原因=%s，回退固定等待 %.2fs",
+                        ask.ask_id,
+                        "无可用播放实体" if not entities else "HA get_state 不可用",
+                        cap_secs)
+            return False
+
+        started = self._clock()
+        deadline = started + max(0.0, cap_secs)
+        floor_until = started + PROMPT_IDLE_FLOOR_S
+        polls = 0
+        last = {"state": "?", "pos": None, "dur": None}
+        while True:
+            now = self._clock()
+            if now >= deadline:
+                logger.info("AF_ASK_WAKE_WAIT_FALLBACK ask=%s 原因=探测达上限 %.2fs poll=%d 最后读数=%s",
+                            ask.ask_id, max(0.0, cap_secs), polls, last)
+                return True
+            await self._sleep(min(PROMPT_POLL_S, deadline - now))
+            polls += 1
+            if self._clock() <= floor_until:      # floor：这段时间内⛔ 判定
+                continue
+            states = []
+            for ent in entities:
+                try:
+                    st = await probe(ent)
+                except Exception as e:            # ⛔ 让一只设备的读失败打断整条唤醒腿
+                    logger.info("AF_ASK_WAKE_WAIT_PROBE_FAILED ask=%s entity=%s err=%s",
+                                ask.ask_id, ent, e)
+                    st = None
+                if isinstance(st, dict):
+                    states.append(st)
+            if len(states) != len(entities):
+                last = {"state": "<不可读>", "pos": None, "dur": None}
+                continue
+            last = self._prompt_progress(states)
+            if all(self._prompt_finished(st) for st in states):
+                logger.info("AF_ASK_WAKE_WAIT_COMPLETE ask=%s 耗时=%.2fs poll=%d 读数=%s",
+                            ask.ask_id, self._clock() - started, polls, last)
+                return True
+
+    @staticmethod
+    def _prompt_finished(state: dict) -> bool:
+        """单台设备的「问句播完」判定：state≠playing，或 pos ≥ dur-ε（对齐现有停播口径）。"""
+        cur = str((state or {}).get("state") or "")
+        if not cur:
+            return False
+        if cur != "playing":
+            return True
+        attrs = (state or {}).get("attributes") or {}
+        # DB138/DB139：载荷取数一律走 `soft_num`（不可解按默认 0 走并留痕），⛔ 裸 float() 铸形。
+        pos = soft_num(attrs.get("media_position"), "media_position", default=0.0, integer=False)
+        dur = soft_num(attrs.get("media_duration"), "media_duration", default=0.0, integer=False)
+        if pos is None or dur is None:
+            return False
+        return dur > 0 and pos >= dur - PROMPT_END_EPS_S
+
+    @staticmethod
+    def _prompt_progress(states: list) -> dict:
+        """留痕用的探测读数（取第一台，附台数）。"""
+        first = states[0] if states else {}
+        attrs = (first or {}).get("attributes") or {}
+        return {"state": (first or {}).get("state"),
+                "pos": attrs.get("media_position"),
+                "dur": attrs.get("media_duration"),
+                "n": len(states)}
 
     async def _play_wake_ding(self, ask: _Ask, targets: list) -> None:
         """③ 对 targets 播 `wake_ding.mp3` 并等到播完；失败只点名，⛔ 阻塞按压（D3）。"""
